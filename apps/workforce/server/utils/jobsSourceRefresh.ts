@@ -34,7 +34,7 @@ import {
 import { fetchIntelliasJobs } from './intelliasJobs'
 import { isJobSourceAvailable } from './jobSourceConfig'
 import { fetchJobSource } from './jobSourceFetchers'
-import { syncJobsSearchIndex } from './jobsElastic'
+import { syncJobsSearchIndex } from '../vacancies/infrastructure/jobsElastic'
 import type { Job, JobSource } from './jobTypes'
 import { ALL_SOURCES } from './jobTypes'
 import { fetchJobsUaJobs } from './jobsUaSource'

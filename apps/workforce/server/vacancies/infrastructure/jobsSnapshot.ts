@@ -1,5 +1,5 @@
-import { useStateStore } from './stateStore'
-import type { Job } from './jobTypes'
+import { useStateStore } from '../../utils/stateStore'
+import type { Job } from '../../utils/jobTypes'
 
 const STORE_KEY = 'jobs:store:v4'
 const MEMORY_TTL_MS = 60_000

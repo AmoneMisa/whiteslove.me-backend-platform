@@ -5,7 +5,7 @@
 // publicId is a one-way FNV hash of (source, id). Prefer the indexed database
 // lookup when available, then preserve the snapshot fallback for compatibility.
 
-import { getStoredJobsSnapshot } from '../utils/jobsSnapshot'
+import { getStoredJobsSnapshot } from '../vacancies/infrastructure/jobsSnapshot'
 import { publicEntityId } from '../../shared/publicEntityId'
 import { getJobByPublicIdDb } from '../jobs/infrastructure/database'
 
