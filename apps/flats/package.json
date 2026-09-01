@@ -1,0 +1,32 @@
+{
+  "name": "flat-finder-backend",
+  "version": "1.0.0",
+  "description": "Scraper API serving normalized flat/house listings for RO, UA, KZ, UZ, KG",
+  "type": "module",
+  "main": "src/server.js",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "lint": "eslint src test",
+    "lint:fix": "eslint src test --fix",
+    "test": "node --test",
+    "migrate": "node src/migrate.js",
+    "reindex": "node src/reindex.js"
+  },
+  "dependencies": {
+    "@elastic/elasticsearch": "^9.5.1",
+    "@whiteslove/geo-catalog": "^0.7.2",
+    "@whiteslove/parsing-lexicon": "^0.5.8",
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.9.1",
+    "globals": "^17.11.0"
+  }
+}

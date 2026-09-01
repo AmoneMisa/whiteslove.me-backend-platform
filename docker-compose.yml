@@ -195,8 +195,199 @@ services:
       retries: 3
       start_period: 15s
 
+  platform-postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-whiteslove}
+      POSTGRES_USER: ${POSTGRES_USER:-whiteslove}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+    volumes:
+      - platform-postgres-data:/var/lib/postgresql
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    networks: [ platform ]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  platform-elasticsearch:
+    build:
+      context: ./services/elasticsearch
+    image: ${ELASTICSEARCH_IMAGE:-whiteslove-backend-platform/elasticsearch:local}
+    restart: unless-stopped
+    environment:
+      discovery.type: single-node
+      xpack.security.enabled: "false"
+      ES_JAVA_OPTS: ${ES_JAVA_OPTS:--Xms512m -Xmx512m}
+    volumes:
+      - platform-elasticsearch-data:/usr/share/elasticsearch/data
+    networks: [ platform ]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9200/_cluster/health >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 10
+      start_period: 40s
+
+  flats-migrate:
+    build: { context: ./apps/flats }
+    image: ${FLATS_IMAGE:-whiteslove-backend-platform/flats:local}
+    command: ["node", "src/migrate.js"]
+    restart: "no"
+    environment: &flats-database-environment
+      PGHOST: platform-postgres
+      PGPORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-whiteslove}
+      POSTGRES_USER: ${POSTGRES_USER:-whiteslove}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      PGOPTIONS: -c search_path=flats,public
+    depends_on:
+      platform-postgres: { condition: service_healthy }
+    networks: [ platform ]
+    labels:
+      me.whiteslove.platform.domain: flats
+      me.whiteslove.platform.role: migration
+
+  flats-api:
+    build: { context: ./apps/flats }
+    image: ${FLATS_IMAGE:-whiteslove-backend-platform/flats:local}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      <<: *flats-database-environment
+      ELASTICSEARCH_URL: http://platform-elasticsearch:9200
+      ELASTICSEARCH_INDEX: flat-listings-v1
+      AI_WORKER_URL: http://ai-worker:4030
+      OLX_FETCHER_URL: http://flats-olx-router:4021
+      SOCIAL_FETCHER_URL: http://flats-social-fetcher:4040
+      PHOTO_CACHE_DIR: /var/cache/flat-photos
+      PHOTO_CACHE_MAX_MB: ${PHOTO_CACHE_MAX_MB:-512}
+    volumes:
+      - flats-photo-cache:/var/cache/flat-photos
+    depends_on:
+      flats-migrate: { condition: service_completed_successfully }
+      platform-elasticsearch: { condition: service_healthy }
+    networks: [ platform ]
+    ports:
+      - "127.0.0.1:${FLATS_API_HOST_PORT:-4000}:4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    labels:
+      me.whiteslove.platform.domain: flats
+      me.whiteslove.platform.role: api
+
+  flats-worker:
+    build: { context: ./apps/flats }
+    image: ${FLATS_IMAGE:-whiteslove-backend-platform/flats:local}
+    command: ["node", "src/worker.js"]
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      <<: *flats-database-environment
+      ELASTICSEARCH_URL: http://platform-elasticsearch:9200
+      ELASTICSEARCH_INDEX: flat-listings-v1
+      AI_WORKER_URL: http://ai-worker:4030
+      OLX_FETCHER_URL: http://flats-olx-router:4021
+      OLX_FETCHER_URL_0: http://flats-olx-fetcher:4020
+      OLX_FETCHER_URL_1: http://flats-olx-fetcher-ua:4020
+      SOCIAL_FETCHER_URL: http://flats-social-fetcher:4040
+      QUEUE_PROTOCOL_VERSION: ${FLATS_QUEUE_PROTOCOL_VERSION:-3}
+      QUEUE_SHARDS: ${FLATS_QUEUE_SHARDS:-2}
+      QUEUE_REFRESH_SECONDS: ${FLATS_QUEUE_REFRESH_SECONDS:-1800}
+      QUEUE_POLL_SECONDS: ${FLATS_QUEUE_POLL_SECONDS:-1}
+      QUEUE_MAX_ATTEMPTS: ${FLATS_QUEUE_MAX_ATTEMPTS:-5}
+      QUEUE_TASK_LEASE_SECONDS: ${FLATS_QUEUE_TASK_LEASE_SECONDS:-300}
+    depends_on:
+      flats-migrate: { condition: service_completed_successfully }
+      platform-elasticsearch: { condition: service_healthy }
+      flats-olx-router: { condition: service_healthy }
+      flats-social-fetcher: { condition: service_healthy }
+    networks: [ platform ]
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    labels:
+      me.whiteslove.platform.domain: flats
+      me.whiteslove.platform.role: worker
+
+  flats-olx-fetcher:
+    build: { context: ./services/olx-fetcher }
+    image: ${OLX_FETCHER_IMAGE:-whiteslove-backend-platform/olx-fetcher:local}
+    restart: unless-stopped
+    environment: &olx-environment
+      OLX_TIMEOUT: ${OLX_TIMEOUT:-45}
+      OLX_ATTEMPTS: ${OLX_ATTEMPTS:-1}
+      OLX_LOOKBACK_DAYS: ${OLX_LOOKBACK_DAYS:-21}
+    networks: [ platform ]
+    healthcheck: &olx-healthcheck
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4020/health',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  flats-olx-fetcher-ua:
+    build: { context: ./services/olx-fetcher }
+    image: ${OLX_FETCHER_IMAGE:-whiteslove-backend-platform/olx-fetcher:local}
+    restart: unless-stopped
+    environment: *olx-environment
+    networks: [ platform ]
+    healthcheck: *olx-healthcheck
+
+  flats-olx-router:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ./services/olx-router/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      flats-olx-fetcher: { condition: service_healthy }
+      flats-olx-fetcher-ua: { condition: service_healthy }
+    networks: [ platform ]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O - http://localhost:4021/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  flats-social-fetcher:
+    build: { context: ./services/social-fetcher }
+    image: ${SOCIAL_FETCHER_IMAGE:-whiteslove-backend-platform/social-fetcher:local}
+    restart: unless-stopped
+    environment:
+      SOCIAL_MAX_ITEMS: ${SOCIAL_MAX_ITEMS:-100}
+      SOCIAL_HTTP_TIMEOUT: ${SOCIAL_HTTP_TIMEOUT:-30}
+      SOCIAL_BROWSER_TIMEOUT_MS: ${SOCIAL_BROWSER_TIMEOUT_MS:-45000}
+      SOCIAL_BROWSER_CONCURRENCY: ${SOCIAL_BROWSER_CONCURRENCY:-1}
+      SOCIAL_IMPERSONATE: ${SOCIAL_IMPERSONATE:-chrome124}
+    shm_size: ${SOCIAL_SHM_SIZE:-256mb}
+    networks: [ platform ]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4040/health',timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
 volumes:
   freellmapi-data:
+  platform-postgres-data:
+  platform-elasticsearch-data:
+  flats-photo-cache:
 
 networks:
   platform:

@@ -1,0 +1,7 @@
+Flask>=3.1,<4
+beautifulsoup4>=4.13,<5
+curl_cffi>=0.13,<1
+facebook-scraper==0.2.59
+lxml_html_clean==0.4.5
+gunicorn>=23,<24
+playwright>=1.50,<2

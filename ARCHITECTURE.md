@@ -43,7 +43,7 @@ cv-migrate          cv-api          cv-worker
 ai-worker
 ```
 
-Each row has an independent Docker build context, image tag, CI path filter,
+Each domain has an independent Docker build context, image tag, CI path filter,
 migration job and deployment command. A flats change may build and deploy only
 the flats services. Vacancy and CV containers are not Compose dependencies of
 flats services and therefore must not be recreated or restarted.
@@ -88,3 +88,11 @@ semantic parsing and product normalization stay in domain adapters.
 6. Consolidate crawler execution policy, then move individual sources.
 7. Remove legacy services from source repositories only after production
    traffic has switched and rollback has been verified.
+
+## Current migration state
+
+- AI Worker and its FreeLLMAPI gateway are imported.
+- Flat Finder API, worker, migrations, Elasticsearch image, OLX transport and
+  social transport are imported.
+- Source repositories remain unchanged and production traffic has not moved.
+- Vacancy and CV extraction remains pending.
