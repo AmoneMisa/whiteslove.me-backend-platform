@@ -7,25 +7,30 @@ import { HIRING_FACEBOOK_GROUPS } from '../shared/hiring/sources/facebookGroups.
 const jobs = await readFile(new URL('../server/utils/socialJobSources.ts', import.meta.url), 'utf8')
 const hiring = await readFile(new URL('../server/hiring/sources/socialRefresh.ts', import.meta.url), 'utf8')
 const linkedin = await readFile(new URL('../server/hiring/sources/linkedInRefresh.ts', import.meta.url), 'utf8')
-const compose = await readFile(new URL('../../../docker-compose.yml', import.meta.url), 'utf8')
+const transport = await readFile(new URL('../server/utils/socialFetcherTransport.ts', import.meta.url), 'utf8')
 
 test('Threads vacancy discovery uses one durable target and passes the domain cutoff', () => {
   assert.match(jobs, /source:\s*'threads',\s*mode:\s*'search',\s*query:\s*target\.query,\s*cutoff/)
-  assert.match(jobs, /const cutoff = crawlCutoff\(\)/)
   assert.match(jobs, /threadsJobCoverage\(\)/)
   assert.match(jobs, /configuredSocialJobTargets/)
   assert.match(jobs, /return fetchTarget\(config\)/)
-  assert.doesNotMatch(jobs, /maxItemsPerSource/)
+  assert.match(jobs, /socialFetcherBaseUrl\(\)\}\/crawl/)
+  assert.doesNotMatch(jobs, /maxItemsPerSource|flats-api|internal\/social/)
   assert.doesNotMatch(jobs, /\blimit\s*:/)
   assert.doesNotMatch(jobs, /Promise\.all(?:Settled)?/)
 })
 
-test('candidate social discovery uses the shared transport with its own domain cutoff', () => {
+test('candidate social discovery calls shared transport directly with its domain cutoff', () => {
   assert.match(hiring, /source:\s*'threads',\s*mode:\s*'search',\s*query:\s*target\.query,\s*cutoff/)
-  assert.match(hiring, /const cutoff = crawlCutoff\(\)/)
-  assert.doesNotMatch(hiring, /maxItemsPerSource/)
+  assert.match(hiring, /socialFetcherBaseUrl\(\)\}\/crawl/)
+  assert.doesNotMatch(hiring, /maxItemsPerSource|HIRING_SOCIAL_API_URL|QUEUE_INTERNAL_KEY|flats-api|internal\/social/)
   assert.doesNotMatch(hiring, /\blimit\s*:/)
-  assert.match(compose, /HIRING_SOCIAL_API_URL:\s*http:\/\/flats-api:4000\/internal\/social\/fetch/u)
+})
+
+test('workforce transport boundary never routes through flats-api', () => {
+  assert.match(transport, /SOCIAL_FETCHER_URL/)
+  assert.match(transport, /flats-social-fetcher:4040/)
+  assert.doesNotMatch(transport, /flats-api|internal\/social/)
 })
 
 test('LinkedIn candidate discovery requests the dedicated public candidate mode', () => {

@@ -66,8 +66,8 @@ test('hiring transports do not own result/depth caps or local deadlines', async 
   const social = await readFile(new URL('../server/hiring/sources/socialRefresh.ts', import.meta.url), 'utf8')
   assert.doesNotMatch(social, /maxItemsPerSource/u)
   assert.doesNotMatch(social, /\.slice\(0,\s*limit\)/u)
-  assert.match(social, /const cutoff = crawlCutoff\(\)/u)
-  assert.match(social, /fetch\(endpoint/u)
+  assert.doesNotMatch(social, /HIRING_SOCIAL_API_URL|QUEUE_INTERNAL_KEY|internal\/social/u)
+  assert.match(social, /socialFetcherBaseUrl\(\)\}\/crawl/u)
 })
 
 test('shared crawler traversal is semantic rather than count/page bounded', async () => {
