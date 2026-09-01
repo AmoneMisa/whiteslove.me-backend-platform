@@ -12,8 +12,14 @@ const port = Number(process.env.PORT) || (domain === 'vacancies' ? 4010 : 4011)
 
 async function routes(): Promise<Map<string, Handler>> {
   if (domain === 'vacancies') {
-    const feed = await import('../server/routes/jobs-feed.get.ts')
-    return new Map([['/jobs-feed', feed.default]])
+    const [feed, vacancy] = await Promise.all([
+      import('../server/routes/jobs-feed.get.ts'),
+      import('../server/routes/jobs-vacancy.get.ts'),
+    ])
+    return new Map([
+      ['/jobs-feed', feed.default],
+      ['/jobs-vacancy', vacancy.default],
+    ])
   }
 
   const [feed, meta] = await Promise.all([
