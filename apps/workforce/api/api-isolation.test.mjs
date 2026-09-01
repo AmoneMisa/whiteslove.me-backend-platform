@@ -4,9 +4,12 @@ import test from 'node:test'
 
 const source = await readFile(new URL('./server.ts', import.meta.url), 'utf8')
 
-test('vacancies API imports only the vacancy route in its domain branch', () => {
+test('vacancies API imports only vacancy read routes in its domain branch', () => {
   assert.match(source, /domain === 'vacancies'/)
   assert.match(source, /import\('\.\.\/server\/routes\/jobs-feed\.get\.ts'\)/)
+  assert.match(source, /import\('\.\.\/server\/routes\/jobs-vacancy\.get\.ts'\)/)
+  assert.match(source, /\['\/jobs-feed', feed\.default\]/)
+  assert.match(source, /\['\/jobs-vacancy', vacancy\.default\]/)
 })
 
 test('CV API owns candidate feed and metadata routes', () => {
