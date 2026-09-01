@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import {installTranslationRoutes} from './translation-routes.js';
-import {installHiringRoutes} from './hiring-routes.js';
 import {installSocialRoutes} from './social-routes.js';
 import {installAvailabilityRoutes} from './availability-routes.js';
 import {installSystemRoutes} from './system-routes.js';
@@ -35,7 +34,6 @@ export function createApp() {
   });
 
   installTranslationRoutes(app);
-  installHiringRoutes(app);
   installSocialRoutes(app);
   installAvailabilityRoutes(app);
   installSystemRoutes(app);

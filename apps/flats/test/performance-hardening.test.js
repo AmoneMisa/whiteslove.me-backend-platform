@@ -106,13 +106,9 @@ test('performance migrations own materialization, relations, delivery leases and
   assert.doesNotMatch(bounded, /ALTER COLUMN cluster_id TYPE VARCHAR/u);
 });
 
-test('hiring and places data reuse the main backend pool instead of opening extra pools', async () => {
-  const hiring = await source('../src/hiring-db.js');
+test('places data reuses the main backend pool instead of opening an extra pool', async () => {
   const places = await source('../src/places-db.js');
-  for (const module of [hiring, places]) {
-    assert.match(module, /import \{pool\} from '\.\/db\.js'/u);
-    assert.doesNotMatch(module, /new Pool\(/u);
-  }
-  assert.doesNotMatch(hiring, /HIRING_PG_POOL_MAX/u);
+  assert.match(places, /import \{pool\} from '\.\/db\.js'/u);
+  assert.doesNotMatch(places, /new Pool\(/u);
   assert.doesNotMatch(places, /PLACES_DB_POOL_MAX/u);
 });

@@ -30,6 +30,12 @@ function consumersOf(pattern, excluded = []) {
   return consumers;
 }
 
+test('workforce hiring routes and persistence stay outside the flats service', () => {
+  assert.deepEqual(consumersOf(/hiring-(?:routes|db)\.js/), []);
+  assert.throws(() => readFileSync(path.join(srcRoot, 'hiring-routes.js'), 'utf8'), {code: 'ENOENT'});
+  assert.throws(() => readFileSync(path.join(srcRoot, 'hiring-db.js'), 'utf8'), {code: 'ENOENT'});
+});
+
 test('retired legacy scraper registry stays absent from runtime imports', () => {
   assert.deepEqual(consumersOf(/scrapers\/index\.js/), []);
 });
