@@ -1,6 +1,6 @@
 import { extractCandidateContacts } from '@whiteslove/parsing-lexicon/hiring-candidate-fields'
 import { detectCandidateRemotePreference } from '@whiteslove/parsing-lexicon/hiring-semantics'
-import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../utils/hiringDiagnostics'
+import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../../shared/hiring/hiringDiagnostics'
 import { SHARED_CANDIDATE_INTENT_RE, SHARED_EMPLOYER_INTENT_RE } from '../../utils/hiringLexicon'
 import { normalizeCandidate } from '../../utils/hiringNormalize'
 import type { CvProfile } from '~~/shared/contracts/hiring'

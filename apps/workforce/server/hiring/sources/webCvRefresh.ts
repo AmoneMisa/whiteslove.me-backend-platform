@@ -4,7 +4,7 @@ import {
   type WebCvSourceKey,
 } from '../../../shared/hiring/sources/webCvSources'
 import { emptyWebCursor, loadWebCursors, saveWebCursor, type WebCursor } from '../../../shared/hiring/hiringCursors'
-import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../utils/hiringDiagnostics'
+import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../../shared/hiring/hiringDiagnostics'
 import { hiringDbEnabled, saveDbCandidates } from '../infrastructure/database'
 import { persistWebProfiles } from '../webProfilePersistence'
 import { crawlCareerist } from './web/careerist'

@@ -1,7 +1,7 @@
 import { extractCandidateContacts } from '@whiteslove/parsing-lexicon/hiring-candidate-fields'
 import { detectCandidateRemotePreference } from '@whiteslove/parsing-lexicon/hiring-semantics'
 import { HIRING_FACEBOOK_GROUPS } from '../../../shared/hiring/sources/facebookGroups'
-import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../utils/hiringDiagnostics'
+import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../../shared/hiring/hiringDiagnostics'
 import { normalizeCandidate, trimThreadsProfileText } from '../../utils/hiringNormalize'
 import type { CvProfile } from '~~/shared/contracts/hiring'
 import { socialFetcherBaseUrl } from '../../utils/socialFetcherTransport'

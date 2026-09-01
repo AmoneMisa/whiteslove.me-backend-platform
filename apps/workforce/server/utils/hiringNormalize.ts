@@ -11,10 +11,10 @@ import { professionDisplayLabel } from '@whiteslove/parsing-lexicon/hiring-sourc
 import { canonicalSkillName, extractSkillDetails } from '~~/shared/jobSkills'
 import type { CandidateEmploymentType, CvProfile } from '~~/shared/contracts/hiring'
 import type { Seniority } from '~~/shared/contracts/jobs'
-import { extractCandidateAge, extractCandidateGender, extractCandidateName } from './hiringCandidateFields'
-import { ishBorLocationFromText, trimIshBorProfileText } from './hiringIshBorFields'
+import { extractCandidateAge, extractCandidateGender, extractCandidateName } from '../../shared/hiring/candidateFields'
+import { ishBorLocationFromText, trimIshBorProfileText } from '../../shared/hiring/ishBorFields'
 import { careeristRoleFromText, trimCareeristProfileText } from './hiringCareeristFields'
-import { parseSalary as parseWebSalary } from './hiringWebFields'
+import { parseSalary as parseWebSalary } from '../../shared/hiring/webFields'
 import {
   candidateFieldRegex,
   detectCandidateFeatureCodes,

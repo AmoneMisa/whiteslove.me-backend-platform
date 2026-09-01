@@ -3,16 +3,16 @@
 // PostgreSQL schema. Snapshot/Elasticsearch paths remain safe rollout fallbacks;
 // crawling, normalization writes and backfill belong exclusively to jobs-worker.
 
-import { getHiringSourceDiagnostics } from '../utils/hiringSources'
+import { getHiringSourceDiagnostics } from '../hiring/sources/telegramDiagnostics'
 import { HIRING_COUNTRIES } from '../../shared/hiring/hiringMarkets'
-import { DERIVED_VERSION, getStoredCvProfilesSnapshot } from '../utils/hiringSnapshot'
-import { getStoredWebCvProfiles } from '../utils/hiringWebStore'
+import { DERIVED_VERSION, getStoredCvProfilesSnapshot } from '../hiring/application/readSnapshot'
+import { getStoredWebCvProfiles } from '../hiring/application/readWebProfiles'
 import { candidateSearchAvailable, searchCandidates } from '../utils/hiringElastic'
 import { dedupeCandidates, detectMentionedProfessions, normalizeCandidate } from '../utils/hiringNormalize'
 import { withProfessionExperience } from '../utils/hiringExperience'
-import { listWebSources } from '../utils/hiringWebSources'
-import { listUzJobsSources } from '../utils/hiringUzJobsSource'
-import { getHiringWebDiagnostics } from '../utils/hiringDiagnostics'
+import { listWebSources } from '../hiring/sources/webCvRefresh'
+import { listUzJobsSources } from '../hiring/sources/uzJobsRefresh'
+import { getHiringWebDiagnostics } from '../../shared/hiring/hiringDiagnostics'
 import { loadDbSourceRuns } from '../utils/hiringDb'
 import { convertCurrency, getRates, loadRates } from '../utils/currency'
 import { buildHiringStatistics } from '../../shared/hiringStatistics'

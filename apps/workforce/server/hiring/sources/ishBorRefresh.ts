@@ -1,4 +1,4 @@
-import type { SourceRun } from '../../utils/hiringDiagnostics'
+import type { SourceRun } from '../../../shared/hiring/hiringDiagnostics'
 import { hiringDbEnabled, saveDbCandidates } from '../infrastructure/database'
 import { emptyWebCursor, loadWebCursors, saveWebCursor } from '../../../shared/hiring/hiringCursors'
 import { normalizeCandidate } from '../../utils/hiringNormalize'

@@ -108,8 +108,8 @@ export async function findSharedCandidate(id: string): Promise<any | null> {
 
   try {
     const [{ getStoredCvProfilesSnapshot }, { getStoredWebCvProfiles }] = await Promise.all([
-      import('./hiringSnapshot'),
-      import('./hiringWebStore'),
+      import('../hiring/application/readSnapshot'),
+      import('../hiring/application/readWebProfiles'),
     ])
     const [stored, web] = await Promise.all([
       getStoredCvProfilesSnapshot(),

@@ -52,5 +52,6 @@ test('hiring metadata route is runtime-neutral and does not load Telegram source
 
 test('legacy Telegram hiring store and facade stay removed', async () => {
   await assert.rejects(read('server/utils/hiringStore.ts'), { code: 'ENOENT' })
+  await assert.rejects(read('server/utils/hiringSources.ts'), { code: 'ENOENT' })
   await assert.rejects(read('server/hiring/sources/telegramRefresh.ts'), { code: 'ENOENT' })
 })

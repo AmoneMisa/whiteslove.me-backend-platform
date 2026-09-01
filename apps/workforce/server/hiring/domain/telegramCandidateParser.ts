@@ -6,7 +6,7 @@ import {
 } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
 import type { CvProfile } from '../../../shared/contracts/hiring'
 import type { HiringTelegramChannelDescriptor } from '../../../shared/hiring/sources/telegramChannels'
-import { extractCandidateName } from '../../utils/hiringCandidateFields'
+import { extractCandidateName } from '../../../shared/hiring/candidateFields'
 import { isLikelyTelegramVacancy } from '../../utils/sources'
 import {
   classifySharedHiringMessage,
