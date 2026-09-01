@@ -19,6 +19,7 @@ jobs:
     outputs:
       ai: ${{ steps.filter.outputs.ai }}
       flats: ${{ steps.filter.outputs.flats }}
+      social: ${{ steps.filter.outputs.social }}
       vacancies: ${{ steps.filter.outputs.vacancies }}
       cv: ${{ steps.filter.outputs.cv }}
       crawler_core: ${{ steps.filter.outputs.crawler_core }}
@@ -36,6 +37,7 @@ jobs:
             flats:
               - 'apps/flats/**'
               - 'services/olx-fetcher/**'
+            social:
               - 'services/social-fetcher/**'
             vacancies:
               - 'apps/workforce/server/jobs/**'
@@ -67,6 +69,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       needs.changes.outputs.ai == 'true' ||
       needs.changes.outputs.flats == 'true' ||
+      needs.changes.outputs.social == 'true' ||
       needs.changes.outputs.vacancies == 'true' ||
       needs.changes.outputs.cv == 'true' ||
       needs.changes.outputs.crawler_core == 'true' ||
@@ -105,7 +108,7 @@ jobs:
           - name: social-fetcher
             context: services/social-fetcher
             dockerfile: services/social-fetcher/Dockerfile
-            enabled: flats
+            enabled: social
           - name: job-browser-fetcher
             context: services/job-browser-fetcher
             dockerfile: services/job-browser-fetcher/Dockerfile
@@ -127,6 +130,7 @@ jobs:
           github.event_name == 'workflow_dispatch' ||
           (matrix.enabled == 'ai' && needs.changes.outputs.ai == 'true') ||
           (matrix.enabled == 'flats' && needs.changes.outputs.flats == 'true') ||
+          (matrix.enabled == 'social' && needs.changes.outputs.social == 'true') ||
           (matrix.enabled == 'vacancies' && (needs.changes.outputs.vacancies == 'true' || needs.changes.outputs.crawler_core == 'true' || needs.changes.outputs.workforce_shared == 'true')) ||
           (matrix.enabled == 'cv' && (needs.changes.outputs.cv == 'true' || needs.changes.outputs.workforce_shared == 'true')) ||
           (matrix.enabled == 'subscriptions' && needs.changes.outputs.subscriptions == 'true') ||

@@ -18,6 +18,7 @@ jobs:
     outputs:
       ai: ${{ steps.filter.outputs.ai }}
       flats: ${{ steps.filter.outputs.flats }}
+      social: ${{ steps.filter.outputs.social }}
       vacancies: ${{ steps.filter.outputs.vacancies }}
       cv: ${{ steps.filter.outputs.cv }}
       crawler_core: ${{ steps.filter.outputs.crawler_core }}
@@ -35,6 +36,7 @@ jobs:
               - 'apps/flats/**'
               - 'services/olx-fetcher/**'
               - 'services/olx-router/**'
+            social:
               - 'services/social-fetcher/**'
             vacancies:
               - 'apps/workforce/server/jobs/**'
@@ -93,6 +95,13 @@ jobs:
         working-directory: apps/flats
       - run: docker build apps/flats
       - run: docker build services/olx-fetcher
+
+  social:
+    needs: changes
+    if: needs.changes.outputs.social == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
       - run: docker build services/social-fetcher
 
   vacancies:

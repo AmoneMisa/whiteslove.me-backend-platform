@@ -21,6 +21,12 @@ test('retired Redis and RabbitMQ infrastructure stays absent', () => {
   assert.doesNotMatch(platformEnv, /^RABBITMQ_/m);
 });
 
+test('shared social transport is not namespaced to flats', () => {
+  assert.match(compose, /^\s{2}social-fetcher:\s*$/m);
+  assert.match(compose, /SOCIAL_FETCHER_URL:\s*http:\/\/social-fetcher:4040/u);
+  assert.doesNotMatch(compose, /flats-social-fetcher/);
+});
+
 test('shared runtime cache has an explicit bound and no legacy config name', () => {
   assert.match(cache, /RUNTIME_CACHE_MAX_ENTRIES\) \|\| 500/);
   assert.doesNotMatch(cache, /LEGACY_CACHE_MAX_ENTRIES/);

@@ -1,5 +1,5 @@
-// Shared internal transport endpoint. Compose currently keeps the legacy service
-// name during migration; callers talk to the transport directly, never via flats-api.
+// Shared internal transport endpoint. Callers talk to the transport directly;
+// no domain API proxies social transport for another backend domain.
 export function socialFetcherBaseUrl(): string {
-  return String(process.env.SOCIAL_FETCHER_URL || 'http://flats-social-fetcher:4040').replace(/\/$/, '')
+  return String(process.env.SOCIAL_FETCHER_URL || 'http://social-fetcher:4040').replace(/\/$/, '')
 }

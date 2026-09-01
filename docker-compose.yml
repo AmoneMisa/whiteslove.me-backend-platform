@@ -264,7 +264,7 @@ services:
       ELASTICSEARCH_INDEX: flat-listings-v1
       AI_WORKER_URL: http://ai-worker:4030
       OLX_FETCHER_URL: http://flats-olx-router:4021
-      SOCIAL_FETCHER_URL: http://flats-social-fetcher:4040
+      SOCIAL_FETCHER_URL: http://social-fetcher:4040
       PHOTO_CACHE_DIR: /var/cache/flat-photos
       PHOTO_CACHE_MAX_MB: ${PHOTO_CACHE_MAX_MB:-512}
     volumes:
@@ -302,7 +302,7 @@ services:
       OLX_FETCHER_URL: http://flats-olx-router:4021
       OLX_FETCHER_URL_0: http://flats-olx-fetcher:4020
       OLX_FETCHER_URL_1: http://flats-olx-fetcher-ua:4020
-      SOCIAL_FETCHER_URL: http://flats-social-fetcher:4040
+      SOCIAL_FETCHER_URL: http://social-fetcher:4040
       QUEUE_PROTOCOL_VERSION: ${FLATS_QUEUE_PROTOCOL_VERSION:-3}
       QUEUE_SHARDS: ${FLATS_QUEUE_SHARDS:-2}
       QUEUE_REFRESH_SECONDS: ${FLATS_QUEUE_REFRESH_SECONDS:-1800}
@@ -313,7 +313,7 @@ services:
       flats-migrate: { condition: service_completed_successfully }
       platform-elasticsearch: { condition: service_healthy }
       flats-olx-router: { condition: service_healthy }
-      flats-social-fetcher: { condition: service_healthy }
+      social-fetcher: { condition: service_healthy }
     networks: [ platform ]
     healthcheck:
       test: ["CMD-SHELL", "kill -0 1"]
@@ -364,7 +364,7 @@ services:
       timeout: 5s
       retries: 10
 
-  flats-social-fetcher:
+  social-fetcher:
     build: { context: ./services/social-fetcher }
     image: ${SOCIAL_FETCHER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-social-fetcher:latest}
     restart: unless-stopped
@@ -540,6 +540,7 @@ services:
       ELASTICSEARCH_URL: http://platform-elasticsearch:9200
       JOBS_ELASTICSEARCH_INDEX: job-listings-v1
       JOB_BROWSER_FETCHER_URL: http://job-browser-fetcher:4040
+      SOCIAL_FETCHER_URL: http://social-fetcher:4040
       SITE_STATE_DIR: /var/app/state/workforce
     volumes:
       - workforce-state:/var/app/state
@@ -547,6 +548,7 @@ services:
       vacancies-migrate: { condition: service_completed_successfully }
       workforce-queue-migrate: { condition: service_completed_successfully }
       job-browser-fetcher: { condition: service_healthy }
+      social-fetcher: { condition: service_healthy }
     networks: [ platform ]
     labels:
       me.whiteslove.platform.domain: vacancies
@@ -564,13 +566,13 @@ services:
       <<: *workforce-environment
       WORKFORCE_DOMAIN: cv
       JOBS_QUEUE_WORKER_ID: cv-worker
-      HIRING_SOCIAL_API_URL: http://flats-api:4000/internal/social/fetch
     volumes:
       - workforce-state:/var/app/state
     depends_on:
       cv-migrate: { condition: service_completed_successfully }
       workforce-queue-migrate: { condition: service_completed_successfully }
       job-browser-fetcher: { condition: service_healthy }
+      social-fetcher: { condition: service_healthy }
     networks: [ platform ]
     labels:
       me.whiteslove.platform.domain: cv
