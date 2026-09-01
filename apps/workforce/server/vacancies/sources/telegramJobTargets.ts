@@ -1,5 +1,5 @@
 import { extractJobStructuredField, parseHiringSourceSalary } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
-import type { Job } from '../../utils/jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 import { detectWorkModes } from '../../utils/hiringLexicon'
 import { isLikelyTelegramVacancy } from './telegramVacancyClassifier'
 

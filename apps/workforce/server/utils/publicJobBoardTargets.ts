@@ -1,6 +1,6 @@
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
 import { PUBLIC_JOB_BOARDS, parsePublicBoardPage, type PublicBoard } from './extraPublicJobSources'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 
 export const PUBLIC_JOB_BOARD_TARGET_PREFIX = 'public-job-board:'
 

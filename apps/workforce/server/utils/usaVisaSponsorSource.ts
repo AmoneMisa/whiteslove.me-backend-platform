@@ -1,7 +1,7 @@
 import { detectUsLocation } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
 import { detectWorkModes } from '@whiteslove/parsing-lexicon/hiring-work-semantics'
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 
 const REPO = 'NotifyYouInc/2026-H1B-Sponsor-Jobs'
 const API = `https://api.github.com/repos/${REPO}`

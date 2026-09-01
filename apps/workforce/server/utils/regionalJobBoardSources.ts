@@ -2,7 +2,7 @@ import { detectHiringLocationName } from '@whiteslove/parsing-lexicon/hiring-loc
 import { parseHiringSourceSalary } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
 import { parseHiringActivityDate, parseHiringDayMonthDate } from '@whiteslove/parsing-lexicon/hiring-temporal'
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 import { detectWorkModes } from './hiringLexicon'
 
 const UA =

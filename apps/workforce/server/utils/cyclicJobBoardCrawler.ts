@@ -6,7 +6,7 @@ import {
   type CrawlerStateStore,
 } from '../../packages/crawler-core/src/index.ts'
 import { useStateStore } from './stateStore'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 
 const JOB_CRAWLER_NAMESPACE = 'jobs:board'
 const JOB_CRAWLER_LOG_PREFIX = '[jobs]'

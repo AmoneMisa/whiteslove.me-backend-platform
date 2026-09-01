@@ -2,7 +2,7 @@ import { moneyCurrencyFromText } from '@whiteslove/parsing-lexicon/currency'
 import { detectEmploymentTypes, detectWorkModes, detectWorkSchedules } from '@whiteslove/parsing-lexicon/hiring-work-semantics'
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
 import { decodeHtmlEntities as decodeEntities, stripHtml } from './htmlText'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 
 const BASE_URL = 'https://jobs.ua/vacancy'
 const MAX_DESCRIPTION = 1_200

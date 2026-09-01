@@ -2,7 +2,7 @@ import {
   detectUsLocation,
   detectVisaSponsorshipWording,
 } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
-import type { Job, JobSource } from '../../utils/jobTypes'
+import type { Job, JobSource } from '~~/shared/contracts/jobs'
 import { HIRING_FACEBOOK_GROUPS } from '../../../shared/hiring/sources/facebookGroups'
 import {
   REMOTE_JOB_QUERIES,

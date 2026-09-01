@@ -1,4 +1,4 @@
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 import {
   REMOTE_JOB_QUERIES,
   USA_RELOCATION_QUERIES,

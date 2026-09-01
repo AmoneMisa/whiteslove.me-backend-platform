@@ -1,4 +1,4 @@
-import type { JobSource } from './jobTypes'
+import type { JobSource } from '~~/shared/contracts/jobs'
 
 export type JobSourceAvailabilityMode = 'feed' | 'ingestion'
 

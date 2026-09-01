@@ -26,7 +26,7 @@ import type {
   SalaryPeriod,
   Seniority,
   WorkMode,
-} from '../../utils/jobTypes'
+} from '~~/shared/contracts/jobs'
 import { toUsd } from '../../utils/currency'
 import {
   detectEmploymentTypes,

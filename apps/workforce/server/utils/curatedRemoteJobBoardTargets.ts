@@ -6,7 +6,7 @@ import {
   type WorkingNomadsItem,
 } from './curatedRemoteJobSources'
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 
 export const CURATED_REMOTE_JOB_BOARD_TARGET_PREFIX = 'curated-remote-job-board:'
 

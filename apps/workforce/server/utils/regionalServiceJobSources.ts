@@ -1,5 +1,5 @@
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 import { absoluteHttpUrl as absoluteUrl, stripHtml } from './htmlText'
 
 const UA =

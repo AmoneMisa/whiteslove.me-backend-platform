@@ -35,8 +35,8 @@ import { fetchIntelliasJobs } from '../../utils/intelliasJobs'
 import { isJobSourceAvailable } from '../../utils/jobSourceConfig'
 import { fetchJobSource } from '../../utils/jobSourceFetchers'
 import { syncJobsSearchIndex } from '../infrastructure/jobsElastic'
-import type { Job, JobSource } from '../../utils/jobTypes'
-import { ALL_SOURCES } from '../../utils/jobTypes'
+import type { Job, JobSource } from '~~/shared/contracts/jobs'
+import { ALL_SOURCES } from '~~/shared/contracts/jobs'
 import { fetchJobsUaJobs } from '../../utils/jobsUaSource'
 import {
   configuredLinkedInJobTargets,

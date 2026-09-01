@@ -1,4 +1,4 @@
-import type { Job, JobSource } from './jobTypes'
+import type { Job, JobSource } from '~~/shared/contracts/jobs'
 import {
   fetchArbeitnow,
   fetchDevKg,

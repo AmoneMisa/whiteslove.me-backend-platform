@@ -1,5 +1,5 @@
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 import { detectWorkModes } from './hiringLexicon'
 import { absoluteHttpUrl as absoluteUrl, stripHtml } from './htmlText'
 

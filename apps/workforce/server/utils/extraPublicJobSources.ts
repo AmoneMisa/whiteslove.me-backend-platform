@@ -1,5 +1,5 @@
 import { detectUsLocation } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
-import type { Job, SponsorshipConfidence } from './jobTypes'
+import type { Job, SponsorshipConfidence } from '~~/shared/contracts/jobs'
 import { detectWorkModes } from './hiringLexicon'
 import { absoluteHttpUrl as absoluteUrl, decodeHtmlEntities, stripHtml } from './htmlText'
 

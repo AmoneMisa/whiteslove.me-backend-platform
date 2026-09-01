@@ -10,7 +10,7 @@ import {
 import { professionDisplayLabel } from '@whiteslove/parsing-lexicon/hiring-source-aliases'
 import { canonicalSkillName, extractSkillDetails } from '~~/shared/jobSkills'
 import type { CandidateEmploymentType, CvProfile } from './hiringTypes'
-import type { Seniority } from './jobTypes'
+import type { Seniority } from '~~/shared/contracts/jobs'
 import { extractCandidateAge, extractCandidateGender, extractCandidateName } from './hiringCandidateFields'
 import { ishBorLocationFromText, trimIshBorProfileText } from './hiringIshBorFields'
 import { careeristRoleFromText, trimCareeristProfileText } from './hiringCareeristFields'

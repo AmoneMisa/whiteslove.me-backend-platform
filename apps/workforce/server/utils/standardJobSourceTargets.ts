@@ -4,7 +4,7 @@ import {
   crawlStandardJobBoard,
   enrichStandardJobBoardDetails,
 } from './cyclicJobBoardCrawler'
-import type { Job, JobSource } from './jobTypes'
+import type { Job, JobSource } from '~~/shared/contracts/jobs'
 import { detectWorkModes } from './hiringLexicon'
 
 const UA = 'jobFinder/1.0 (job aggregator; contact: admin@whiteslove.me)'

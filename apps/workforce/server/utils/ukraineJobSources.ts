@@ -3,7 +3,7 @@ import { parseHiringActivityDate } from '@whiteslove/parsing-lexicon/hiring-temp
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
 import { extractSalaryFromText } from '../vacancies/domain/enrich'
 import { detectLexiconCity, detectWorkModes } from './hiringLexicon'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 
 const MAX_DESCRIPTION = 2_400
 const MAX_AGE_MS = 14 * 86_400_000

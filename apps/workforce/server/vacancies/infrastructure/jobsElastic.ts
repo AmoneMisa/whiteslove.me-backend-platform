@@ -1,4 +1,4 @@
-import type { Job } from '../../utils/jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 import { transliterationMappings } from '../../utils/cyrillicTransliteration'
 
 const ELASTICSEARCH_URL =

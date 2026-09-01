@@ -2,7 +2,7 @@
 // are exposed as durable queue targets in dedicated target modules.
 
 import { XMLParser } from 'fast-xml-parser'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 import { detectWorkModes } from './hiringLexicon'
 
 const UA = 'jobFinder/1.0 (job aggregator; contact: admin@whiteslove.me)'

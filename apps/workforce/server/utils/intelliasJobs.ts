@@ -1,5 +1,5 @@
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 
 const API = 'https://career.intellias.com/wp-json/wp/v2/vacancy'
 

@@ -1,4 +1,4 @@
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
 
 const API_URL = 'https://api.hh.ru/vacancies'

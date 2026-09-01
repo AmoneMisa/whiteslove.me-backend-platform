@@ -3,7 +3,7 @@ import {
   enrichStandardJobBoardDetails,
 } from './cyclicJobBoardCrawler'
 import { extractSalaryFromText } from '../vacancies/domain/enrich'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 
 const API_UA = 'jobFinder/1.0 (job aggregator; contact: admin@whiteslove.me)'
 const BROWSER_UA =

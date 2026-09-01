@@ -14,7 +14,7 @@ import {
   type Relocation,
   type SortKey,
   type WorkMode,
-} from '../utils/jobTypes'
+} from '~~/shared/contracts/jobs'
 import { filterAndPaginate } from '../vacancies/domain/aggregate'
 import { getStoredJobsSnapshot } from '../vacancies/infrastructure/jobsSnapshot'
 import { getRates, loadRates } from '../utils/currency'

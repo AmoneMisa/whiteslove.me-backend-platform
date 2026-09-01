@@ -8,7 +8,7 @@ import {
 import { parseFlagmaVacancies, parseFlagmaVacancyDetail } from './extraPublicJobSources'
 import { absoluteHttpUrl, stripHtml } from './htmlText'
 import { detectWorkModes } from './hiringLexicon'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +

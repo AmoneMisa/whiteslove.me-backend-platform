@@ -1,5 +1,5 @@
 import { detectCityFromText, detectCountryCodeFromText } from '@whiteslove/parsing-lexicon/geography-detection'
-import type { Job } from './jobTypes'
+import type { Job } from '~~/shared/contracts/jobs'
 import { detectWorkModes } from './hiringLexicon'
 import { absoluteHttpUrl as absoluteUrl, htmlLines, stripHtml } from './htmlText'
 
