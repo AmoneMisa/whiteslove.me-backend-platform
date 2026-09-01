@@ -452,7 +452,7 @@ services:
   vacancies-api:
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
     image: ${VACANCIES_API_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-vacancies:latest}
-    command: ["node", "--experimental-transform-types", "--import", "./jobs-worker/alias-loader.mjs", "./api/server.ts"]
+    command: ["node", "--experimental-transform-types", "--import", "./jobs-worker/alias-loader.mjs", "./api/vacancies.ts"]
     restart: unless-stopped
     init: true
     env_file:
@@ -487,7 +487,7 @@ services:
   cv-api:
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
     image: ${CV_API_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-cv:latest}
-    command: ["node", "--experimental-transform-types", "--import", "./jobs-worker/alias-loader.mjs", "./api/server.ts"]
+    command: ["node", "--experimental-transform-types", "--import", "./jobs-worker/alias-loader.mjs", "./api/cv.ts"]
     restart: unless-stopped
     init: true
     env_file:
@@ -522,6 +522,7 @@ services:
   vacancies-worker:
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
     image: ${VACANCIES_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-vacancies:latest}
+    command: ["node", "--experimental-transform-types", "--import", "./jobs-worker/alias-loader.mjs", "--import", "./jobs-worker/workerHealthBootstrap.ts", "./jobs-worker/vacancies.ts"]
     restart: unless-stopped
     init: true
     env_file:
@@ -557,6 +558,7 @@ services:
   cv-worker:
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
     image: ${CV_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-cv:latest}
+    command: ["node", "--experimental-transform-types", "--import", "./jobs-worker/alias-loader.mjs", "--import", "./jobs-worker/workerHealthBootstrap.ts", "./jobs-worker/cv.ts"]
     restart: unless-stopped
     init: true
     env_file:
