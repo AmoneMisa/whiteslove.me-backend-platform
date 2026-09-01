@@ -138,7 +138,7 @@ services:
   ai-worker:
     build:
       context: ./apps/ai-worker
-    image: ${AI_WORKER_IMAGE:-ghcr.io/amonemisa/ai-worker:latest}
+    image: ${AI_WORKER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-ai-worker:latest}
     labels:
       me.whiteslove.platform.domain: ai
       me.whiteslove.platform.role: worker
@@ -215,7 +215,7 @@ services:
   platform-elasticsearch:
     build:
       context: ./services/elasticsearch
-    image: ${ELASTICSEARCH_IMAGE:-whiteslove-backend-platform/elasticsearch:local}
+    image: ${ELASTICSEARCH_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-elasticsearch:latest}
     restart: unless-stopped
     environment:
       discovery.type: single-node
@@ -233,7 +233,7 @@ services:
 
   flats-migrate:
     build: { context: ./apps/flats }
-    image: ${FLATS_IMAGE:-whiteslove-backend-platform/flats:local}
+    image: ${FLATS_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-flats:latest}
     command: ["node", "src/migrate.js"]
     restart: "no"
     environment: &flats-database-environment
@@ -252,7 +252,7 @@ services:
 
   flats-api:
     build: { context: ./apps/flats }
-    image: ${FLATS_IMAGE:-whiteslove-backend-platform/flats:local}
+    image: ${FLATS_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-flats:latest}
     restart: unless-stopped
     init: true
     env_file:
@@ -287,7 +287,7 @@ services:
 
   flats-worker:
     build: { context: ./apps/flats }
-    image: ${FLATS_IMAGE:-whiteslove-backend-platform/flats:local}
+    image: ${FLATS_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-flats:latest}
     command: ["node", "src/worker.js"]
     restart: unless-stopped
     init: true
@@ -327,7 +327,7 @@ services:
 
   flats-olx-fetcher:
     build: { context: ./services/olx-fetcher }
-    image: ${OLX_FETCHER_IMAGE:-whiteslove-backend-platform/olx-fetcher:local}
+    image: ${OLX_FETCHER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-olx-fetcher:latest}
     restart: unless-stopped
     environment: &olx-environment
       OLX_TIMEOUT: ${OLX_TIMEOUT:-45}
@@ -343,7 +343,7 @@ services:
 
   flats-olx-fetcher-ua:
     build: { context: ./services/olx-fetcher }
-    image: ${OLX_FETCHER_IMAGE:-whiteslove-backend-platform/olx-fetcher:local}
+    image: ${OLX_FETCHER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-olx-fetcher:latest}
     restart: unless-stopped
     environment: *olx-environment
     networks: [ platform ]
@@ -366,7 +366,7 @@ services:
 
   flats-social-fetcher:
     build: { context: ./services/social-fetcher }
-    image: ${SOCIAL_FETCHER_IMAGE:-whiteslove-backend-platform/social-fetcher:local}
+    image: ${SOCIAL_FETCHER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-social-fetcher:latest}
     restart: unless-stopped
     environment:
       SOCIAL_MAX_ITEMS: ${SOCIAL_MAX_ITEMS:-100}
@@ -385,7 +385,7 @@ services:
 
   job-browser-fetcher:
     build: { context: ./services/job-browser-fetcher }
-    image: ${JOB_BROWSER_FETCHER_IMAGE:-whiteslove-backend-platform/job-browser-fetcher:local}
+    image: ${JOB_BROWSER_FETCHER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-job-browser-fetcher:latest}
     restart: unless-stopped
     environment:
       JOB_BROWSER_IMPERSONATE: ${JOB_BROWSER_IMPERSONATE:-chrome124}
@@ -406,7 +406,7 @@ services:
 
   workforce-queue-migrate:
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
-    image: ${WORKFORCE_QUEUE_IMAGE:-whiteslove-backend-platform/workforce-queue:local}
+    image: ${WORKFORCE_QUEUE_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-vacancies:latest}
     command: ["node", "--experimental-transform-types", "./scripts/migrate-database.ts"]
     restart: "no"
     environment:
@@ -421,7 +421,7 @@ services:
 
   vacancies-migrate:
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
-    image: ${VACANCIES_IMAGE:-whiteslove-backend-platform/vacancies:local}
+    image: ${VACANCIES_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-vacancies:latest}
     command: ["node", "--experimental-transform-types", "./scripts/migrate-database.ts"]
     restart: "no"
     environment:
@@ -436,7 +436,7 @@ services:
 
   cv-migrate:
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
-    image: ${CV_IMAGE:-whiteslove-backend-platform/cv:local}
+    image: ${CV_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-cv:latest}
     command: ["node", "--experimental-transform-types", "./scripts/migrate-database.ts"]
     restart: "no"
     environment:
@@ -451,7 +451,7 @@ services:
 
   vacancies-api:
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
-    image: ${VACANCIES_API_IMAGE:-whiteslove-backend-platform/vacancies-api:local}
+    image: ${VACANCIES_API_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-vacancies:latest}
     command: ["node", "--experimental-transform-types", "--import", "./jobs-worker/alias-loader.mjs", "./api/server.ts"]
     restart: unless-stopped
     init: true
@@ -486,7 +486,7 @@ services:
 
   cv-api:
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
-    image: ${CV_API_IMAGE:-whiteslove-backend-platform/cv-api:local}
+    image: ${CV_API_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-cv:latest}
     command: ["node", "--experimental-transform-types", "--import", "./jobs-worker/alias-loader.mjs", "./api/server.ts"]
     restart: unless-stopped
     init: true
@@ -521,7 +521,7 @@ services:
 
   vacancies-worker:
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
-    image: ${VACANCIES_IMAGE:-whiteslove-backend-platform/vacancies:local}
+    image: ${VACANCIES_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-vacancies:latest}
     restart: unless-stopped
     init: true
     env_file:
@@ -554,7 +554,7 @@ services:
 
   cv-worker:
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
-    image: ${CV_IMAGE:-whiteslove-backend-platform/cv:local}
+    image: ${CV_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-cv:latest}
     restart: unless-stopped
     init: true
     env_file:
@@ -578,7 +578,7 @@ services:
 
   subscriptions-migrate:
     build: { context: ./apps/subscription-bot }
-    image: ${SUBSCRIPTION_BOT_IMAGE:-whiteslove-backend-platform/subscription-bot:local}
+    image: ${SUBSCRIPTION_BOT_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-subscription-bot:latest}
     command: ["node", "src/migrate.mjs"]
     restart: "no"
     environment: &subscriptions-environment
@@ -593,7 +593,7 @@ services:
 
   subscription-bot:
     build: { context: ./apps/subscription-bot }
-    image: ${SUBSCRIPTION_BOT_IMAGE:-whiteslove-backend-platform/subscription-bot:local}
+    image: ${SUBSCRIPTION_BOT_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-subscription-bot:latest}
     restart: unless-stopped
     init: true
     env_file:

@@ -1,0 +1,132 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      ai: ${{ steps.filter.outputs.ai }}
+      flats: ${{ steps.filter.outputs.flats }}
+      vacancies: ${{ steps.filter.outputs.vacancies }}
+      cv: ${{ steps.filter.outputs.cv }}
+      workforce_shared: ${{ steps.filter.outputs.workforce_shared }}
+      subscriptions: ${{ steps.filter.outputs.subscriptions }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ai:
+              - 'apps/ai-worker/**'
+            flats:
+              - 'apps/flats/**'
+              - 'services/olx-fetcher/**'
+              - 'services/olx-router/**'
+              - 'services/social-fetcher/**'
+            vacancies:
+              - 'apps/workforce/server/jobs/**'
+              - 'apps/workforce/server/routes/jobs-**'
+              - 'apps/workforce/shared/jobs/**'
+              - 'apps/workforce/shared/contracts/jobs.ts'
+            cv:
+              - 'apps/workforce/server/hiring/**'
+              - 'apps/workforce/server/routes/hiring-**'
+              - 'apps/workforce/shared/hiring/**'
+              - 'apps/workforce/shared/contracts/hiring.ts'
+            workforce_shared:
+              - 'apps/workforce/api/**'
+              - 'apps/workforce/jobs-worker/**'
+              - 'apps/workforce/scripts/**'
+              - 'apps/workforce/package*.json'
+              - 'apps/workforce/server/utils/**'
+              - 'apps/workforce/shared/*.ts'
+              - 'apps/workforce/shared/http/**'
+            subscriptions:
+              - 'apps/subscription-bot/**'
+
+  compose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose config --quiet
+
+  ai:
+    needs: changes
+    if: needs.changes.outputs.ai == 'true'
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/ai-worker } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: apps/ai-worker/package-lock.json }
+      - run: npm ci
+      - run: npm test
+      - run: docker build .
+
+  flats:
+    needs: changes
+    if: needs.changes.outputs.flats == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: apps/flats/package-lock.json }
+      - run: npm ci
+        working-directory: apps/flats
+      - run: npm test
+        working-directory: apps/flats
+      - run: docker build apps/flats
+      - run: docker build services/olx-fetcher
+      - run: docker build services/social-fetcher
+
+  vacancies:
+    needs: changes
+    if: needs.changes.outputs.vacancies == 'true' || needs.changes.outputs.workforce_shared == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: apps/workforce/package-lock.json }
+      - run: npm ci
+        working-directory: apps/workforce
+      - run: node --test apps/workforce/jobs-worker/domain-isolation.test.mjs apps/workforce/api/api-isolation.test.mjs
+      - run: docker build -f apps/workforce/jobs-worker/Dockerfile apps/workforce
+      - run: docker build services/job-browser-fetcher
+
+  cv:
+    needs: changes
+    if: needs.changes.outputs.cv == 'true' || needs.changes.outputs.workforce_shared == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24, cache: npm, cache-dependency-path: apps/workforce/package-lock.json }
+      - run: npm ci
+        working-directory: apps/workforce
+      - run: node --test apps/workforce/jobs-worker/domain-isolation.test.mjs apps/workforce/api/api-isolation.test.mjs
+      - run: docker build -f apps/workforce/jobs-worker/Dockerfile apps/workforce
+
+  subscriptions:
+    needs: changes
+    if: needs.changes.outputs.subscriptions == 'true'
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: apps/subscription-bot } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - run: npm install --no-audit --no-fund
+      - run: npm run check
+      - run: docker build .

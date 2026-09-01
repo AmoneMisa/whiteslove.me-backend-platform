@@ -66,3 +66,14 @@ Docker service names.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for ownership boundaries and the
 migration sequence.
+
+## CI and image publishing
+
+Pull requests run Compose validation plus tests/builds only for affected
+domains. A change in vacancy-only paths does not schedule the CV job, and the
+reverse is also true; explicitly shared workforce paths schedule both.
+
+Pushes to `master` publish only affected images to GHCR with `latest` and commit
+SHA tags. The publish workflow can also be started manually to rebuild all
+images. Server deployment remains explicit through `deploy.sh <service...>` so
+publishing an image never restarts an unrelated service.
