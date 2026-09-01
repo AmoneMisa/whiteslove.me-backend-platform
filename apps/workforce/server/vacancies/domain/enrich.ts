@@ -16,7 +16,7 @@ import {
   detectApplicationLanguage as detectSharedApplicationLanguage,
   detectHiringEducation,
 } from '@whiteslove/parsing-lexicon/hiring-vacancy-fields'
-import { classifySuspicion } from './suspicious'
+import { classifySuspicion } from '../../utils/suspicious'
 import type {
   EmployerType,
   EmploymentKind,
@@ -26,8 +26,8 @@ import type {
   SalaryPeriod,
   Seniority,
   WorkMode,
-} from './jobTypes'
-import { toUsd } from './currency'
+} from '../../utils/jobTypes'
+import { toUsd } from '../../utils/currency'
 import {
   detectEmploymentTypes,
   detectExperienceRequirement,
@@ -43,7 +43,7 @@ import {
   parseSharedHiringContext,
   parseSharedLanguageContext,
   resolveSharedCountryFromText,
-} from './hiringLexicon'
+} from '../../utils/hiringLexicon'
 import {
   extractSkillDetails,
   extractSkillNames,

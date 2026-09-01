@@ -1,7 +1,7 @@
 import {
   detectVisaSponsorshipWording,
 } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
-import type { Job, SponsorshipConfidence } from './jobTypes'
+import type { Job, SponsorshipConfidence } from '../../utils/jobTypes'
 
 export { TEMPORARY_WORK_AUTH_RE } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
 

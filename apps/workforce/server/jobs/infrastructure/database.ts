@@ -2,8 +2,8 @@ import { Pool } from 'pg'
 import type { Job, JobQuery, JobResponse, JobStats } from '../../../shared/contracts/jobs'
 import { publicEntityId } from '../../../shared/publicEntityId'
 import { BoundedTtlCache } from '../../utils/boundedTtlCache'
-import { jobProfessionArea } from '../../utils/aggregate'
-import { keepUsaForeignerCandidate } from '../../utils/jobVisaSponsorship'
+import { jobProfessionArea } from '../../vacancies/domain/aggregate'
+import { keepUsaForeignerCandidate } from '../../vacancies/domain/jobVisaSponsorship'
 
 const SCHEMA_RE = /^[a-z_][a-z0-9_]*$/i
 const UPSERT_BATCH = 500

@@ -15,11 +15,11 @@ import {
   type SortKey,
   type WorkMode,
 } from '../utils/jobTypes'
-import { filterAndPaginate } from '../utils/aggregate'
+import { filterAndPaginate } from '../vacancies/domain/aggregate'
 import { getStoredJobsSnapshot } from '../vacancies/infrastructure/jobsSnapshot'
 import { getRates, loadRates } from '../utils/currency'
 import { jobSearchKey, searchJobMatches } from '../vacancies/infrastructure/jobsElastic'
-import { keepUsaForeignerCandidate } from '../utils/jobVisaSponsorship'
+import { keepUsaForeignerCandidate } from '../vacancies/domain/jobVisaSponsorship'
 import { isJobSourceAvailable } from '../utils/jobSourceConfig'
 import { publicEntityId } from '../../shared/publicEntityId'
 import { queryJobsDb } from '../jobs/infrastructure/database'

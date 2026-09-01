@@ -4,7 +4,7 @@
 // structured filters and stats can operate on derived fields.
 
 import { enrichJob, resolveCountry } from './enrich'
-import { normalizeJobSeniority } from './jobSeniority'
+import { normalizeJobSeniority } from '../../utils/jobSeniority'
 import { canonicalSkillName } from '~~/shared/jobSkills'
 import type {
   Job,
@@ -15,7 +15,7 @@ import type {
   SalaryStat,
   SortKey,
   WorkMode,
-} from './jobTypes'
+} from '../../utils/jobTypes'
 
 const ENRICHMENT_CACHE_MAX = 20_000
 const enrichmentCache = new Map<string, { fingerprint: string; job: Job }>()

@@ -20,7 +20,7 @@ import {
   fetchCuratedRemoteJobBoardTarget,
   isCuratedRemoteJobBoardTarget,
 } from '../../utils/curatedRemoteJobBoardTargets'
-import { enrichJob } from '../../utils/enrich'
+import { enrichJob } from '../domain/enrich'
 import {
   configuredExpandedRegionalRemoteTargets,
   fetchExpandedRegionalRemoteTarget,

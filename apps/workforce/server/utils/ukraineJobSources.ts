@@ -1,7 +1,7 @@
 import { XMLParser } from 'fast-xml-parser'
 import { parseHiringActivityDate } from '@whiteslove/parsing-lexicon/hiring-temporal'
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
-import { extractSalaryFromText } from './enrich'
+import { extractSalaryFromText } from '../vacancies/domain/enrich'
 import { detectLexiconCity, detectWorkModes } from './hiringLexicon'
 import type { Job } from './jobTypes'
 
