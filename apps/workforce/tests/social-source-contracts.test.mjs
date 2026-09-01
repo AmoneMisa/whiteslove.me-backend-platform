@@ -9,17 +9,22 @@ const hiring = await readFile(new URL('../server/hiring/sources/socialRefresh.ts
 const linkedin = await readFile(new URL('../server/hiring/sources/linkedInRefresh.ts', import.meta.url), 'utf8')
 const compose = await readFile(new URL('../../../docker-compose.yml', import.meta.url), 'utf8')
 
-test('Threads vacancy discovery uses one durable target per shared search query', () => {
-  assert.match(jobs, /source:\s*'threads',\s*mode:\s*'search',\s*query:\s*target\.query/)
+test('Threads vacancy discovery uses one durable target and passes the domain cutoff', () => {
+  assert.match(jobs, /source:\s*'threads',\s*mode:\s*'search',\s*query:\s*target\.query,\s*cutoff/)
+  assert.match(jobs, /const cutoff = crawlCutoff\(\)/)
   assert.match(jobs, /threadsJobCoverage\(\)/)
   assert.match(jobs, /configuredSocialJobTargets/)
   assert.match(jobs, /return fetchTarget\(config\)/)
-  assert.doesNotMatch(jobs, /THREADS_REQUEST_TIMEOUT_MS/)
+  assert.doesNotMatch(jobs, /maxItemsPerSource/)
+  assert.doesNotMatch(jobs, /\blimit\s*:/)
   assert.doesNotMatch(jobs, /Promise\.all(?:Settled)?/)
 })
 
-test('candidate social discovery uses the shared backend social transport', () => {
-  assert.match(hiring, /source:\s*'threads',\s*mode:\s*'search',\s*query:/)
+test('candidate social discovery uses the shared transport with its own domain cutoff', () => {
+  assert.match(hiring, /source:\s*'threads',\s*mode:\s*'search',\s*query:\s*target\.query,\s*cutoff/)
+  assert.match(hiring, /const cutoff = crawlCutoff\(\)/)
+  assert.doesNotMatch(hiring, /maxItemsPerSource/)
+  assert.doesNotMatch(hiring, /\blimit\s*:/)
   assert.match(compose, /HIRING_SOCIAL_API_URL:\s*http:\/\/flats-api:4000\/internal\/social\/fetch/u)
 })
 

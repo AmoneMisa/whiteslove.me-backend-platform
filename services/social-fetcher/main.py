@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from urllib.parse import parse_qs, quote_plus, unquote, urlparse
 
 from bs4 import BeautifulSoup
@@ -11,9 +12,14 @@ from app import (
     _BROWSER_GATE,
     _browser_context,
     _clean_text,
+    _facebook_dom_items,
+    _facebook_public_url,
+    _facebook_restriction_reason,
+    _facebook_target,
     _http_get,
     _iso,
     _limit,
+    _normalize_browser_facebook_item,
     _threads_dom_items,
     app,
 )
@@ -35,18 +41,12 @@ def _wait_for_threads_results(page):
             timeout=min(BROWSER_TIMEOUT_MS, 8000),
         )
     except Exception:
-        # Empty searches and logged-out interstitials legitimately have no post
-        # anchor. A short final delay lets late client-side rendering settle
-        # without turning every empty query into a full browser timeout.
         page.wait_for_timeout(1200)
 
 
 def fetch_threads_search(payload):
     query = _threads_query(payload.get("query") or payload.get("target"))
     limit = _limit(payload.get("limit"), 50)
-    # Threads' logged-out Recent search is public. The explicit filter keeps
-    # candidate discovery fresh; /hiring applies its own three-month retention
-    # after parsing the returned post timestamps.
     url = (
         f"{THREADS_BASE_URL}/search?q={quote_plus(query)}"
         "&serp_type=default&filter=recent"
@@ -98,6 +98,169 @@ def fetch_threads_search(payload):
         "count": len(items),
         "items": items,
     }
+
+
+def _cutoff(value):
+    normalized = _iso(value)
+    if not normalized:
+        raise ValueError("crawl cutoff must be an ISO timestamp")
+    return datetime.fromisoformat(normalized)
+
+
+def _item_time(item):
+    normalized = _iso(item.get("createdAt"))
+    if not normalized:
+        return None
+    return datetime.fromisoformat(normalized)
+
+
+def _boundary_reached(items, cutoff):
+    return any(
+        item_time is not None and item_time <= cutoff
+        for item_time in (_item_time(item) for item in items)
+    )
+
+
+def _scroll_until_cutoff(page, read_items, cutoff, *, wheel, wait_ms):
+    """Scroll until the semantic date boundary or natural source exhaustion.
+
+    There is deliberately no page, scroll, or result-count success cap here.
+    An unreadable timestamp never counts as reaching the date boundary.
+    """
+    collected = {}
+    stagnant = 0
+
+    while True:
+        before = len(collected)
+        for item in read_items(page):
+            item_id = str(item.get("id") or item.get("url") or "")
+            if item_id:
+                collected[item_id] = item
+
+        values = list(collected.values())
+        if _boundary_reached(values, cutoff):
+            return values, True, False
+
+        stagnant = stagnant + 1 if len(collected) == before else 0
+        if stagnant >= 2:
+            return values, False, True
+
+        page.mouse.wheel(0, wheel)
+        page.wait_for_timeout(wait_ms)
+
+
+def crawl_facebook(payload):
+    target_raw = payload.get("target") or payload.get("url") or payload.get("page")
+    target = _facebook_target(target_raw)
+    cutoff = _cutoff(payload.get("cutoff"))
+    url = _facebook_public_url(target_raw, target)
+
+    with _BROWSER_GATE:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            context = _browser_context(browser)
+            page = context.new_page()
+            page.set_default_timeout(BROWSER_TIMEOUT_MS)
+            page.goto(url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT_MS)
+            raw_items, boundary_reached, exhausted = _scroll_until_cutoff(
+                page,
+                _facebook_dom_items,
+                cutoff,
+                wheel=2200,
+                wait_ms=850,
+            )
+            final_url = page.url
+            restriction = _facebook_restriction_reason(page) if not raw_items else None
+            browser.close()
+
+    if restriction:
+        raise RuntimeError(f"Facebook public page is restricted: {restriction}")
+
+    items = [
+        _normalize_browser_facebook_item(item, target_raw)
+        for item in raw_items
+    ]
+    items = [item for item in items if item["id"] and item["text"]]
+    if not items and not exhausted:
+        raise RuntimeError(f"Facebook public page returned no readable posts: {final_url}")
+
+    return {
+        "ok": True,
+        "source": "facebook",
+        "mode": "crawl",
+        "target": target_raw,
+        "cutoff": cutoff.astimezone(timezone.utc).isoformat(),
+        "boundaryReached": boundary_reached,
+        "exhausted": exhausted,
+        "count": len(items),
+        "items": items,
+    }
+
+
+def crawl_threads_search(payload):
+    query = _threads_query(payload.get("query") or payload.get("target"))
+    cutoff = _cutoff(payload.get("cutoff"))
+    url = (
+        f"{THREADS_BASE_URL}/search?q={quote_plus(query)}"
+        "&serp_type=default&filter=recent"
+    )
+
+    with _BROWSER_GATE:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            context = _browser_context(browser)
+            page = context.new_page()
+            page.set_default_timeout(BROWSER_TIMEOUT_MS)
+            page.goto(url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT_MS)
+            _wait_for_threads_results(page)
+            raw_items, boundary_reached, exhausted = _scroll_until_cutoff(
+                page,
+                _threads_dom_items,
+                cutoff,
+                wheel=1800,
+                wait_ms=650,
+            )
+            browser.close()
+
+    items = [
+        {
+            "id": item["id"],
+            "source": "threads",
+            "target": query,
+            "author": item.get("username") or "",
+            "text": _clean_text(item.get("text")),
+            "url": item.get("url") or "",
+            "createdAt": _iso(item.get("createdAt")),
+            "images": item.get("images") or [],
+        }
+        for item in raw_items
+        if item.get("id")
+    ]
+
+    return {
+        "ok": True,
+        "source": "threads",
+        "mode": "crawl",
+        "target": query,
+        "query": query,
+        "cutoff": cutoff.astimezone(timezone.utc).isoformat(),
+        "boundaryReached": boundary_reached,
+        "exhausted": exhausted,
+        "count": len(items),
+        "items": items,
+    }
+
+
+def fetch_social_crawl(payload):
+    source = str(payload.get("source") or "").strip().lower()
+    if source == "facebook":
+        return crawl_facebook(payload)
+    if source == "threads":
+        mode = str(payload.get("mode") or "search").strip().lower()
+        if mode != "search":
+            raise ValueError("Threads date-bounded crawl requires search mode")
+        return crawl_threads_search(payload)
+    raise ValueError("crawl source must be facebook or threads")
 
 
 def _linkedin_candidate_query(value):
@@ -178,9 +341,6 @@ def fetch_linkedin_candidates(payload):
                 "title": title,
                 "text": text,
                 "url": url,
-                # Search result pages do not expose a trustworthy LinkedIn
-                # publication timestamp. The consumer records discovery time
-                # separately instead of inventing a source publication date.
                 "createdAt": None,
                 "images": [],
             }
@@ -198,6 +358,17 @@ def fetch_linkedin_candidates(payload):
         "count": len(items),
         "items": items,
     }
+
+
+@app.post("/crawl")
+def crawl_route():
+    payload = request.get_json(silent=True) or {}
+    try:
+        return jsonify(fetch_social_crawl(payload))
+    except ValueError as exc:
+        return jsonify(ok=False, error=str(exc)), 400
+    except Exception as exc:
+        return jsonify(ok=False, error=f"{type(exc).__name__}: {exc}"), 502
 
 
 @app.post("/threads/search")

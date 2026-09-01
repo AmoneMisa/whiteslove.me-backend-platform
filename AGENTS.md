@@ -14,8 +14,19 @@ and rollback has been verified.
 
 ## Crawler execution policy
 
-Every vacancy source must execute through the shared crawler/orchestration
-layer. A source adapter provides source facts; it does not own execution policy.
+Every vacancy/candidate source must execute through the shared
+crawler/orchestration layer. A source adapter provides source facts; it does not
+own execution policy.
+
+Crawler completion is semantic. A crawl continues until the configured domain
+date boundary for the requested entity type is reached, or the upstream source
+is naturally exhausted/repeats. Result counts, page counts, run counts, scroll
+counts and similar quantitative caps must never be used as a successful crawl
+boundary — not in source adapters and not in shared crawler code.
+
+Entity type controls which records are accepted. Date controls how far a
+chronological source is traversed. A record with an unreadable date does not
+prove that the date boundary was reached.
 
 Do not add source-local implementations of:
 
@@ -23,16 +34,22 @@ Do not add source-local implementations of:
 - request timeouts/deadlines;
 - request delays or pacing loops;
 - pages-per-run or maximum crawl depth;
-- maximum result/vacancy counts used as execution policy;
+- maximum result/vacancy/candidate counts used as execution policy;
 - retries/backoff;
 - durable cursor rotation or resume state;
 - scheduler cadence;
 - queue leases/claims.
 
+Concurrency, transport deadlines and pacing are shared execution mechanics only;
+they do not limit crawl depth or successful result volume. A timeout or transport
+failure is an error/retry condition. It must preserve the failed page/cursor and
+must not be reported as a completed crawl.
+
 A source-specific exception is allowed only when an upstream contract genuinely
-requires different behavior. Document that upstream requirement and expose it
-as adapter metadata/capability consumed by the shared crawler. Do not implement
-a second crawler inside the adapter.
+requires different transport behavior. Document that upstream requirement and
+expose it as adapter metadata/capability consumed by the shared crawler. Do not
+implement a second crawler inside the adapter and do not turn an upstream API
+page size into a local crawl-depth/result cap.
 
 The current first extracted crawler library is:
 

@@ -16,6 +16,8 @@ async function socialRequest(path, options = {}) {
 
   const response = await fetch(`${SOCIAL_FETCHER_URL}${path}`, {
     ...options,
+    // This is a transport failure boundary only. If it expires, callers retry;
+    // the crawl is never reported as successfully complete because of time.
     signal: AbortSignal.timeout(180_000),
   });
 
@@ -27,6 +29,20 @@ async function socialRequest(path, options = {}) {
   }
 
   return { response, body };
+}
+
+async function proxySocial(req, res, path) {
+  try {
+    const source = String(req.body?.source || '').toLowerCase();
+    const { response, body } = await socialRequest(path, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...req.body, source }),
+    });
+    return res.status(response.status).json(body);
+  } catch (error) {
+    return res.status(502).json({ ok: false, error: error?.message || String(error) });
+  }
 }
 
 export function installSocialRoutes(app) {
@@ -44,6 +60,19 @@ export function installSocialRoutes(app) {
     }
   });
 
+  app.post('/internal/social/crawl', async (req, res) => {
+    if (!requireSocialInternal(req, res)) return;
+
+    const source = String(req.body?.source || '').toLowerCase();
+    if (!['facebook', 'threads'].includes(source)) {
+      return res.status(400).json({ ok: false, error: 'crawl source must be facebook or threads' });
+    }
+    if (!req.body?.cutoff) {
+      return res.status(400).json({ ok: false, error: 'crawl cutoff is required' });
+    }
+    return proxySocial(req, res, '/crawl');
+  });
+
   app.post('/internal/social/fetch', async (req, res) => {
     if (!requireSocialInternal(req, res)) return;
 
@@ -55,6 +84,16 @@ export function installSocialRoutes(app) {
       });
     }
 
+    // Existing workers are configured with this endpoint. A semantic cutoff
+    // upgrades that request to the date-bounded crawler without changing the
+    // deployment contract during migration.
+    if (req.body?.cutoff) {
+      if (!['facebook', 'threads'].includes(source)) {
+        return res.status(400).json({ ok: false, error: 'date-bounded crawl supports facebook or threads' });
+      }
+      return proxySocial(req, res, '/crawl');
+    }
+
     const mode = String(req.body?.mode || '').toLowerCase();
     const threadsSearch = source === 'threads' && mode === 'search';
     const linkedinCandidates = source === 'linkedin' && mode === 'candidates';
@@ -64,15 +103,6 @@ export function installSocialRoutes(app) {
         ? '/linkedin/candidates'
         : '/fetch';
 
-    try {
-      const { response, body } = await socialRequest(path, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...req.body, source }),
-      });
-      return res.status(response.status).json(body);
-    } catch (error) {
-      return res.status(502).json({ ok: false, error: error?.message || String(error) });
-    }
+    return proxySocial(req, res, path);
   });
 }

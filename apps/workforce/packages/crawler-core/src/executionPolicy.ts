@@ -1,14 +1,13 @@
 export const STANDARD_SOURCE_EXECUTION_POLICY = Object.freeze({
   concurrency: 10,
   requestTimeoutMs: 6_000,
-  maxItemsPerSource: 60,
 })
 
 export type SourceFetch = typeof fetch
 
 /**
- * Apply the workforce-wide request deadline without letting source adapters
- * own timeout values. Existing caller cancellation remains authoritative too.
+ * Apply the workforce-wide transport deadline without turning it into a crawl
+ * completion condition. Existing caller cancellation remains authoritative.
  */
 export function sourceRequestSignal(signal?: AbortSignal | null): AbortSignal {
   const deadline = AbortSignal.timeout(STANDARD_SOURCE_EXECUTION_POLICY.requestTimeoutMs)

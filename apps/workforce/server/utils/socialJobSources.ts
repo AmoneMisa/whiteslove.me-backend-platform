@@ -86,6 +86,10 @@ function validDate(value: string | null | undefined): string | null {
   return new Date(time).toISOString()
 }
 
+function crawlCutoff(): string {
+  return new Date(Date.now() - MAX_AGE_MS).toISOString()
+}
+
 function isVacancyText(text: string): boolean {
   const kind = classifySharedHiringMessage(text)
   if (kind === 'candidate') return false
@@ -166,9 +170,10 @@ async function fetchTarget(target: Target): Promise<Job[]> {
   if (!endpoint) throw new Error('HIRING_SOCIAL_API_URL is not configured')
   if (key.length < 16) throw new Error('QUEUE_INTERNAL_KEY is not configured')
 
+  const cutoff = crawlCutoff()
   const payload = target.platform === 'facebook'
-    ? { source: 'facebook', target: target.target }
-    : { source: 'threads', mode: 'search', query: target.query }
+    ? { source: 'facebook', target: target.target, cutoff }
+    : { source: 'threads', mode: 'search', query: target.query, cutoff }
 
   const response = await fetch(endpoint, {
     method: 'POST',

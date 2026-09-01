@@ -54,7 +54,7 @@ test('vacancy source adapters do not own crawler execution policy or broad fan-o
   }
 })
 
-test('hiring transports consume shared execution policy instead of owning limits or deadlines', async () => {
+test('hiring transports do not own result/depth caps or local deadlines', async () => {
   for (const path of hiringTransportModules) {
     const source = await readFile(new URL(path, import.meta.url), 'utf8')
     for (const [label, pattern] of forbiddenExecutionPolicy) {
@@ -64,16 +64,25 @@ test('hiring transports consume shared execution policy instead of owning limits
   }
 
   const social = await readFile(new URL('../server/hiring/sources/socialRefresh.ts', import.meta.url), 'utf8')
-  assert.match(social, /STANDARD_SOURCE_EXECUTION_POLICY\.maxItemsPerSource/u)
-  assert.match(social, /fetchWithSourceExecutionPolicy\(endpoint/u)
+  assert.doesNotMatch(social, /maxItemsPerSource/u)
+  assert.doesNotMatch(social, /\.slice\(0,\s*limit\)/u)
+  assert.match(social, /const cutoff = crawlCutoff\(\)/u)
+  assert.match(social, /fetch\(endpoint/u)
 })
 
-test('shared crawler remains the only vacancy adapter traversal policy', async () => {
-  const crawler = await readFile(new URL('../server/utils/cyclicJobBoardCrawler.ts', import.meta.url), 'utf8')
-  assert.match(crawler, /STANDARD_JOB_BOARD_CRAWL_POLICY/u)
-  assert.match(crawler, /crawlStandardJobBoard/u)
-  assert.match(crawler, /crawlStandardCursorJobBoard/u)
-  assert.match(crawler, /enrichStandardJobBoardDetails/u)
+test('shared crawler traversal is semantic rather than count/page bounded', async () => {
+  const crawler = await readFile(new URL('../packages/crawler-core/src/index.ts', import.meta.url), 'utf8')
+  const facade = await readFile(new URL('../server/utils/cyclicJobBoardCrawler.ts', import.meta.url), 'utf8')
+
+  assert.match(crawler, /shouldStop/u)
+  assert.match(crawler, /acceptItem/u)
+  assert.doesNotMatch(crawler, /STANDARD_CRAWL_POLICY[\s\S]*pagesPerRun:\s*\d+/u)
+  assert.doesNotMatch(crawler, /STANDARD_CRAWL_POLICY[\s\S]*maxPage:\s*\d+/u)
+  assert.match(facade, /shouldStop:\s*reachedJobDateBoundary/u)
+  assert.match(facade, /acceptItem:\s*isVacancy/u)
+  assert.match(facade, /crawlStandardJobBoard/u)
+  assert.match(facade, /crawlStandardCursorJobBoard/u)
+  assert.match(facade, /enrichStandardJobBoardDetails/u)
 })
 
 test('jobs worker schedules queue targets instead of a second aggregate refresh path', async () => {

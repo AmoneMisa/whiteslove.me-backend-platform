@@ -1,9 +1,5 @@
 import { extractCandidateContacts } from '@whiteslove/parsing-lexicon/hiring-candidate-fields'
 import { detectCandidateRemotePreference } from '@whiteslove/parsing-lexicon/hiring-semantics'
-import {
-  fetchWithSourceExecutionPolicy,
-  STANDARD_SOURCE_EXECUTION_POLICY,
-} from '../../../packages/crawler-core/src/executionPolicy.ts'
 import { HIRING_FACEBOOK_GROUPS } from '../../../shared/hiring/sources/facebookGroups'
 import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../utils/hiringDiagnostics'
 import { normalizeCandidate, trimThreadsProfileText } from '../../utils/hiringNormalize'
@@ -87,6 +83,10 @@ function cutoffTime(): number {
   return date.getTime()
 }
 
+function crawlCutoff(): string {
+  return new Date(cutoffTime()).toISOString()
+}
+
 function recentIso(value: string | null | undefined): string | null {
   if (!value) return null
   const time = Date.parse(value)
@@ -145,20 +145,20 @@ async function fetchTarget(target: SocialTarget): Promise<{ profiles: CvProfile[
   if (!endpoint) throw new Error('HIRING_SOCIAL_API_URL is not configured')
   if (key.length < 16) throw new Error('QUEUE_INTERNAL_KEY is not configured')
 
-  const limit = STANDARD_SOURCE_EXECUTION_POLICY.maxItemsPerSource
+  const cutoff = crawlCutoff()
   const payload = target.platform === 'facebook'
-    ? { source: 'facebook', target: target.target, limit }
-    : { source: 'threads', mode: 'search', query: target.query, limit }
-  const response = await fetchWithSourceExecutionPolicy(endpoint, {
+    ? { source: 'facebook', target: target.target, cutoff }
+    : { source: 'threads', mode: 'search', query: target.query, cutoff }
+  const response = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-queue-key': key },
     body: JSON.stringify(payload),
   })
   const body = await response.json().catch(() => ({})) as SocialResponse
   if (!response.ok || body.ok === false) throw new Error(body.error || `social fetcher -> HTTP ${response.status}`)
-  const items = (Array.isArray(body.items) ? body.items : []).slice(0, limit)
+  const items = Array.isArray(body.items) ? body.items : []
   return {
-    fetched: Math.min(Number.isFinite(body.count) ? Number(body.count) : items.length, limit),
+    fetched: Number.isFinite(body.count) ? Number(body.count) : items.length,
     profiles: items.map((item) => itemToProfile(item, target)).filter((item): item is CvProfile => Boolean(item)),
   }
 }

@@ -10,12 +10,23 @@ import type { Job } from './jobTypes'
 
 const JOB_CRAWLER_NAMESPACE = 'jobs:board'
 const JOB_CRAWLER_LOG_PREFIX = '[jobs]'
+const JOB_MAX_AGE_DAYS = 14
+const NON_VACANCY_KINDS = new Set([
+  'candidate',
+  'vacancy_digest',
+  'recruitment_ad',
+  'course',
+  'job_service',
+  'closed_vacancy',
+  'spam',
+])
 
 /**
- * Canonical crawl policy for ordinary vacancy boards.
+ * Canonical transport policy for ordinary vacancy boards.
  *
- * Execution mechanics live in crawler-core. Vacancy adapters only provide
- * source transport and parsing facts, never local traversal policy.
+ * Traversal completion is semantic: vacancy type + the site-wide 14-day
+ * retention window, or natural source exhaustion. Source adapters never own a
+ * page/result/run cap.
  */
 export const STANDARD_JOB_BOARD_CRAWL_POLICY = STANDARD_CRAWL_POLICY
 
@@ -37,11 +48,15 @@ export interface CursorJobBoardRun {
 
 export interface CyclicJobBoardOptions {
   key: string
-  pagesPerRun: number
-  maxPage: number
+  /** @deprecated Kept only for source compatibility; crawler-core ignores it. */
+  pagesPerRun?: number
+  /** @deprecated Kept only for source compatibility; crawler-core ignores it. */
+  maxPage?: number
   fetchPage: (page: number) => Promise<string>
   parsePage: (html: string, page: number) => Job[]
   requestDelayMs?: number
+  shouldStop?: (jobs: Job[], page: number) => boolean
+  acceptItem?: (job: Job) => boolean
   stopOnRepeatedPage?: boolean
 }
 
@@ -53,11 +68,14 @@ export interface StandardJobBoardOptions {
 
 export interface CursorJobBoardOptions {
   key: string
-  pagesPerRun: number
+  /** @deprecated Kept only for source compatibility; crawler-core ignores it. */
+  pagesPerRun?: number
   fetchPage: (cursor: string | null) => Promise<string>
   parsePage: (raw: string, cursor: string | null) => Job[]
   nextCursor: (raw: string) => string | null
   requestDelayMs?: number
+  shouldStop?: (jobs: Job[], cursor: string | null) => boolean
+  acceptItem?: (job: Job) => boolean
 }
 
 export interface StandardCursorJobBoardOptions {
@@ -82,6 +100,19 @@ function jobKey(job: Job): string {
   return job.url || job.id
 }
 
+function isVacancy(job: Job): boolean {
+  if (job.vacancyStatus === 'closed') return false
+  return !job.hiringKind || !NON_VACANCY_KINDS.has(job.hiringKind)
+}
+
+function reachedJobDateBoundary(jobs: Job[]): boolean {
+  const cutoff = Date.now() - JOB_MAX_AGE_DAYS * 86_400_000
+  return jobs.some((job) => {
+    const postedAt = Date.parse(job.postedAt)
+    return Number.isFinite(postedAt) && postedAt < cutoff
+  })
+}
+
 export async function crawlCyclicJobBoard(options: CyclicJobBoardOptions): Promise<CyclicJobBoardRun> {
   const run = await crawlCyclic<Job>({
     ...options,
@@ -103,9 +134,9 @@ export async function crawlCyclicJobBoard(options: CyclicJobBoardOptions): Promi
 export function crawlStandardJobBoard(options: StandardJobBoardOptions): Promise<CyclicJobBoardRun> {
   return crawlCyclicJobBoard({
     ...options,
-    pagesPerRun: STANDARD_JOB_BOARD_CRAWL_POLICY.pagesPerRun,
-    maxPage: STANDARD_JOB_BOARD_CRAWL_POLICY.maxPage,
     requestDelayMs: STANDARD_JOB_BOARD_CRAWL_POLICY.requestDelayMs,
+    shouldStop: reachedJobDateBoundary,
+    acceptItem: isVacancy,
     stopOnRepeatedPage: true,
   })
 }
@@ -143,7 +174,8 @@ export async function crawlCursorJobBoard(options: CursorJobBoardOptions): Promi
 export function crawlStandardCursorJobBoard(options: StandardCursorJobBoardOptions): Promise<CursorJobBoardRun> {
   return crawlCursorJobBoard({
     ...options,
-    pagesPerRun: STANDARD_JOB_BOARD_CRAWL_POLICY.pagesPerRun,
     requestDelayMs: STANDARD_JOB_BOARD_CRAWL_POLICY.requestDelayMs,
+    shouldStop: reachedJobDateBoundary,
+    acceptItem: isVacancy,
   })
 }

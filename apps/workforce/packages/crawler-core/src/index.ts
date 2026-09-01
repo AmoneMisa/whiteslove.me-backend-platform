@@ -2,8 +2,6 @@ const CURSOR_VERSION = 1
 const CURSOR_TTL_SECONDS = 30 * 86_400
 
 export const STANDARD_CRAWL_POLICY = Object.freeze({
-  pagesPerRun: 2,
-  maxPage: 10_000,
   requestDelayMs: 500,
 })
 
@@ -32,6 +30,7 @@ interface ExecutionOptions<T> {
   requestDelayMs?: number
   logPrefix?: string
   logger?: Pick<Console, 'warn'>
+  acceptItem?: (item: T) => boolean
 }
 
 interface StatefulOptions<T> extends ExecutionOptions<T> {
@@ -40,10 +39,13 @@ interface StatefulOptions<T> extends ExecutionOptions<T> {
 }
 
 export interface CyclicCrawlOptions<T, Raw = string> extends StatefulOptions<T> {
-  pagesPerRun: number
-  maxPage: number
+  /** @deprecated Traversal depth is semantic; this compatibility field is ignored. */
+  pagesPerRun?: number
+  /** @deprecated Traversal depth is semantic; this compatibility field is ignored. */
+  maxPage?: number
   fetchPage: (page: number) => Promise<Raw>
   parsePage: (raw: Raw, page: number) => T[]
+  shouldStop?: (items: T[], page: number) => boolean
   stopOnRepeatedPage?: boolean
 }
 
@@ -56,10 +58,12 @@ export interface CyclicCrawlRun<T> {
 }
 
 export interface CursorCrawlOptions<T, Raw = string> extends StatefulOptions<T> {
-  pagesPerRun: number
+  /** @deprecated Traversal depth is semantic; this compatibility field is ignored. */
+  pagesPerRun?: number
   fetchPage: (cursor: string | null) => Promise<Raw>
   parsePage: (raw: Raw, cursor: string | null) => T[]
   nextCursor: (raw: Raw) => string | null
+  shouldStop?: (items: T[], cursor: string | null) => boolean
 }
 
 export interface CursorCrawlRun<T> {
@@ -170,6 +174,10 @@ function delay(ms: number): Promise<void> {
   return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve()
 }
 
+function accepted<T>(items: T[], acceptItem?: (item: T) => boolean): T[] {
+  return acceptItem ? items.filter(acceptItem) : items
+}
+
 function dedupe<T>(items: T[], itemKey: (item: T) => string): T[] {
   const byKey = new Map<string, T>()
   for (const item of items) byKey.set(itemKey(item), item)
@@ -193,19 +201,18 @@ function warn(
   )
 }
 
+/**
+ * Traverse numbered pages until a semantic boundary, natural source exhaustion,
+ * or repeated page is reached. Numeric page/run caps are intentionally ignored:
+ * a transport failure pauses the cursor for retry instead of being reported as
+ * successful completion.
+ */
 export async function crawlCyclic<T, Raw = string>(
   options: CyclicCrawlOptions<T, Raw>,
 ): Promise<CyclicCrawlRun<T>> {
-  const pagesPerRun = Math.max(1, Math.min(50, options.pagesPerRun))
-  const maxPage = Math.max(2, Math.min(10_000, options.maxPage))
   const requestDelayMs = Math.max(0, Math.min(10_000, options.requestDelayMs || 0))
   const cursor = await loadCursor(options.state, options.namespace, options.key)
-  const startPage = Math.min(maxPage, Math.max(2, cursor.nextPage))
-  const historicalPages = Array.from(
-    { length: Math.min(pagesPerRun, maxPage - startPage + 1) },
-    (_, index) => startPage + index,
-  )
-  const pages = [1, ...historicalPages]
+  const startPage = Math.max(2, cursor.nextPage)
   const items: T[] = []
   const readPages: number[] = []
   let nextPage = startPage
@@ -214,7 +221,7 @@ export async function crawlCyclic<T, Raw = string>(
   let firstSignature: string | null = null
   let previousHistoricalSignature: string | null = null
 
-  for (const page of pages) {
+  const visit = async (page: number): Promise<'continue' | 'stop' | 'failed'> => {
     if (readPages.length) await delay(requestDelayMs)
     try {
       const pageItems = options.parsePage(await options.fetchPage(page), page)
@@ -228,26 +235,37 @@ export async function crawlCyclic<T, Raw = string>(
         && (signature === firstSignature || signature === previousHistoricalSignature)
       ) {
         reachedEnd = true
-        break
+        return 'stop'
       }
 
       readPages.push(page)
-      items.push(...pageItems)
+      items.push(...accepted(pageItems, options.acceptItem))
+
+      if (!pageItems.length || options.shouldStop?.(pageItems, page)) {
+        reachedEnd = true
+        return 'stop'
+      }
 
       if (page > 1) {
         previousHistoricalSignature = signature
-        if (!pageItems.length) {
-          reachedEnd = true
-          break
-        }
         nextPage = page + 1
-        if (nextPage > maxPage) reachedEnd = true
       }
+      return 'continue'
     } catch (error) {
       if (page === 1) throw error
       failedHistoricalPage = page
       warn(options, `pagination paused at page ${page}`, error)
-      break
+      return 'failed'
+    }
+  }
+
+  const headResult = await visit(1)
+  if (headResult === 'continue') {
+    let page = startPage
+    while (true) {
+      const result = await visit(page)
+      if (result !== 'continue') break
+      page += 1
     }
   }
 
@@ -271,10 +289,13 @@ export async function crawlCyclic<T, Raw = string>(
   }
 }
 
+/**
+ * Traverse opaque cursors to a semantic boundary or natural end. Legacy
+ * pagesPerRun is accepted for compatibility but never limits traversal.
+ */
 export async function crawlCursor<T, Raw = string>(
   options: CursorCrawlOptions<T, Raw>,
 ): Promise<CursorCrawlRun<T>> {
-  const pagesPerRun = Math.max(1, Math.min(50, options.pagesPerRun))
   const requestDelayMs = Math.max(0, Math.min(10_000, options.requestDelayMs || 0))
   const saved = await loadOpaqueCursor(options.state, options.namespace, options.key)
   const items: T[] = []
@@ -283,23 +304,40 @@ export async function crawlCursor<T, Raw = string>(
   const firstRaw = await options.fetchPage(null)
   const firstItems = options.parsePage(firstRaw, null)
   const firstNextCursor = options.nextCursor(firstRaw)
-  items.push(...firstItems)
+  items.push(...accepted(firstItems, options.acceptItem))
   cursors.push(null)
 
   let nextCursor = saved.nextCursor || firstNextCursor
-  let reachedEnd = !nextCursor
+  let reachedEnd = !nextCursor || Boolean(options.shouldStop?.(firstItems, null))
   let failedCursor: string | null = null
+  const seenCursors = new Set<string>()
 
-  for (let index = 0; index < pagesPerRun && nextCursor; index += 1) {
-    await delay(requestDelayMs)
+  while (!reachedEnd && nextCursor) {
     const currentCursor = nextCursor
+    if (seenCursors.has(currentCursor)) {
+      reachedEnd = true
+      break
+    }
+    seenCursors.add(currentCursor)
+    await delay(requestDelayMs)
+
     try {
       const raw = await options.fetchPage(currentCursor)
       const pageItems = options.parsePage(raw, currentCursor)
-      items.push(...pageItems)
+      items.push(...accepted(pageItems, options.acceptItem))
       cursors.push(currentCursor)
-      nextCursor = options.nextCursor(raw)
-      if (!nextCursor) reachedEnd = true
+
+      if (!pageItems.length || options.shouldStop?.(pageItems, currentCursor)) {
+        reachedEnd = true
+        break
+      }
+
+      const followingCursor = options.nextCursor(raw)
+      if (!followingCursor || followingCursor === currentCursor || seenCursors.has(followingCursor)) {
+        reachedEnd = true
+        break
+      }
+      nextCursor = followingCursor
     } catch (error) {
       failedCursor = currentCursor
       warn(options, 'cursor pagination paused', error)

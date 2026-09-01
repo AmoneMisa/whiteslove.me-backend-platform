@@ -7,12 +7,14 @@ import {
   STANDARD_SOURCE_EXECUTION_POLICY,
 } from '../src/executionPolicy.ts'
 
-test('standard source execution policy keeps the shared crawler limits', () => {
+test('standard source execution policy owns transport mechanics only', () => {
   assert.deepEqual(STANDARD_SOURCE_EXECUTION_POLICY, {
     concurrency: 10,
     requestTimeoutMs: 6_000,
-    maxItemsPerSource: 60,
   })
+  assert.equal('maxItemsPerSource' in STANDARD_SOURCE_EXECUTION_POLICY, false)
+  assert.equal('maxPage' in STANDARD_SOURCE_EXECUTION_POLICY, false)
+  assert.equal('pagesPerRun' in STANDARD_SOURCE_EXECUTION_POLICY, false)
 })
 
 test('shared fetch policy preserves caller cancellation and adds the common deadline', async () => {
@@ -34,7 +36,7 @@ test('shared fetch policy preserves caller cancellation and adds the common dead
   assert.equal(observedSignal.aborted, true)
 })
 
-test('shared source request signal always uses a bounded deadline', () => {
+test('shared source request signal always uses a bounded transport deadline', () => {
   const signal = sourceRequestSignal()
   assert.ok(signal instanceof AbortSignal)
   assert.equal(signal.aborted, false)

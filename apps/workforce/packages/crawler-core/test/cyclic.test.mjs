@@ -30,52 +30,54 @@ function base(state, key) {
   }
 }
 
-test('cyclic crawl keeps existing cursor keys and rotates historical pages', async () => {
+test('numbered crawl ignores legacy page caps and runs to the semantic boundary', async () => {
   const state = new MemoryState()
   const pages = new Map([
     [1, [{ id: 'new' }]],
-    [2, [{ id: 'old-2' }]],
-    [3, [{ id: 'old-3' }]],
-    [4, []],
+    [2, [{ id: 'fresh-2' }]],
+    [3, [{ id: 'old-boundary' }]],
+    [4, [{ id: 'must-not-read' }]],
   ])
 
-  const first = await crawlCyclic({
+  const result = await crawlCyclic({
     ...base(state, 'board'),
-    pagesPerRun: 2,
-    maxPage: 4,
+    pagesPerRun: 1,
+    maxPage: 2,
     fetchPage: async (page) => page,
     parsePage: (page) => pages.get(page) || [],
+    shouldStop: (items) => items.some((item) => item.id === 'old-boundary'),
     stopOnRepeatedPage: true,
   })
 
-  assert.deepEqual(first.pages, [1, 2, 3])
-  assert.equal(first.nextPage, 4)
-  assert.equal(first.cycle, 0)
-  assert.equal(first.reachedEnd, false)
-  assert.deepEqual(first.items.map(itemKey), ['new', 'old-2', 'old-3'])
+  assert.deepEqual(result.pages, [1, 2, 3])
+  assert.equal(result.nextPage, 2)
+  assert.equal(result.cycle, 1)
+  assert.equal(result.reachedEnd, true)
+  assert.deepEqual(result.items.map(itemKey), ['new', 'fresh-2', 'old-boundary'])
   assert.ok(state.values.has('jobs:board-cursor:v1:board'))
+})
 
-  const second = await crawlCyclic({
-    ...base(state, 'board'),
-    pagesPerRun: 2,
-    maxPage: 4,
+test('entity acceptance is independent from traversal boundary', async () => {
+  const state = new MemoryState()
+  const result = await crawlCyclic({
+    ...base(state, 'types'),
     fetchPage: async (page) => page,
-    parsePage: (page) => pages.get(page) || [],
-    stopOnRepeatedPage: true,
+    parsePage: (page) => page === 1
+      ? [{ id: 'candidate', kind: 'candidate' }, { id: 'vacancy', kind: 'vacancy' }]
+      : [{ id: 'old', kind: 'vacancy', old: true }],
+    acceptItem: (item) => item.kind === 'vacancy',
+    shouldStop: (items) => items.some((item) => item.old),
   })
 
-  assert.deepEqual(second.pages, [1, 4])
-  assert.equal(second.nextPage, 2)
-  assert.equal(second.cycle, 1)
-  assert.equal(second.reachedEnd, true)
+  assert.deepEqual(result.pages, [1, 2])
+  assert.deepEqual(result.items.map(itemKey), ['vacancy', 'old'])
+  assert.equal(result.reachedEnd, true)
 })
 
 test('repeated historical page ends the cycle without duplicating items', async () => {
   const state = new MemoryState()
   const result = await crawlCyclic({
     ...base(state, 'repeat'),
-    pagesPerRun: 2,
-    maxPage: 10,
     fetchPage: async (page) => page,
     parsePage: () => [{ id: 'same' }],
     stopOnRepeatedPage: true,
@@ -92,8 +94,6 @@ test('historical failure preserves the failed page for the next run', async () =
   const state = new MemoryState()
   const result = await crawlCyclic({
     ...base(state, 'retry'),
-    pagesPerRun: 2,
-    maxPage: 10,
     fetchPage: async (page) => {
       if (page === 2) throw new Error('temporary')
       return page
@@ -104,11 +104,12 @@ test('historical failure preserves the failed page for the next run', async () =
   assert.deepEqual(result.pages, [1])
   assert.equal(result.nextPage, 2)
   assert.equal(result.cycle, 0)
+  assert.equal(result.reachedEnd, false)
   const saved = JSON.parse(state.values.get('jobs:board-cursor:v1:retry'))
   assert.equal(saved.nextPage, 2)
 })
 
-test('opaque cursor crawl resumes and deduplicates by injected item key', async () => {
+test('opaque cursor crawl ignores legacy run caps and reaches natural end', async () => {
   const state = new MemoryState()
   const responses = new Map([
     [null, { items: [{ id: 'a', value: 1 }], next: 'p2' }],
@@ -118,7 +119,7 @@ test('opaque cursor crawl resumes and deduplicates by injected item key', async 
 
   const result = await crawlCursor({
     ...base(state, 'opaque'),
-    pagesPerRun: 2,
+    pagesPerRun: 1,
     fetchPage: async (cursor) => responses.get(cursor),
     parsePage: (raw) => raw.items,
     nextCursor: (raw) => raw.next,
@@ -131,6 +132,25 @@ test('opaque cursor crawl resumes and deduplicates by injected item key', async 
   assert.deepEqual(result.items.map(itemKey), ['a', 'b', 'c'])
   assert.equal(result.items[0].value, 2)
   assert.ok(state.values.has('jobs:board-opaque-cursor:v1:opaque'))
+})
+
+test('opaque cursor failure preserves the failed cursor for retry', async () => {
+  const state = new MemoryState()
+  const result = await crawlCursor({
+    ...base(state, 'opaque-retry'),
+    fetchPage: async (cursor) => {
+      if (cursor === 'p2') throw new Error('temporary')
+      return { items: [{ id: 'head' }], next: 'p2' }
+    },
+    parsePage: (raw) => raw.items,
+    nextCursor: (raw) => raw.next,
+  })
+
+  assert.deepEqual(result.cursors, [null])
+  assert.equal(result.reachedEnd, false)
+  assert.equal(result.nextCursor, 'p2')
+  const saved = JSON.parse(state.values.get('jobs:board-opaque-cursor:v1:opaque-retry'))
+  assert.equal(saved.nextCursor, 'p2')
 })
 
 test('detail enrichment preserves summaries when a detail request fails', async () => {
