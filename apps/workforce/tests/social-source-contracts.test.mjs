@@ -7,7 +7,7 @@ import { HIRING_FACEBOOK_GROUPS } from '../shared/hiring/sources/facebookGroups.
 const jobs = await readFile(new URL('../server/utils/socialJobSources.ts', import.meta.url), 'utf8')
 const hiring = await readFile(new URL('../server/hiring/sources/socialRefresh.ts', import.meta.url), 'utf8')
 const linkedin = await readFile(new URL('../server/hiring/sources/linkedInRefresh.ts', import.meta.url), 'utf8')
-const envExample = await readFile(new URL('../.env.example', import.meta.url), 'utf8')
+const compose = await readFile(new URL('../../../docker-compose.yml', import.meta.url), 'utf8')
 
 test('Threads vacancy discovery uses one durable target per shared search query', () => {
   assert.match(jobs, /source:\s*'threads',\s*mode:\s*'search',\s*query:\s*target\.query/)
@@ -18,9 +18,9 @@ test('Threads vacancy discovery uses one durable target per shared search query'
   assert.doesNotMatch(jobs, /Promise\.all(?:Settled)?/)
 })
 
-test('candidate social discovery uses the same Threads search proxy', () => {
+test('candidate social discovery uses the shared backend social transport', () => {
   assert.match(hiring, /source:\s*'threads',\s*mode:\s*'search',\s*query:/)
-  assert.match(envExample, /HIRING_SOCIAL_API_URL=http:\/\/flat-finder-backend:4000\/internal\/social\/fetch/)
+  assert.match(compose, /HIRING_SOCIAL_API_URL:\s*http:\/\/flats-api:4000\/internal\/social\/fetch/u)
 })
 
 test('LinkedIn candidate discovery requests the dedicated public candidate mode', () => {
