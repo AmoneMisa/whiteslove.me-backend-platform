@@ -1,6 +1,6 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {pool} from './db.js';
-import {enqueueTasks} from './pgQueue.js';
+import {enqueueTasks} from './infrastructure/queue/pgQueue.js';
 
 const CACHE_BUCKET_MS = Math.max(
   60_000,

@@ -106,8 +106,8 @@ test('migrated runtime modules never mutate database schema', async () => {
     '../src/availability.js',
     '../src/availability-sweep.js',
     '../src/availability-routes.js',
-    '../src/pgQueue.js',
-    '../src/queueTaskDedup.js',
+    '../src/infrastructure/queue/pgQueue.js',
+    '../src/infrastructure/queue/queueTaskDedup.js',
     '../src/places-db.js',
     '../src/listing-semantics.js',
   ];

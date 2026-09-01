@@ -55,7 +55,7 @@ test('photo anti-fake uses indexed bands and one atomic cluster merge call', asy
 });
 
 test('crawl queue batches inserts and rate-limits expired lease recovery', async () => {
-  const queue = await source('../src/pgQueue.js');
+  const queue = await source('../src/infrastructure/queue/pgQueue.js');
 
   assert.match(queue, /jsonb_to_recordset\(\$1::jsonb\)/u);
   assert.match(queue, /ENQUEUE_BATCH_SIZE/u);

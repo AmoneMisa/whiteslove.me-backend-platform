@@ -10,7 +10,7 @@ import {
   completeTask,
   enqueueTasks,
   failTask,
-} from '../src/pgQueue.js';
+} from '../src/infrastructure/queue/pgQueue.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 

@@ -1,5 +1,5 @@
 import {randomUUID} from 'node:crypto';
-import {pool} from './db.js';
+import {pool} from '../../db.js';
 
 const RUNNING_TTL_MS = Math.max(
   30_000,

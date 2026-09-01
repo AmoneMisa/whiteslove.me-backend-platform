@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { pool } from './db.js';
+import { pool } from '../../db.js';
 
 const DEFAULT_LEASE_MS = Math.max(
   60_000,

@@ -4,8 +4,8 @@ import {readFileSync} from 'node:fs';
 
 const queuePlan = readFileSync(new URL('../src/queuePlan.js', import.meta.url), 'utf8');
 const queueTasks = readFileSync(new URL('../src/queueTasks.js', import.meta.url), 'utf8');
-const queueDedup = readFileSync(new URL('../src/queueTaskDedup.js', import.meta.url), 'utf8');
-const pgQueue = readFileSync(new URL('../src/pgQueue.js', import.meta.url), 'utf8');
+const queueDedup = readFileSync(new URL('../src/infrastructure/queue/queueTaskDedup.js', import.meta.url), 'utf8');
+const pgQueue = readFileSync(new URL('../src/infrastructure/queue/pgQueue.js', import.meta.url), 'utf8');
 const customQueue = readFileSync(new URL('../src/custom-source-queue.js', import.meta.url), 'utf8');
 const listingRoutes = readFileSync(new URL('../src/listing-routes.js', import.meta.url), 'utf8');
 const listingItemRoutes = readFileSync(new URL('../src/listing-item-routes.js', import.meta.url), 'utf8');

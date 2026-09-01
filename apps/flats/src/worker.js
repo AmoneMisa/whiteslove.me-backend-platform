@@ -9,7 +9,7 @@ import {
   dispatchGenerationIfIdle,
   failTask,
   pruneQueueHistory,
-} from './pgQueue.js';
+} from './infrastructure/queue/pgQueue.js';
 import {claimCustomSourceTask} from './custom-source-queue.js';
 import {buildCrawlPlan, QUEUE_SHARDS} from './queuePlan.js';
 import {refreshPlaces} from './scheduler.js';

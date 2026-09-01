@@ -8,7 +8,7 @@ import { telegramHousingChannels } from './telegram-housing-sources.js';
 import { throttle } from './ratelimit.js';
 import { upsertListings } from './db.js';
 import { indexListings } from './infrastructure/search/elasticsearch.js';
-import { executeQueueTaskOnce } from './queueTaskDedup.js';
+import { executeQueueTaskOnce } from './infrastructure/queue/queueTaskDedup.js';
 import { geocodeListingsPersistent } from './geocode-persistent.js';
 import { rejectOutOfAreaCoordinates } from './coordinate-validation.js';
 import { reconcileAuthoritativeOlxSegment } from './crawl-reconciliation.js';
