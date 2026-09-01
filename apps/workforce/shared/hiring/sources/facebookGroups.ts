@@ -1,0 +1,33 @@
+/** Verified public Facebook discovery targets. Content classification stays domain-specific. */
+export const HIRING_FACEBOOK_GROUPS = [
+  { key: 'facebook-uz-tashkent-candidates', label: 'Ищу работу в Ташкенте', country: 'UZ', city: 'Tashkent', target: 'https://www.facebook.com/groups/165844980247044/' },
+  { key: 'facebook-uz-tashkent-work', label: 'Работа в Ташкенте', country: 'UZ', city: 'Tashkent', target: 'https://www.facebook.com/groups/210512423334861/' },
+  { key: 'facebook-uz-work', label: 'Есть работа! Узбекистан', country: 'UZ', target: 'https://www.facebook.com/groups/182315195189726/' },
+  { key: 'facebook-uz-work-search', label: 'РАБОТА — УЗБЕКИСТАН', country: 'UZ', target: 'https://www.facebook.com/groups/1734634446766716/' },
+  { key: 'facebook-uz-work-746452072371231', label: 'Работа (Узбекистан)', country: 'UZ', target: 'https://www.facebook.com/groups/746452072371231/' },
+  { key: 'facebook-uz-pro100rabota', label: 'РАБОТА.UZ', country: 'UZ', target: 'https://www.facebook.com/groups/Pro100Rabota/' },
+  { key: 'facebook-uz-tashkent-595371034269358', label: 'Работа в Ташкенте для всех!', country: 'UZ', city: 'Tashkent', target: 'https://www.facebook.com/groups/595371034269358/' },
+  { key: 'facebook-uz-tashkent-980733635681099', label: 'Работа в Ташкенте', country: 'UZ', city: 'Tashkent', target: 'https://www.facebook.com/groups/980733635681099/' },
+  { key: 'facebook-uz-tashkent-786642551393975', label: 'Работа в Ташкенте найдется всем!', country: 'UZ', city: 'Tashkent', target: 'https://www.facebook.com/groups/786642551393975/' },
+  { key: 'facebook-uz-country-1999223366981572', label: 'Работа в Ташкенте и Узбекистане', country: 'UZ', target: 'https://www.facebook.com/groups/1999223366981572/' },
+  { key: 'facebook-uz-tashkent-www24', label: 'Работа в Ташкенте (без спама)', country: 'UZ', city: 'Tashkent', target: 'https://www.facebook.com/groups/www.24.uz/' },
+  { key: 'facebook-uz-tashkent-685642281057911', label: 'Работа в Ташкенте всем!', country: 'UZ', city: 'Tashkent', target: 'https://www.facebook.com/groups/685642281057911/' },
+  { key: 'facebook-uz-tashkent-191361055627904', label: 'РАБОТА — ТАШКЕНТ — ISH', country: 'UZ', city: 'Tashkent', target: 'https://www.facebook.com/groups/191361055627904/' },
+  { key: 'facebook-uz-tashkent-1476972959279156', label: 'Работа в Ташкенте', country: 'UZ', city: 'Tashkent', target: 'https://www.facebook.com/groups/1476972959279156/' },
+  { key: 'facebook-uz-tashkent-worktashkent', label: 'Работа в Ташкенте всем!', country: 'UZ', city: 'Tashkent', target: 'https://www.facebook.com/groups/worktashkent/' },
+  { key: 'facebook-uz-tashkent-2492166417522625', label: 'Вакансии и резюме в Ташкенте', country: 'UZ', city: 'Tashkent', target: 'https://www.facebook.com/groups/2492166417522625/' },
+  { key: 'facebook-uz-country-1377263935925683', label: 'Работа, резюме и вакансии в Узбекистане', country: 'UZ', target: 'https://www.facebook.com/groups/1377263935925683/' },
+  { key: 'facebook-uz-tashkent-1718377801731040', label: 'Vacancies for Tashkent 24/7', country: 'UZ', city: 'Tashkent', target: 'https://www.facebook.com/groups/1718377801731040/' },
+  { key: 'facebook-ua-freelancers', label: 'Freelancers Ukraine', country: 'UA', target: 'https://www.facebook.com/groups/freelancers.ukraine/' },
+  { key: 'facebook-ro-bucharest-anglojobs', label: 'Bucharest English speaking jobs', country: 'RO', city: 'Bucharest', target: 'https://www.facebook.com/groups/bucharestanglojobs/' },
+  { key: 'facebook-ro-bucharest-jobs-housing', label: 'Бухарест — работа, жильё', country: 'RO', city: 'Bucharest', target: 'https://www.facebook.com/groups/jobs.bucharest.romania/' },
+  { key: 'facebook-ro-ukrainians-5239555629422157', label: 'Jobs for Ukrainians in Romania', country: 'RO', target: 'https://www.facebook.com/groups/5239555629422157/' },
+  { key: 'facebook-ro-ukrainians-521364969619527', label: 'Работа в Румынии для украинцев', country: 'RO', target: 'https://www.facebook.com/groups/521364969619527/' },
+  { key: 'facebook-ro-ukrainians-5250609588304117', label: 'Работа в Румынии для украинцев', country: 'RO', target: 'https://www.facebook.com/groups/5250609588304117/' },
+  { key: 'facebook-ro-bucharestjob', label: 'Бухарест — работа и вакансии', country: 'RO', city: 'Bucharest', target: 'https://www.facebook.com/groups/bucharestjob/' },
+  { key: 'facebook-ro-work-1353172612072890', label: 'Работа в Румынии', country: 'RO', target: 'https://www.facebook.com/groups/1353172612072890/' },
+  { key: 'facebook-ro-work-3298063390436508', label: 'Робота в Румунії', country: 'RO', target: 'https://www.facebook.com/groups/3298063390436508/' },
+  { key: 'facebook-kz-work-1349245361776984', label: 'Работа в Казахстане', country: 'KZ', target: 'https://www.facebook.com/groups/1349245361776984/' },
+] as const
+
+export type HiringFacebookGroup = (typeof HIRING_FACEBOOK_GROUPS)[number]

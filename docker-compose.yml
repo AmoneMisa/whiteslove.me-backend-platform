@@ -383,11 +383,135 @@ services:
       retries: 5
       start_period: 30s
 
+  job-browser-fetcher:
+    build: { context: ./services/job-browser-fetcher }
+    image: ${JOB_BROWSER_FETCHER_IMAGE:-whiteslove-backend-platform/job-browser-fetcher:local}
+    restart: unless-stopped
+    environment:
+      JOB_BROWSER_IMPERSONATE: ${JOB_BROWSER_IMPERSONATE:-chrome124}
+      JOB_BROWSER_TIMEOUT: ${JOB_BROWSER_TIMEOUT:-25}
+      JOB_BROWSER_ATTEMPTS: ${JOB_BROWSER_ATTEMPTS:-2}
+      JOB_BROWSER_RETRY_BACKOFF: ${JOB_BROWSER_RETRY_BACKOFF:-2}
+      JOB_BROWSER_ALLOWED_HOSTS: ${JOB_BROWSER_ALLOWED_HOSTS:-flexjobs.com,wellfound.com,workingnomads.com,jobspresso.co,virtualvocations.com,skipthedrive.com}
+    networks: [ platform ]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4040/health',timeout=3).status==200 else 1)"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      me.whiteslove.platform.domain: vacancies
+      me.whiteslove.platform.role: transport
+
+  workforce-queue-migrate:
+    build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
+    image: ${WORKFORCE_QUEUE_IMAGE:-whiteslove-backend-platform/workforce-queue:local}
+    command: ["node", "--experimental-transform-types", "./scripts/migrate-database.ts"]
+    restart: "no"
+    environment:
+      JOBS_QUEUE_MIGRATION_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://whiteslove:change-me@platform-postgres:5432/whiteslove}
+      JOBS_QUEUE_DB_SCHEMA: queue
+    depends_on:
+      platform-postgres: { condition: service_healthy }
+    networks: [ platform ]
+    labels:
+      me.whiteslove.platform.domain: workforce-queue
+      me.whiteslove.platform.role: migration
+
+  vacancies-migrate:
+    build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
+    image: ${VACANCIES_IMAGE:-whiteslove-backend-platform/vacancies:local}
+    command: ["node", "--experimental-transform-types", "./scripts/migrate-database.ts"]
+    restart: "no"
+    environment:
+      JOBS_MIGRATION_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://whiteslove:change-me@platform-postgres:5432/whiteslove}
+      JOBS_DB_SCHEMA: jobs
+    depends_on:
+      platform-postgres: { condition: service_healthy }
+    networks: [ platform ]
+    labels:
+      me.whiteslove.platform.domain: vacancies
+      me.whiteslove.platform.role: migration
+
+  cv-migrate:
+    build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
+    image: ${CV_IMAGE:-whiteslove-backend-platform/cv:local}
+    command: ["node", "--experimental-transform-types", "./scripts/migrate-database.ts"]
+    restart: "no"
+    environment:
+      HIRING_MIGRATION_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://whiteslove:change-me@platform-postgres:5432/whiteslove}
+      HIRING_DB_SCHEMA: hiring
+    depends_on:
+      platform-postgres: { condition: service_healthy }
+    networks: [ platform ]
+    labels:
+      me.whiteslove.platform.domain: cv
+      me.whiteslove.platform.role: migration
+
+  vacancies-worker:
+    build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
+    image: ${VACANCIES_IMAGE:-whiteslove-backend-platform/vacancies:local}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: ./.env
+        required: false
+    environment: &workforce-environment
+      WORKFORCE_DOMAIN: vacancies
+      JOBS_RUNTIME_ROLE: worker
+      JOBS_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://whiteslove:change-me@platform-postgres:5432/whiteslove}
+      JOBS_DB_SCHEMA: jobs
+      HIRING_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://whiteslove:change-me@platform-postgres:5432/whiteslove}
+      HIRING_DB_SCHEMA: hiring
+      JOBS_QUEUE_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://whiteslove:change-me@platform-postgres:5432/whiteslove}
+      JOBS_QUEUE_DB_SCHEMA: queue
+      AI_WORKER_URL: http://ai-worker:4030
+      ELASTICSEARCH_URL: http://platform-elasticsearch:9200
+      JOBS_ELASTICSEARCH_INDEX: job-listings-v1
+      JOB_BROWSER_FETCHER_URL: http://job-browser-fetcher:4040
+      SITE_STATE_DIR: /var/app/state/workforce
+    volumes:
+      - workforce-state:/var/app/state
+    depends_on:
+      vacancies-migrate: { condition: service_completed_successfully }
+      workforce-queue-migrate: { condition: service_completed_successfully }
+      job-browser-fetcher: { condition: service_healthy }
+    networks: [ platform ]
+    labels:
+      me.whiteslove.platform.domain: vacancies
+      me.whiteslove.platform.role: worker
+
+  cv-worker:
+    build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
+    image: ${CV_IMAGE:-whiteslove-backend-platform/cv:local}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      <<: *workforce-environment
+      WORKFORCE_DOMAIN: cv
+      JOBS_QUEUE_WORKER_ID: cv-worker
+      HIRING_SOCIAL_API_URL: http://flats-api:4000/internal/social/fetch
+    volumes:
+      - workforce-state:/var/app/state
+    depends_on:
+      cv-migrate: { condition: service_completed_successfully }
+      workforce-queue-migrate: { condition: service_completed_successfully }
+      job-browser-fetcher: { condition: service_healthy }
+    networks: [ platform ]
+    labels:
+      me.whiteslove.platform.domain: cv
+      me.whiteslove.platform.role: worker
+
 volumes:
   freellmapi-data:
   platform-postgres-data:
   platform-elasticsearch-data:
   flats-photo-cache:
+  workforce-state:
 
 networks:
   platform:

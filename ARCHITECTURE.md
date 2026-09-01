@@ -95,4 +95,7 @@ semantic parsing and product normalization stay in domain adapters.
 - Flat Finder API, worker, migrations, Elasticsearch image, OLX transport and
   social transport are imported.
 - Source repositories remain unchanged and production traffic has not moved.
-- Vacancy and CV extraction remains pending.
+- Vacancy and CV workers, migrations and browser transport are imported as a
+  transitional `apps/workforce` runtime. They run as separate services with
+  distinct image tags and queue claim filters.
+- Vacancy and CV read APIs remain in the Personal Site until the next phase.
