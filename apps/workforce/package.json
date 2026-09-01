@@ -11,7 +11,7 @@
     "lint:fix": "eslint . --fix",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "test": "node --experimental-transform-types --test tests/*.test.mjs jobs-worker/domain-isolation.test.mjs api/api-isolation.test.mjs"
+    "test": "node --experimental-transform-types --import ./jobs-worker/alias-loader.mjs --test tests/*.test.mjs jobs-worker/domain-isolation.test.mjs api/api-isolation.test.mjs"
   },
   "dependencies": {
     "@nuxt/icon": "^2.5.1",
