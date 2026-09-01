@@ -28,6 +28,12 @@ const sourceModules = [
   'usaVisaSponsorSource.ts',
 ]
 
+const hiringTransportModules = [
+  '../server/hiring/sources/socialRefresh.ts',
+  '../server/hiring/sources/web/http.ts',
+  '../server/hiring/sources/secondary/http.ts',
+]
+
 const forbiddenExecutionPolicy = [
   ['AbortSignal.timeout', /AbortSignal\.timeout\s*\(/u],
   ['Promise.all', /Promise\.all(?:Settled)?\s*\(/u],
@@ -46,6 +52,20 @@ test('vacancy source adapters do not own crawler execution policy or broad fan-o
       assert.doesNotMatch(source, pattern, `${filename} contains ${label}; execution policy belongs to the shared crawler/queue worker`)
     }
   }
+})
+
+test('hiring transports consume shared execution policy instead of owning limits or deadlines', async () => {
+  for (const path of hiringTransportModules) {
+    const source = await readFile(new URL(path, import.meta.url), 'utf8')
+    for (const [label, pattern] of forbiddenExecutionPolicy) {
+      assert.doesNotMatch(source, pattern, `${path} contains ${label}; execution policy belongs to crawler-core`)
+    }
+    assert.doesNotMatch(source, /\blimit\s*:\s*\d+/u, `${path} contains a source-local numeric result limit`)
+  }
+
+  const social = await readFile(new URL('../server/hiring/sources/socialRefresh.ts', import.meta.url), 'utf8')
+  assert.match(social, /STANDARD_SOURCE_EXECUTION_POLICY\.maxItemsPerSource/u)
+  assert.match(social, /fetchWithSourceExecutionPolicy\(endpoint/u)
 })
 
 test('shared crawler remains the only vacancy adapter traversal policy', async () => {

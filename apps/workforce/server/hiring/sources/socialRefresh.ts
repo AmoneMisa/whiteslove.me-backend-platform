@@ -1,14 +1,16 @@
-import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../utils/hiringDiagnostics'
-import { normalizeCandidate, trimThreadsProfileText } from '../../utils/hiringNormalize'
-import { detectCity, isLikelyCvPost } from '../domain/telegramCandidateParser'
-import type { CvProfile } from '../../utils/hiringTypes'
 import { extractCandidateContacts } from '@whiteslove/parsing-lexicon/hiring-candidate-fields'
 import { detectCandidateRemotePreference } from '@whiteslove/parsing-lexicon/hiring-semantics'
-import { persistWebProfiles } from '../webProfilePersistence'
+import {
+  fetchWithSourceExecutionPolicy,
+  STANDARD_SOURCE_EXECUTION_POLICY,
+} from '../../../packages/crawler-core/src/executionPolicy.ts'
 import { HIRING_FACEBOOK_GROUPS } from '../../../shared/hiring/sources/facebookGroups'
+import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../utils/hiringDiagnostics'
+import { normalizeCandidate, trimThreadsProfileText } from '../../utils/hiringNormalize'
+import type { CvProfile } from '../../utils/hiringTypes'
+import { detectCity, isLikelyCvPost } from '../domain/telegramCandidateParser'
+import { persistWebProfiles } from '../webProfilePersistence'
 
-const REQUEST_TIMEOUT_MS = 180_000
-const DEFAULT_LIMIT = 80
 const MAX_AGE_MONTHS = 3
 
 type SocialPlatform = 'facebook' | 'threads'
@@ -22,7 +24,6 @@ type SocialTarget = {
   city?: string
   target?: string
   query?: string
-  limit?: number
 }
 
 type SocialItem = {
@@ -42,26 +43,26 @@ type SocialResponse = {
 }
 
 const TARGETS: SocialTarget[] = [
-  ...HIRING_FACEBOOK_GROUPS.map((group) => ({ ...group, platform: 'facebook' as const, limit: group.country === 'UZ' ? 120 : 100 })),
-  { key: 'threads-uz-ru', label: 'Threads: ищу работу Ташкент', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'ищу работу Ташкент', limit: 40 },
-  { key: 'threads-uz-ru-alt', label: 'Threads: работу ищу Ташкент', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'работу ищу Ташкент', limit: 40 },
-  { key: 'threads-uz-ru-parttime', label: 'Threads: ищу подработку Ташкент', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'ищу подработку Ташкент', limit: 40 },
-  { key: 'threads-uz-uz', label: 'Threads: ish qidiryapman Toshkent', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'ish qidiryapman Toshkent', limit: 40 },
-  { key: 'threads-uz-uz-short', label: 'Threads: ish kerak Toshkent', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'ish kerak Toshkent', limit: 40 },
-  { key: 'threads-uz-uz-izlayapman', label: 'Threads: ish izlayapman Toshkent', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'ish izlayapman Toshkent', limit: 40 },
-  { key: 'threads-uz-uz-qidiraman', label: 'Threads: ish qidiraman Toshkent', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'ish qidiraman Toshkent', limit: 40 },
-  { key: 'threads-uz-en-looking', label: 'Threads: looking for work Tashkent', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'looking for work Tashkent', limit: 40 },
-  { key: 'threads-uz-en-seeking', label: 'Threads: seeking opportunities Tashkent', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'seeking opportunities Tashkent', limit: 40 },
-  { key: 'threads-kz-almaty', label: 'Threads: ищу работу Алматы', platform: 'threads', country: 'KZ', city: 'Almaty', query: 'ищу работу Алматы', limit: 40 },
-  { key: 'threads-kz-astana', label: 'Threads: ищу работу Астана', platform: 'threads', country: 'KZ', city: 'Astana', query: 'ищу работу Астана', limit: 40 },
-  { key: 'threads-kz-kazakh', label: 'Threads: жұмыс іздеймін Алматы', platform: 'threads', country: 'KZ', city: 'Almaty', query: 'жұмыс іздеймін Алматы', limit: 40 },
-  { key: 'threads-kg-bishkek', label: 'Threads: ищу работу Бишкек', platform: 'threads', country: 'KG', city: 'Bishkek', query: 'ищу работу Бишкек', limit: 40 },
-  { key: 'threads-kg-cv', label: 'Threads: резюме Бишкек', platform: 'threads', country: 'KG', city: 'Bishkek', query: 'резюме Бишкек', limit: 40 },
-  { key: 'threads-kg-kyrgyz', label: 'Threads: жумуш издейм Бишкек', platform: 'threads', country: 'KG', city: 'Bishkek', query: 'жумуш издейм Бишкек', limit: 40 },
-  { key: 'threads-ua-kyiv', label: 'Threads: шукаю роботу Київ', platform: 'threads', country: 'UA', city: 'Kyiv', query: 'шукаю роботу Київ', limit: 40 },
-  { key: 'threads-ua-country', label: 'Threads: шукаю роботу Україна', platform: 'threads', country: 'UA', query: 'шукаю роботу Україна', limit: 40 },
-  { key: 'threads-ro-bucharest', label: 'Threads: caut loc de muncă București', platform: 'threads', country: 'RO', city: 'Bucharest', query: 'caut loc de muncă București', limit: 40 },
-  { key: 'threads-ro-job', label: 'Threads: îmi caut job București', platform: 'threads', country: 'RO', city: 'Bucharest', query: 'îmi caut job București', limit: 40 },
+  ...HIRING_FACEBOOK_GROUPS.map((group) => ({ ...group, platform: 'facebook' as const })),
+  { key: 'threads-uz-ru', label: 'Threads: ищу работу Ташкент', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'ищу работу Ташкент' },
+  { key: 'threads-uz-ru-alt', label: 'Threads: работу ищу Ташкент', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'работу ищу Ташкент' },
+  { key: 'threads-uz-ru-parttime', label: 'Threads: ищу подработку Ташкент', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'ищу подработку Ташкент' },
+  { key: 'threads-uz-uz', label: 'Threads: ish qidiryapman Toshkent', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'ish qidiryapman Toshkent' },
+  { key: 'threads-uz-uz-short', label: 'Threads: ish kerak Toshkent', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'ish kerak Toshkent' },
+  { key: 'threads-uz-uz-izlayapman', label: 'Threads: ish izlayapman Toshkent', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'ish izlayapman Toshkent' },
+  { key: 'threads-uz-uz-qidiraman', label: 'Threads: ish qidiraman Toshkent', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'ish qidiraman Toshkent' },
+  { key: 'threads-uz-en-looking', label: 'Threads: looking for work Tashkent', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'looking for work Tashkent' },
+  { key: 'threads-uz-en-seeking', label: 'Threads: seeking opportunities Tashkent', platform: 'threads', country: 'UZ', city: 'Tashkent', query: 'seeking opportunities Tashkent' },
+  { key: 'threads-kz-almaty', label: 'Threads: ищу работу Алматы', platform: 'threads', country: 'KZ', city: 'Almaty', query: 'ищу работу Алматы' },
+  { key: 'threads-kz-astana', label: 'Threads: ищу работу Астана', platform: 'threads', country: 'KZ', city: 'Astana', query: 'ищу работу Астана' },
+  { key: 'threads-kz-kazakh', label: 'Threads: жұмыс іздеймін Алматы', platform: 'threads', country: 'KZ', city: 'Almaty', query: 'жұмыс іздеймін Алматы' },
+  { key: 'threads-kg-bishkek', label: 'Threads: ищу работу Бишкек', platform: 'threads', country: 'KG', city: 'Bishkek', query: 'ищу работу Бишкек' },
+  { key: 'threads-kg-cv', label: 'Threads: резюме Бишкек', platform: 'threads', country: 'KG', city: 'Bishkek', query: 'резюме Бишкек' },
+  { key: 'threads-kg-kyrgyz', label: 'Threads: жумуш издейм Бишкек', platform: 'threads', country: 'KG', city: 'Bishkek', query: 'жумуш издейм Бишкек' },
+  { key: 'threads-ua-kyiv', label: 'Threads: шукаю роботу Київ', platform: 'threads', country: 'UA', city: 'Kyiv', query: 'шукаю роботу Київ' },
+  { key: 'threads-ua-country', label: 'Threads: шукаю роботу Україна', platform: 'threads', country: 'UA', query: 'шукаю роботу Україна' },
+  { key: 'threads-ro-bucharest', label: 'Threads: caut loc de muncă București', platform: 'threads', country: 'RO', city: 'Bucharest', query: 'caut loc de muncă București' },
+  { key: 'threads-ro-job', label: 'Threads: îmi caut job București', platform: 'threads', country: 'RO', city: 'Bucharest', query: 'îmi caut job București' },
 ]
 
 function configuredTargets(): SocialTarget[] {
@@ -143,18 +144,21 @@ async function fetchTarget(target: SocialTarget): Promise<{ profiles: CvProfile[
   const key = String(process.env.QUEUE_INTERNAL_KEY || '')
   if (!endpoint) throw new Error('HIRING_SOCIAL_API_URL is not configured')
   if (key.length < 16) throw new Error('QUEUE_INTERNAL_KEY is not configured')
+
+  const limit = STANDARD_SOURCE_EXECUTION_POLICY.maxItemsPerSource
   const payload = target.platform === 'facebook'
-    ? { source: 'facebook', target: target.target, limit: target.limit || DEFAULT_LIMIT }
-    : { source: 'threads', mode: 'search', query: target.query, limit: target.limit || DEFAULT_LIMIT }
-  const response = await fetch(endpoint, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-queue-key': key }, body: JSON.stringify(payload),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    ? { source: 'facebook', target: target.target, limit }
+    : { source: 'threads', mode: 'search', query: target.query, limit }
+  const response = await fetchWithSourceExecutionPolicy(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-queue-key': key },
+    body: JSON.stringify(payload),
   })
   const body = await response.json().catch(() => ({})) as SocialResponse
   if (!response.ok || body.ok === false) throw new Error(body.error || `social fetcher -> HTTP ${response.status}`)
-  const items = Array.isArray(body.items) ? body.items : []
+  const items = (Array.isArray(body.items) ? body.items : []).slice(0, limit)
   return {
-    fetched: Number.isFinite(body.count) ? Number(body.count) : items.length,
+    fetched: Math.min(Number.isFinite(body.count) ? Number(body.count) : items.length, limit),
     profiles: items.map((item) => itemToProfile(item, target)).filter((item): item is CvProfile => Boolean(item)),
   }
 }
