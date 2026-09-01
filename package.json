@@ -5,9 +5,10 @@
   "description": "Backend platform for whiteslove.me domain services, workers and shared infrastructure.",
   "scripts": {
     "check": "npm --prefix apps/ai-worker run check",
-    "test": "npm run test:ai && npm run test:flats && npm run test:workforce && npm run test:subscriptions",
+    "test": "npm run test:ai && npm run test:flats && npm run test:crawler && npm run test:workforce && npm run test:subscriptions",
     "test:ai": "npm --prefix apps/ai-worker test",
     "test:flats": "npm --prefix apps/flats test",
+    "test:crawler": "npm --prefix apps/workforce/packages/crawler-core test",
     "test:workforce": "node --test apps/workforce/jobs-worker/domain-isolation.test.mjs apps/workforce/api/api-isolation.test.mjs",
     "test:subscriptions": "node --test apps/subscription-bot/test/*.test.mjs",
     "compose:config": "docker compose config",

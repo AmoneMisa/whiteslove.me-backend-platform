@@ -71,11 +71,22 @@ The deploy job must still select the affected service names explicitly.
 
 ## Crawler boundary
 
-The planned `@whiteslove/crawler-core` package owns traversal, durable cursor
-state, PostgreSQL leases, retries, pacing, deadlines, deduplication and
-observability. Concrete source adapters stay under `sources/`. Python fetchers
-provide transport only (TLS/browser impersonation or social acquisition);
-semantic parsing and product normalization stay in domain adapters.
+`@whiteslove/crawler-core` owns traversal mechanics, durable cursor state,
+pacing, deduplication and shared detail-stage behavior. Concrete source adapters
+provide request construction, parsing and documented upstream capabilities;
+they must not grow their own concurrency, timeout, retry, page/run limit,
+scheduler or cursor policy.
+
+The first extraction is co-located at
+`apps/workforce/packages/crawler-core` while workforce is its only consumer.
+This deliberately preserves the existing workforce Docker build context during
+the BFF/traffic cutover. Promote it to repository-level `packages/` when a
+second backend domain consumes it. Queue leases, generalized retry/deadline
+policy and broader crawler observability remain subsequent crawler-core slices.
+
+Python fetchers provide transport only (TLS/browser impersonation or social
+acquisition); semantic parsing and product normalization stay in domain
+adapters.
 
 ## Migration order
 
@@ -94,14 +105,19 @@ semantic parsing and product normalization stay in domain adapters.
 - AI Worker and its FreeLLMAPI gateway are imported.
 - Flat Finder API, worker, migrations, Elasticsearch image, OLX transport and
   social transport are imported.
-- Source repositories remain unchanged and production traffic has not moved.
 - Vacancy and CV workers, migrations and browser transport are imported as a
   transitional `apps/workforce` runtime. They run as separate services with
   distinct image tags and queue claim filters.
 - Vacancy and CV read APIs are imported behind a small H3-compatible adapter.
   They run as separate services and preserve the site's current DTO contracts.
-- Personal Site BFF routes still use their local implementations; switching
-  them to the platform APIs remains the next migration phase.
+- Personal Site BFF cutover is prepared on branch
+  `codex/backend-platform-migration`; it has not been merged/deployed, so
+  production traffic has not moved to the platform APIs yet.
+- The first crawler-core slice is extracted from the vacancy runtime without a
+  behavior change. Existing `jobs:board-*` cursor keys and source adapter
+  contracts remain stable; source adapters still live in workforce for now.
 - Telegram Bot API subscription delivery and its durable schema are imported
   as an independently deployable service. Subscription UI and same-origin
   handoff/status routes remain in the Personal Site.
+- Legacy source-repository implementations remain in place until traffic
+  cutover and rollback verification are complete.

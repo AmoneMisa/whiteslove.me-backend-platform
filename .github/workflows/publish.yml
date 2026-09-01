@@ -21,6 +21,7 @@ jobs:
       flats: ${{ steps.filter.outputs.flats }}
       vacancies: ${{ steps.filter.outputs.vacancies }}
       cv: ${{ steps.filter.outputs.cv }}
+      crawler_core: ${{ steps.filter.outputs.crawler_core }}
       workforce_shared: ${{ steps.filter.outputs.workforce_shared }}
       subscriptions: ${{ steps.filter.outputs.subscriptions }}
       infrastructure: ${{ steps.filter.outputs.infrastructure }}
@@ -47,6 +48,8 @@ jobs:
               - 'apps/workforce/server/routes/hiring-**'
               - 'apps/workforce/shared/hiring/**'
               - 'apps/workforce/shared/contracts/hiring.ts'
+            crawler_core:
+              - 'apps/workforce/packages/crawler-core/**'
             workforce_shared:
               - 'apps/workforce/api/**'
               - 'apps/workforce/jobs-worker/**'
@@ -66,6 +69,7 @@ jobs:
       needs.changes.outputs.flats == 'true' ||
       needs.changes.outputs.vacancies == 'true' ||
       needs.changes.outputs.cv == 'true' ||
+      needs.changes.outputs.crawler_core == 'true' ||
       needs.changes.outputs.workforce_shared == 'true' ||
       needs.changes.outputs.subscriptions == 'true' ||
       needs.changes.outputs.infrastructure == 'true'
@@ -123,7 +127,7 @@ jobs:
           github.event_name == 'workflow_dispatch' ||
           (matrix.enabled == 'ai' && needs.changes.outputs.ai == 'true') ||
           (matrix.enabled == 'flats' && needs.changes.outputs.flats == 'true') ||
-          (matrix.enabled == 'vacancies' && (needs.changes.outputs.vacancies == 'true' || needs.changes.outputs.workforce_shared == 'true')) ||
+          (matrix.enabled == 'vacancies' && (needs.changes.outputs.vacancies == 'true' || needs.changes.outputs.crawler_core == 'true' || needs.changes.outputs.workforce_shared == 'true')) ||
           (matrix.enabled == 'cv' && (needs.changes.outputs.cv == 'true' || needs.changes.outputs.workforce_shared == 'true')) ||
           (matrix.enabled == 'subscriptions' && needs.changes.outputs.subscriptions == 'true') ||
           (matrix.enabled == 'infrastructure' && needs.changes.outputs.infrastructure == 'true')

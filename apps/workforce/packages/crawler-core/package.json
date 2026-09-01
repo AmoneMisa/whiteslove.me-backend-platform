@@ -1,0 +1,15 @@
+{
+  "name": "@whiteslove/crawler-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --experimental-transform-types --test test/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

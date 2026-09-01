@@ -1,10 +1,10 @@
 # whiteslove.me Backend Platform
 
-Backend monorepo for the whiteslove.me product family. It will own shared
+Backend monorepo for the whiteslove.me product family. It owns shared
 infrastructure, AI inference, apartment services, vacancy/CV services and
 their crawler execution. The public website remains in its own repository.
 
-The repository starts with snapshots of AI Worker and the Flat Finder backend.
+The repository started with snapshots of AI Worker and the Flat Finder backend.
 The original `ai-worker` repository remains an independent template and is not
 linked as a submodule.
 
@@ -18,6 +18,7 @@ linked as a submodule.
 | Social transport | `services/social-fetcher` | internal | imported |
 | Vacancies worker | `apps/workforce` | internal | imported |
 | CV worker | `apps/workforce` | internal | imported |
+| Crawler core | `apps/workforce/packages/crawler-core` | library | extracted |
 | Job browser transport | `services/job-browser-fetcher` | internal | imported |
 | Vacancies API | `apps/workforce` | 4010 | imported |
 | CV API | `apps/workforce` | 4011 | imported |
@@ -28,6 +29,7 @@ linked as a submodule.
 ```bash
 cp .env.example .env
 npm --prefix apps/ai-worker ci
+npm --prefix apps/workforce/packages/crawler-core test
 npm test
 docker compose config
 docker compose up -d ai-worker
@@ -53,8 +55,17 @@ depends on CV or vacancies services.
 Vacancy and CV execution use separate Compose services, image tags, task-type
 claims and scheduler flags. Neither worker can claim or reschedule the other
 domain's queue work. Their read APIs run as separately selectable Compose
-services and preserve the existing Nuxt response contracts. The site routes
-have not been switched to these services yet.
+services and preserve the existing Nuxt response contracts.
+
+The Personal Site BFF cutover is prepared on branch
+`codex/backend-platform-migration`: jobs/hiring routes delegate to these APIs,
+but that cutover has not been merged/deployed yet.
+
+Crawler traversal, durable page/cursor state, pacing, deduplication and the
+shared detail stage are now extracted into `@whiteslove/crawler-core`. The
+package is temporarily co-located under workforce so the existing vacancy
+Docker build context remains isolated during cutover. Source adapters continue
+to expose source-specific transport/parsing only.
 
 Telegram subscription delivery runs independently in `subscription-bot`.
 The website continues to own the subscription button and same-origin handoff
@@ -65,13 +76,14 @@ network. Browser code must use same-origin website routes rather than private
 Docker service names.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for ownership boundaries and the
-migration sequence.
+migration sequence, and [AGENTS.md](./AGENTS.md) for contributor invariants.
 
 ## CI and image publishing
 
 Pull requests run Compose validation plus tests/builds only for affected
-domains. A change in vacancy-only paths does not schedule the CV job, and the
-reverse is also true; explicitly shared workforce paths schedule both.
+domains. A crawler-core-only change schedules the vacancy image/tests but not
+CV; a vacancy-only change does not schedule CV, and the reverse is also true.
+Explicitly shared workforce paths still schedule both.
 
 Pushes to `master` publish only affected images to GHCR with `latest` and commit
 SHA tags. The publish workflow can also be started manually to rebuild all

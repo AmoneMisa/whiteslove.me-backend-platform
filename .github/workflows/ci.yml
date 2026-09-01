@@ -20,6 +20,7 @@ jobs:
       flats: ${{ steps.filter.outputs.flats }}
       vacancies: ${{ steps.filter.outputs.vacancies }}
       cv: ${{ steps.filter.outputs.cv }}
+      crawler_core: ${{ steps.filter.outputs.crawler_core }}
       workforce_shared: ${{ steps.filter.outputs.workforce_shared }}
       subscriptions: ${{ steps.filter.outputs.subscriptions }}
     steps:
@@ -45,6 +46,8 @@ jobs:
               - 'apps/workforce/server/routes/hiring-**'
               - 'apps/workforce/shared/hiring/**'
               - 'apps/workforce/shared/contracts/hiring.ts'
+            crawler_core:
+              - 'apps/workforce/packages/crawler-core/**'
             workforce_shared:
               - 'apps/workforce/api/**'
               - 'apps/workforce/jobs-worker/**'
@@ -93,12 +96,13 @@ jobs:
 
   vacancies:
     needs: changes
-    if: needs.changes.outputs.vacancies == 'true' || needs.changes.outputs.workforce_shared == 'true'
+    if: needs.changes.outputs.vacancies == 'true' || needs.changes.outputs.crawler_core == 'true' || needs.changes.outputs.workforce_shared == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm, cache-dependency-path: apps/workforce/package-lock.json }
+      - run: npm --prefix apps/workforce/packages/crawler-core test
       - run: npm ci
         working-directory: apps/workforce
       - run: node --test apps/workforce/jobs-worker/domain-isolation.test.mjs apps/workforce/api/api-isolation.test.mjs
