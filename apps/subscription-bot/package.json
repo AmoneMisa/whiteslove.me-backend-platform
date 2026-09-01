@@ -1,0 +1,17 @@
+{
+  "name": "@whiteslove/subscription-bot",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/index.mjs",
+    "migrate": "node src/migrate.mjs",
+    "check": "node --check src/index.mjs && node --check src/config.mjs && node --check src/db.mjs && node --check src/feeds.mjs && node --check src/i18n.mjs && node --check src/telegram.mjs && node --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "pg": "8.23.0"
+  }
+}

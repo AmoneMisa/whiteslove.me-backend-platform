@@ -576,6 +576,59 @@ services:
       me.whiteslove.platform.domain: cv
       me.whiteslove.platform.role: worker
 
+  subscriptions-migrate:
+    build: { context: ./apps/subscription-bot }
+    image: ${SUBSCRIPTION_BOT_IMAGE:-whiteslove-backend-platform/subscription-bot:local}
+    command: ["node", "src/migrate.mjs"]
+    restart: "no"
+    environment: &subscriptions-environment
+      SUBSCRIPTIONS_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://whiteslove:change-me@platform-postgres:5432/whiteslove}
+      SUBSCRIPTIONS_DB_SCHEMA: ${SUBSCRIPTIONS_DB_SCHEMA:-subscriptions}
+    depends_on:
+      platform-postgres: { condition: service_healthy }
+    networks: [ platform ]
+    labels:
+      me.whiteslove.platform.domain: subscriptions
+      me.whiteslove.platform.role: migration
+
+  subscription-bot:
+    build: { context: ./apps/subscription-bot }
+    image: ${SUBSCRIPTION_BOT_IMAGE:-whiteslove-backend-platform/subscription-bot:local}
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      <<: *subscriptions-environment
+      TELEGRAM_SUBSCRIPTION_BOT_ENABLED: ${TELEGRAM_SUBSCRIPTION_BOT_ENABLED:-off}
+      TELEGRAM_SUBSCRIPTION_BOT_TOKEN: ${TELEGRAM_SUBSCRIPTION_BOT_TOKEN:-}
+      SITE_BASE_URL: ${SITE_INTERNAL_URL:-https://whiteslove.me}
+      SITE_PUBLIC_URL: ${SITE_PUBLIC_URL:-https://whiteslove.me}
+      FLAT_API_URL: http://flats-api:4000
+      SUBSCRIPTION_POLL_SECONDS: ${SUBSCRIPTION_POLL_SECONDS:-60}
+      SUBSCRIPTION_MAX_NOTIFICATIONS_PER_SCAN: ${SUBSCRIPTION_MAX_NOTIFICATIONS_PER_SCAN:-10}
+      SUBSCRIPTION_FETCH_TIMEOUT_MS: ${SUBSCRIPTION_FETCH_TIMEOUT_MS:-20000}
+      TELEGRAM_LONG_POLL_SECONDS: ${TELEGRAM_LONG_POLL_SECONDS:-25}
+      FLAT_REQUIRE_VERIFIED: ${FLAT_REQUIRE_VERIFIED:-on}
+    depends_on:
+      subscriptions-migrate: { condition: service_completed_successfully }
+    networks: [ platform ]
+    mem_limit: ${SUBSCRIPTION_BOT_MEMORY_LIMIT:-256m}
+    cpus: ${SUBSCRIPTION_BOT_CPUS:-0.5}
+    pids_limit: ${SUBSCRIPTION_BOT_PIDS_LIMIT:-128}
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    labels:
+      me.whiteslove.platform.domain: subscriptions
+      me.whiteslove.platform.role: worker
+
 volumes:
   freellmapi-data:
   platform-postgres-data:

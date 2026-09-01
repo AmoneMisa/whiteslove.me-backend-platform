@@ -102,3 +102,6 @@ semantic parsing and product normalization stay in domain adapters.
   They run as separate services and preserve the site's current DTO contracts.
 - Personal Site BFF routes still use their local implementations; switching
   them to the platform APIs remains the next migration phase.
+- Telegram Bot API subscription delivery and its durable schema are imported
+  as an independently deployable service. Subscription UI and same-origin
+  handoff/status routes remain in the Personal Site.

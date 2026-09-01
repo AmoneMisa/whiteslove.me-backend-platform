@@ -21,6 +21,7 @@ linked as a submodule.
 | Job browser transport | `services/job-browser-fetcher` | internal | imported |
 | Vacancies API | `apps/workforce` | 4010 | imported |
 | CV API | `apps/workforce` | 4011 | imported |
+| Telegram subscription bot | `apps/subscription-bot` | internal | imported |
 
 ## Local development
 
@@ -39,6 +40,7 @@ Production updates are service-scoped:
 ./deploy.sh flats-migrate flats-api flats-worker
 ./deploy.sh vacancies-migrate vacancies-api vacancies-worker
 ./deploy.sh cv-migrate cv-api cv-worker
+./deploy.sh subscriptions-migrate subscription-bot
 ```
 
 The deploy helper uses `--no-deps`. It never recreates an unchanged domain or
@@ -53,6 +55,10 @@ claims and scheduler flags. Neither worker can claim or reschedule the other
 domain's queue work. Their read APIs run as separately selectable Compose
 services and preserve the existing Nuxt response contracts. The site routes
 have not been switched to these services yet.
+
+Telegram subscription delivery runs independently in `subscription-bot`.
+The website continues to own the subscription button and same-origin handoff
+and status routes.
 
 Only backend processes should join the `whiteslove-backend-platform` Docker
 network. Browser code must use same-origin website routes rather than private
