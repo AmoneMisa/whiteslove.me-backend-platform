@@ -2,20 +2,20 @@ import {
   detectUsLocation,
   detectVisaSponsorshipWording,
 } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
-import type { Job, JobSource } from './jobTypes'
-import { HIRING_FACEBOOK_GROUPS } from '../../shared/hiring/sources/facebookGroups'
+import type { Job, JobSource } from '../../utils/jobTypes'
+import { HIRING_FACEBOOK_GROUPS } from '../../../shared/hiring/sources/facebookGroups'
 import {
   REMOTE_JOB_QUERIES,
   USA_RELOCATION_QUERIES,
   threadsJobCoverage,
-} from './jobSearchCoverage'
+} from '../../utils/jobSearchCoverage'
 import {
   classifySharedHiringMessage,
   detectHiringIntent,
   detectWorkModes,
   parseSharedHiringContext,
-} from './hiringLexicon'
-import { socialFetcherBaseUrl } from './socialFetcherTransport'
+} from '../../utils/hiringLexicon'
+import { socialFetcherBaseUrl } from '../../utils/socialFetcherTransport'
 
 type Platform = 'facebook' | 'threads'
 type Target = { key: string; platform: Platform; country: string; city?: string; region?: string; target?: string; query?: string }

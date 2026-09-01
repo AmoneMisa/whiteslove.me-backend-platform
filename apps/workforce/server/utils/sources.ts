@@ -192,4 +192,4 @@ export async function fetchDevKg(q: string): Promise<Job[]> {
   )
 }
 
-export { isLikelyTelegramVacancy } from './telegramVacancyClassifier'
+export { isLikelyTelegramVacancy } from '../vacancies/sources/telegramVacancyClassifier'

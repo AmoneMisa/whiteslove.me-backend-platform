@@ -18,11 +18,11 @@ const sourceModules = [
   'regionalJobBoardSources.ts',
   'regionalServiceJobSources.ts',
   'regionalTechCompanySources.ts',
-  'socialJobSources.ts',
+  '../server/vacancies/sources/socialJobSources.ts',
   'sourceExpansionJobs.ts',
   'sources.ts',
   'standardJobSourceTargets.ts',
-  'telegramJobTargets.ts',
+  '../server/vacancies/sources/telegramJobTargets.ts',
   'ukraineJobSources.ts',
   'usaTechCompanySources.ts',
   'usaVisaSponsorSource.ts',
@@ -47,7 +47,8 @@ const forbiddenExecutionPolicy = [
 
 test('vacancy source adapters do not own crawler execution policy or broad fan-out', async () => {
   for (const filename of sourceModules) {
-    const source = await readFile(new URL(`../server/utils/${filename}`, import.meta.url), 'utf8')
+    const path = filename.startsWith('../') ? filename : `../server/utils/${filename}`
+    const source = await readFile(new URL(path, import.meta.url), 'utf8')
     for (const [label, pattern] of forbiddenExecutionPolicy) {
       assert.doesNotMatch(source, pattern, `${filename} contains ${label}; execution policy belongs to the shared crawler/queue worker`)
     }

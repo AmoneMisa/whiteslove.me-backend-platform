@@ -4,7 +4,7 @@ import test from 'node:test'
 
 import { HIRING_FACEBOOK_GROUPS } from '../shared/hiring/sources/facebookGroups.ts'
 
-const jobs = await readFile(new URL('../server/utils/socialJobSources.ts', import.meta.url), 'utf8')
+const jobs = await readFile(new URL('../server/vacancies/sources/socialJobSources.ts', import.meta.url), 'utf8')
 const hiring = await readFile(new URL('../server/hiring/sources/socialRefresh.ts', import.meta.url), 'utf8')
 const linkedin = await readFile(new URL('../server/hiring/sources/linkedInRefresh.ts', import.meta.url), 'utf8')
 const transport = await readFile(new URL('../server/utils/socialFetcherTransport.ts', import.meta.url), 'utf8')

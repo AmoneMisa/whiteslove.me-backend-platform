@@ -73,7 +73,7 @@ import {
   fetchSocialJobTarget,
   isSocialJobTarget,
   sourceForSocialJobTarget,
-} from './socialJobSources'
+} from '../vacancies/sources/socialJobSources'
 import {
   configuredSourceExpansionTargets,
   fetchSourceExpansionTarget,
@@ -89,8 +89,8 @@ import {
   configuredTelegramJobTargets,
   fetchTelegramJobTarget,
   isTelegramJobTarget,
-} from './telegramJobTargets'
-import { isLikelyTelegramVacancy } from './telegramVacancyClassifier'
+} from '../vacancies/sources/telegramJobTargets'
+import { isLikelyTelegramVacancy } from '../vacancies/sources/telegramVacancyClassifier'
 import {
   configuredUkraineJobTargets,
   fetchUkraineJobTarget,
