@@ -131,7 +131,7 @@ test('LinkedIn explicit closed notices produce a background-removal tombstone', 
 })
 
 test('job refresh removes explicit closed-vacancy tombstones immediately', async () => {
-  const source = await readFile(new URL('../server/utils/jobsSourceRefresh.ts', import.meta.url), 'utf8')
+  const source = await readFile(new URL('../server/vacancies/application/jobsSourceRefresh.ts', import.meta.url), 'utf8')
   assert.match(source, /job\.vacancyStatus === 'closed'/)
   assert.match(source, /byKey\.delete\(dedupKey\(job\)\)/)
 })

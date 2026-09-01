@@ -6,7 +6,7 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8')
 
 const [candidateWriter, jobRefresh] = await Promise.all([
   read('../server/hiring/application/candidateSnapshotWriter.ts'),
-  read('../server/utils/jobsSourceRefresh.ts'),
+  read('../server/vacancies/application/jobsSourceRefresh.ts'),
 ])
 
 test('candidate snapshot rejects workshop/event promos instead of turning speakers into CVs', () => {

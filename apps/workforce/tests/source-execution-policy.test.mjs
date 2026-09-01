@@ -88,7 +88,7 @@ test('shared crawler traversal is semantic rather than count/page bounded', asyn
 
 test('jobs worker schedules queue targets instead of a second aggregate refresh path', async () => {
   const runtime = await readFile(new URL('../jobs-worker/jobsRuntime.ts', import.meta.url), 'utf8')
-  const refresh = await readFile(new URL('../server/utils/jobsSourceRefresh.ts', import.meta.url), 'utf8')
+  const refresh = await readFile(new URL('../server/vacancies/application/jobsSourceRefresh.ts', import.meta.url), 'utf8')
   const directFetcher = await readFile(new URL('../server/utils/jobSourceFetchers.ts', import.meta.url), 'utf8')
 
   assert.match(runtime, /return configuredJobRefreshTargets\(\)/u)

@@ -17,7 +17,7 @@ const hiringMigration = await read('db/migrations/hiring/001_candidate_read_mode
 const queueMigration = await read('db/migrations/queue/001_queue_schema.sql')
 const jobsFeed = await read('server/routes/jobs-feed.get.ts')
 const hiringFeed = await read('server/routes/hiring-feed.get.ts')
-const jobsSourceRefresh = await read('server/utils/jobsSourceRefresh.ts')
+const jobsSourceRefresh = await read('server/vacancies/application/jobsSourceRefresh.ts')
 const compose = parse(await readRoot('docker-compose.yml'))
 
 test('workforce schemas keep explicit ordered versioned migrations', () => {

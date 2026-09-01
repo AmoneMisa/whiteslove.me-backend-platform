@@ -1,111 +1,111 @@
 import { useStateStore } from '~~/server/utils/stateStore'
-import { syncJobsDb } from '../jobs/infrastructure/database'
+import { syncJobsDb } from '../../jobs/infrastructure/database'
 import {
   configuredAviationJobTargets,
   fetchAviationJobTarget,
   isAviationJobTarget,
-} from './aviationExpansionJobs'
+} from '../../utils/aviationExpansionJobs'
 import {
   configuredCommunityJobBoardTargets,
   fetchCommunityJobBoardTarget,
   isCommunityJobBoardTarget,
-} from './communityJobBoardSources'
+} from '../../utils/communityJobBoardSources'
 import {
   configuredCoreCompanyTargets,
   fetchCoreCompanyTarget,
   isCoreCompanyTarget,
-} from './coreCompanyJobTargets'
+} from '../../utils/coreCompanyJobTargets'
 import {
   configuredCuratedRemoteJobBoardTargets,
   fetchCuratedRemoteJobBoardTarget,
   isCuratedRemoteJobBoardTarget,
-} from './curatedRemoteJobBoardTargets'
-import { enrichJob } from './enrich'
+} from '../../utils/curatedRemoteJobBoardTargets'
+import { enrichJob } from '../../utils/enrich'
 import {
   configuredExpandedRegionalRemoteTargets,
   fetchExpandedRegionalRemoteTarget,
   isExpandedRegionalRemoteTarget,
-} from './expandedRegionalRemoteSources'
+} from '../../utils/expandedRegionalRemoteSources'
 import {
   configuredHhJobTargets,
   fetchHhJobTarget,
   isHhJobTarget,
-} from './hhJobSource'
-import { fetchIntelliasJobs } from './intelliasJobs'
-import { isJobSourceAvailable } from './jobSourceConfig'
-import { fetchJobSource } from './jobSourceFetchers'
-import { syncJobsSearchIndex } from '../vacancies/infrastructure/jobsElastic'
-import type { Job, JobSource } from './jobTypes'
-import { ALL_SOURCES } from './jobTypes'
-import { fetchJobsUaJobs } from './jobsUaSource'
+} from '../../utils/hhJobSource'
+import { fetchIntelliasJobs } from '../../utils/intelliasJobs'
+import { isJobSourceAvailable } from '../../utils/jobSourceConfig'
+import { fetchJobSource } from '../../utils/jobSourceFetchers'
+import { syncJobsSearchIndex } from '../infrastructure/jobsElastic'
+import type { Job, JobSource } from '../../utils/jobTypes'
+import { ALL_SOURCES } from '../../utils/jobTypes'
+import { fetchJobsUaJobs } from '../../utils/jobsUaSource'
 import {
   configuredLinkedInJobTargets,
   fetchLinkedInJobTarget,
   isLinkedInJobTarget,
-} from './linkedinSource'
+} from '../../utils/linkedinSource'
 import {
   configuredPublicJobBoardTargets,
   fetchPublicJobBoardTarget,
   isPublicJobBoardTarget,
-} from './publicJobBoardTargets'
+} from '../../utils/publicJobBoardTargets'
 import {
   configuredRegionalGeneralEmployerTargets,
   fetchRegionalGeneralEmployerTarget,
   isRegionalGeneralEmployerTarget,
-} from './regionalGeneralEmployerSources'
+} from '../../utils/regionalGeneralEmployerSources'
 import {
   configuredRegionalJobBoardTargets,
   fetchRegionalJobBoardTarget,
   isRegionalJobBoardTarget,
-} from './regionalJobBoardSources'
+} from '../../utils/regionalJobBoardSources'
 import {
   configuredRegionalServiceJobTargets,
   fetchRegionalServiceJobTarget,
   isRegionalServiceJobTarget,
-} from './regionalServiceJobSources'
+} from '../../utils/regionalServiceJobSources'
 import {
   configuredRegionalTechCompanyTargets,
   fetchRegionalTechCompanyTarget,
   isRegionalTechCompanyTarget,
-} from './regionalTechCompanySources'
+} from '../../utils/regionalTechCompanySources'
 import {
   configuredSocialJobTargets,
   fetchSocialJobTarget,
   isSocialJobTarget,
   sourceForSocialJobTarget,
-} from '../vacancies/sources/socialJobSources'
+} from '../sources/socialJobSources'
 import {
   configuredSourceExpansionTargets,
   fetchSourceExpansionTarget,
   isSourceExpansionTarget,
-} from './sourceExpansionJobs'
+} from '../../utils/sourceExpansionJobs'
 import {
   configuredStandardJobSourceTargets,
   fetchStandardJobSourceTarget,
   isStandardJobSourceTarget,
   sourceForStandardJobSourceTarget,
-} from './standardJobSourceTargets'
+} from '../../utils/standardJobSourceTargets'
 import {
   configuredTelegramJobTargets,
   fetchTelegramJobTarget,
   isTelegramJobTarget,
-} from '../vacancies/sources/telegramJobTargets'
-import { isLikelyTelegramVacancy } from '../vacancies/sources/telegramVacancyClassifier'
+} from '../sources/telegramJobTargets'
+import { isLikelyTelegramVacancy } from '../sources/telegramVacancyClassifier'
 import {
   configuredUkraineJobTargets,
   fetchUkraineJobTarget,
   isUkraineJobTarget,
-} from './ukraineJobSources'
+} from '../../utils/ukraineJobSources'
 import {
   configuredUsaTechCompanyTargets,
   fetchUsaTechCompanyTarget,
   isUsaTechCompanyTarget,
-} from './usaTechCompanySources'
+} from '../../utils/usaTechCompanySources'
 import {
   configuredUsaVisaSponsorTargets,
   fetchUsaVisaSponsorTarget,
   isUsaVisaSponsorTarget,
-} from './usaVisaSponsorSource'
+} from '../../utils/usaVisaSponsorSource'
 
 const STORE_KEY = 'jobs:store:v4'
 const STORE_TTL_SECONDS = 15 * 86_400

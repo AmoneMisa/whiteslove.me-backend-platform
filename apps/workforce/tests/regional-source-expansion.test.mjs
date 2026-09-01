@@ -72,7 +72,7 @@ test('candidate integrations never implement recruiter login or gated contact ac
 
 test('regional vacancy boards are independent durable queue targets', async () => {
   const boards = await read('server/utils/regionalJobBoardSources.ts')
-  const refresh = await read('server/utils/jobsSourceRefresh.ts')
+  const refresh = await read('server/vacancies/application/jobsSourceRefresh.ts')
   const fetchers = await read('server/utils/jobSourceFetchers.ts')
 
   for (const key of VACANCY_KEYS) {
