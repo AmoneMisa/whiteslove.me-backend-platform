@@ -98,4 +98,7 @@ semantic parsing and product normalization stay in domain adapters.
 - Vacancy and CV workers, migrations and browser transport are imported as a
   transitional `apps/workforce` runtime. They run as separate services with
   distinct image tags and queue claim filters.
-- Vacancy and CV read APIs remain in the Personal Site until the next phase.
+- Vacancy and CV read APIs are imported behind a small H3-compatible adapter.
+  They run as separate services and preserve the site's current DTO contracts.
+- Personal Site BFF routes still use their local implementations; switching
+  them to the platform APIs remains the next migration phase.

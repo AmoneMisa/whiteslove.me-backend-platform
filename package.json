@@ -8,7 +8,7 @@
     "test": "npm run test:ai && npm run test:flats && npm run test:workforce",
     "test:ai": "npm --prefix apps/ai-worker test",
     "test:flats": "npm --prefix apps/flats test",
-    "test:workforce": "node --test apps/workforce/jobs-worker/domain-isolation.test.mjs",
+    "test:workforce": "node --test apps/workforce/jobs-worker/domain-isolation.test.mjs apps/workforce/api/api-isolation.test.mjs",
     "compose:config": "docker compose config",
     "compose:up": "docker compose up -d",
     "compose:down": "docker compose down"

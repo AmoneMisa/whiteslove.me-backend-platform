@@ -19,7 +19,8 @@ linked as a submodule.
 | Vacancies worker | `apps/workforce` | internal | imported |
 | CV worker | `apps/workforce` | internal | imported |
 | Job browser transport | `services/job-browser-fetcher` | internal | imported |
-| Vacancies/CV APIs | pending extraction | 4010/4011 | planned |
+| Vacancies API | `apps/workforce` | 4010 | imported |
+| CV API | `apps/workforce` | 4011 | imported |
 
 ## Local development
 
@@ -36,7 +37,6 @@ Production updates are service-scoped:
 ```bash
 ./deploy.sh ai-worker
 ./deploy.sh flats-migrate flats-api flats-worker
-# Later:
 ./deploy.sh vacancies-migrate vacancies-api vacancies-worker
 ./deploy.sh cv-migrate cv-api cv-worker
 ```
@@ -46,11 +46,13 @@ restarts shared infrastructure implicitly.
 
 Flat Finder currently uses one domain image for API, migrations and worker,
 but each runs as an independently selected Compose service. No flats service
-depends on future CV or vacancies services.
+depends on CV or vacancies services.
 
 Vacancy and CV execution use separate Compose services, image tags, task-type
 claims and scheduler flags. Neither worker can claim or reschedule the other
-domain's queue work. Their read APIs still need to be extracted from Nuxt.
+domain's queue work. Their read APIs run as separately selectable Compose
+services and preserve the existing Nuxt response contracts. The site routes
+have not been switched to these services yet.
 
 Only backend processes should join the `whiteslove-backend-platform` Docker
 network. Browser code must use same-origin website routes rather than private
