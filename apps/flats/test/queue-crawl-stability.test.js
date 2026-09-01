@@ -13,7 +13,7 @@ const queueMigration = readFileSync(new URL('../migrations/002_crawl_tasks.sql',
 const scheduler = readFileSync(new URL('../src/scheduler.js', import.meta.url), 'utf8');
 const worker = readFileSync(new URL('../src/worker.js', import.meta.url), 'utf8');
 const server = readFileSync(new URL('../src/server.js', import.meta.url), 'utf8');
-const compose = readFileSync(new URL('../../docker-compose.yml', import.meta.url), 'utf8');
+const compose = readFileSync(new URL('../../../docker-compose.yml', import.meta.url), 'utf8');
 
 test('queue plan seeds one OLX page and lets successful tasks extend the chain', () => {
   assert.doesNotMatch(queuePlan, /page\s*<=\s*5/);
@@ -62,8 +62,8 @@ test('one Node worker owns dispatch, queue transitions and task execution direct
   assert.match(worker, /workerLoop\('telegram', 0\)/);
   assert.match(worker, /workerLoop\('custom', shard\)/);
   assert.doesNotMatch(worker, /\/internal\/queue-/);
-  assert.doesNotMatch(compose, /flat-finder-queue-task-api:/);
-  assert.doesNotMatch(compose, /flat-finder-queue-worker-/);
+  assert.doesNotMatch(compose, /(?:flat-finder|flats)-queue-task-api:/);
+  assert.doesNotMatch(compose, /(?:flat-finder|flats)-queue-worker-/);
 });
 
 test('custom sources use the durable worker queue and never scrape in listing HTTP routes', () => {
@@ -86,7 +86,7 @@ test('on-demand custom tasks never delay the recurring crawl generation', () => 
 });
 
 test('compose gates API and worker on successful migrations', () => {
-  assert.match(compose, /^\s{2}flat-finder-migrate:\s*$/m);
+  assert.match(compose, /^\s{2}flats-migrate:\s*$/m);
   assert.match(compose, /command:\s*\["node",\s*"src\/migrate\.js"\]/);
   assert.ok(
     (compose.match(/condition:\s*service_completed_successfully/g) || []).length >= 2,
@@ -98,7 +98,7 @@ test('OLX shards remain concurrent inside the isolated worker process', () => {
   assert.match(worker, /Array\.from\(\{length: QUEUE_SHARDS\}/);
   assert.match(worker, /workerLoop\('olx', shard\)/);
   assert.match(pgQueue, /type = 'flat\.olx\.page' AND crawler_shard = \$1/);
-  assert.match(compose, /QUEUE_SHARDS=\$\{QUEUE_SHARDS:-2\}/);
+  assert.match(compose, /QUEUE_SHARDS:\s*\$\{FLATS_QUEUE_SHARDS:-2\}/);
 });
 
 test('successful completion enqueues chained OLX pages in the same Postgres transaction', () => {
@@ -111,8 +111,8 @@ test('each OLX shard is pinned to a different fetcher', () => {
   assert.match(queueTasks, /OLX_FETCHER_URL_0/);
   assert.match(queueTasks, /OLX_FETCHER_URL_1/);
   assert.match(queueTasks, /function olxFetcherUrl/);
-  assert.match(compose, /OLX_FETCHER_URL_0=http:\/\/flat-finder-olx-fetcher:4020/);
-  assert.match(compose, /OLX_FETCHER_URL_1=http:\/\/flat-finder-olx-fetcher-ua:4020/);
+  assert.match(compose, /OLX_FETCHER_URL_0:\s*http:\/\/flats-olx-fetcher:4020/);
+  assert.match(compose, /OLX_FETCHER_URL_1:\s*http:\/\/flats-olx-fetcher-ua:4020/);
 });
 
 test('task execution deduplication remains PostgreSQL-backed', () => {
@@ -138,11 +138,11 @@ test('API refresh commands enqueue work and never execute crawlers directly', ()
 });
 
 test('RabbitMQ, Redis and HTTP queue proxy workers are absent', () => {
-  assert.doesNotMatch(compose, /flat-finder-rabbitmq:/);
-  assert.doesNotMatch(compose, /flat-finder-redis:/);
+  assert.doesNotMatch(compose, /(?:flat-finder|flats)-rabbitmq:/);
+  assert.doesNotMatch(compose, /(?:flat-finder|flats)-redis:/);
   assert.doesNotMatch(compose, /RABBITMQ_/);
   assert.doesNotMatch(compose, /REDIS_URL=/);
   assert.doesNotMatch(compose, /QUEUE_TASK_API_URL/);
-  assert.doesNotMatch(compose, /flat-finder-queue-dispatcher:/);
-  assert.match(compose, /^\s{2}flat-finder-worker:\s*$/m);
+  assert.doesNotMatch(compose, /(?:flat-finder|flats)-queue-dispatcher:/);
+  assert.match(compose, /^\s{2}flats-worker:\s*$/m);
 });
