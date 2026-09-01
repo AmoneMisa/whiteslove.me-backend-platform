@@ -52,6 +52,7 @@ jobs:
               - 'apps/workforce/api/**'
               - 'apps/workforce/jobs-worker/**'
               - 'apps/workforce/scripts/**'
+              - 'apps/workforce/tests/**'
               - 'apps/workforce/package*.json'
               - 'apps/workforce/server/utils/**'
               - 'apps/workforce/shared/*.ts'
@@ -105,7 +106,8 @@ jobs:
       - run: npm --prefix apps/workforce/packages/crawler-core test
       - run: npm ci
         working-directory: apps/workforce
-      - run: node --test apps/workforce/jobs-worker/domain-isolation.test.mjs apps/workforce/api/api-isolation.test.mjs
+      - run: npm test
+        working-directory: apps/workforce
       - run: docker build -f apps/workforce/jobs-worker/Dockerfile apps/workforce
       - run: docker build services/job-browser-fetcher
 
@@ -119,7 +121,8 @@ jobs:
         with: { node-version: 24, cache: npm, cache-dependency-path: apps/workforce/package-lock.json }
       - run: npm ci
         working-directory: apps/workforce
-      - run: node --test apps/workforce/jobs-worker/domain-isolation.test.mjs apps/workforce/api/api-isolation.test.mjs
+      - run: npm test
+        working-directory: apps/workforce
       - run: docker build -f apps/workforce/jobs-worker/Dockerfile apps/workforce
 
   subscriptions:

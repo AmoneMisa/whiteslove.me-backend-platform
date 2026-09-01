@@ -9,7 +9,7 @@
     "test:ai": "npm --prefix apps/ai-worker test",
     "test:flats": "npm --prefix apps/flats test",
     "test:crawler": "npm --prefix apps/workforce/packages/crawler-core test",
-    "test:workforce": "node --test apps/workforce/jobs-worker/domain-isolation.test.mjs apps/workforce/api/api-isolation.test.mjs",
+    "test:workforce": "npm --prefix apps/workforce test",
     "test:subscriptions": "node --test apps/subscription-bot/test/*.test.mjs",
     "compose:config": "docker compose config",
     "compose:up": "docker compose up -d",
