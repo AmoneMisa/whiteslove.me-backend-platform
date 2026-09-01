@@ -1,6 +1,6 @@
 import { COUNTRIES } from './countries.js';
 import { markMissingAfterCompleteCrawl, upsertListings } from './db.js';
-import { deleteListingDocuments, indexListings } from './elasticsearch.js';
+import { deleteListingDocuments, indexListings } from './infrastructure/search/elasticsearch.js';
 import { scrapeFacebook, scrapeThreads } from './scrapers/social.js';
 import { buildThreadsHousingCoverage, rotatingCoverage } from './social-search-coverage.js';
 

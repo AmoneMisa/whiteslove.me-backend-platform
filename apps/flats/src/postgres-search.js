@@ -2,7 +2,7 @@ import {canonicalListingFilters} from './listing-filter-canonical.js';
 import {
   buildSearchContext,
   searchPostgresListings as searchPostgresListingsCore,
-} from './postgres-search-core.js';
+} from './infrastructure/search/postgres-search-core.js';
 import {
   attachScopeToCursor,
   prepareCursorForScope,

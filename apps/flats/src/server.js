@@ -1,7 +1,7 @@
 import {COUNTRY_CODES} from './countries.js';
 import {closeDb} from './db.js';
 import {assertDatabaseReady} from './db-ready.js';
-import {closeElasticsearch, initElasticsearch} from './elasticsearch.js';
+import {closeElasticsearch, initElasticsearch} from './infrastructure/search/elasticsearch.js';
 import {createApp} from './app.js';
 import {startMobileSubscriptionScanner, stopMobileSubscriptionScanner} from './mobile-subscriptions.js';
 

@@ -156,8 +156,8 @@ test('property clusters are the authoritative strong cross-source identity', {sk
 
 test('property identity stays on the persisted indexed read path', async () => {
   const sql = await migration('020_property_identity_unification.sql');
-  const search = await readFile(new URL('../src/postgres-search-core.js', import.meta.url), 'utf8');
-  const fastSearch = await readFile(new URL('../src/postgres-search-fast-core.js', import.meta.url), 'utf8');
+  const search = await readFile(new URL('../src/infrastructure/search/postgres-search-core.js', import.meta.url), 'utf8');
+  const fastSearch = await readFile(new URL('../src/infrastructure/search/postgres-search-fast-core.js', import.meta.url), 'utf8');
 
   assert.match(sql, /propertyClusterId/);
   assert.match(sql, /THEN 'cluster:' \|\| property_cluster_id/);

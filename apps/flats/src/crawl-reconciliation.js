@@ -1,5 +1,5 @@
 import { pool } from './db.js';
-import { deleteListingDocuments } from './elasticsearch.js';
+import { deleteListingDocuments } from './infrastructure/search/elasticsearch.js';
 import { olxSegmentDealType } from './olx-segment.js';
 
 /**

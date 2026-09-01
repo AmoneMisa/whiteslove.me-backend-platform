@@ -4,7 +4,7 @@ import {
 
 import {
     getActiveListingsBatch,
-} from './db.js';
+} from '../../db.js';
 
 const ELASTICSEARCH_URL =
     process.env.ELASTICSEARCH_URL ||

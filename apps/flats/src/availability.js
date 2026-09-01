@@ -149,7 +149,7 @@ function cachedResult(row) {
 
 async function removeFromSearchIndex(source, country, id) {
   try {
-    const {deleteListingDocuments} = await import('./elasticsearch.js');
+    const {deleteListingDocuments} = await import('./infrastructure/search/elasticsearch.js');
     await deleteListingDocuments([{source, country, id}]);
   } catch (error) {
     console.warn(

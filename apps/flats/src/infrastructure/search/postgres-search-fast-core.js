@@ -1,4 +1,4 @@
-import {pool} from './db.js';
+import {pool} from '../../db.js';
 // The general implementation remains the fallback for statistics, maps,
 // custom-source queries, free-text search and non-feed sort modes. Ordinary
 // structured UI filters are handled against listing_public_feed_members below.

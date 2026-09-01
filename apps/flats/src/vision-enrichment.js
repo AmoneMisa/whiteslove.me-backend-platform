@@ -1,6 +1,6 @@
 import { cacheGet, cacheSet } from './cache.js';
 import { upsertListings } from './db.js';
-import { indexListings } from './elasticsearch.js';
+import { indexListings } from './infrastructure/search/elasticsearch.js';
 import { detectExactDuplicatePhotos } from './photo-antifake.js';
 import {
   aiWorkerEnabled,

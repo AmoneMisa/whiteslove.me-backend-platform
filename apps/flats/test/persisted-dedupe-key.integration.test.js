@@ -135,7 +135,7 @@ test('persisted dedupe key is equivalent to the previous runtime fingerprint', {
 });
 
 test('listing reads use persisted dedupe keys while stats preserve exact visibility semantics', async () => {
-  const search = await readFile(new URL('../src/postgres-search-core.js', import.meta.url), 'utf8');
+  const search = await readFile(new URL('../src/infrastructure/search/postgres-search-core.js', import.meta.url), 'utf8');
   const migrationSql = await migration('010_persisted_dedupe_key.sql');
 
   assert.match(search, /dedupeEnabled \? 'l\.dedupe_key'/);

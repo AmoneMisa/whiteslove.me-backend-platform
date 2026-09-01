@@ -7,7 +7,7 @@ async function source(path) {
 }
 
 test('hot listing filters use typed columns and normalized relations', async () => {
-  const search = await source('../src/postgres-search-core.js');
+  const search = await source('../src/infrastructure/search/postgres-search-core.js');
 
   for (const column of [
     'l.bedrooms',

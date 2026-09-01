@@ -5,7 +5,7 @@ import {refreshAll} from './scheduler.js';
 import {searchPostgresListings} from './postgres-search-fast.js';
 import {searchPostgresMapPoints} from './map-feed.js';
 import {attachMarketComparisons} from './market-comparison.js';
-import {searchListingMatches} from './elasticsearch.js';
+import {searchListingMatches} from './infrastructure/search/elasticsearch.js';
 import {checkRate} from './request-rate-limit.js';
 import {prepareCustomSources} from './custom-source-queue.js';
 

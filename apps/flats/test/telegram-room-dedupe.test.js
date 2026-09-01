@@ -5,7 +5,7 @@ import {readFile} from 'node:fs/promises';
 import {makeListing} from '../src/normalize.js';
 import {looksTelegramRoomShare} from '../src/telegram-room-share.js';
 
-const postgresSearch = await readFile(new URL('../src/postgres-search-core.js', import.meta.url), 'utf8');
+const postgresSearch = await readFile(new URL('../src/infrastructure/search/postgres-search-core.js', import.meta.url), 'utf8');
 const dedupeMigration = await readFile(new URL('../migrations/010_persisted_dedupe_key.sql', import.meta.url), 'utf8');
 const telegramScraper = await readFile(new URL('../src/scrapers/telegram.js', import.meta.url), 'utf8');
 

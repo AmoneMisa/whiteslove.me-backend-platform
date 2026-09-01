@@ -6,7 +6,7 @@ import {parseListingFilters} from '../src/listing-routes.js';
 import {
   buildMemberWhere,
   canUseFastFeedPath,
-} from '../src/postgres-search-fast-core.js';
+} from '../src/infrastructure/search/postgres-search-fast-core.js';
 
 const base = {
   customSources: [],

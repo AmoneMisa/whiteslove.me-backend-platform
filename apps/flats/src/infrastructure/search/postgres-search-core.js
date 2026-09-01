@@ -1,4 +1,4 @@
-import { pool } from './db.js';
+import { pool } from '../../db.js';
 
 const MAX_AGE_DAYS = 21;
 const CURSOR_VERSION = 1;

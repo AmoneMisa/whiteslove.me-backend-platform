@@ -1,5 +1,5 @@
 import {pool} from './db.js';
-import {deleteListingDocuments} from './elasticsearch.js';
+import {deleteListingDocuments} from './infrastructure/search/elasticsearch.js';
 
 const LISTING_MAX_AGE_DAYS = 14;
 const DEFAULT_BATCH = 5000;

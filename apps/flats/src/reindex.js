@@ -3,7 +3,7 @@ import {assertDatabaseReady} from './db-ready.js';
 import {
   closeElasticsearch,
   rebuildSearchIndex,
-} from './elasticsearch.js';
+} from './infrastructure/search/elasticsearch.js';
 
 async function main() {
   try {

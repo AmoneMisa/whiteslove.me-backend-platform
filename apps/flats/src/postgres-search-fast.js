@@ -2,7 +2,7 @@ import {canonicalListingFilters} from './listing-filter-canonical.js';
 import {
   canUseFastListingPath,
   searchPostgresListings as searchPostgresListingsCore,
-} from './postgres-search-fast-core.js';
+} from './infrastructure/search/postgres-search-fast-core.js';
 import {
   canUseCanonicalFeedPath,
   searchCanonicalFeed,

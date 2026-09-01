@@ -17,7 +17,7 @@ const listingRoutesSource = readFileSync(
   'utf8',
 );
 const postgresSearchSource = readFileSync(
-  new URL('../src/postgres-search-core.js', import.meta.url),
+  new URL('../src/infrastructure/search/postgres-search-core.js', import.meta.url),
   'utf8',
 );
 

@@ -1,5 +1,5 @@
 import { dbHealth, getDbStats } from './db.js';
-import { elasticsearchHealth } from './elasticsearch.js';
+import { elasticsearchHealth } from './infrastructure/search/elasticsearch.js';
 import { requireInternal } from './internal-auth.js';
 import { getLastGeoPromote, getLastRun, refreshAll, refreshGeoPromote } from './scheduler.js';
 
