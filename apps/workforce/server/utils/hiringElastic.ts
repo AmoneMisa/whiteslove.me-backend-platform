@@ -2,7 +2,7 @@
 // Desired professions are ranked above previous positions; the store remains
 // the source of truth and Elasticsearch is only the search/ranking layer.
 
-import type { CvProfile } from './hiringTypes'
+import type { CvProfile } from '~~/shared/contracts/hiring'
 import { transliterationMappings } from './cyrillicTransliteration'
 
 const ELASTICSEARCH_URL = (

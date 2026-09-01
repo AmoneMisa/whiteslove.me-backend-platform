@@ -16,7 +16,7 @@ import { getHiringWebDiagnostics } from '../utils/hiringDiagnostics'
 import { loadDbSourceRuns } from '../utils/hiringDb'
 import { convertCurrency, getRates, loadRates } from '../utils/currency'
 import { buildHiringStatistics } from '../../shared/hiringStatistics'
-import type { CvProfile } from '../utils/hiringTypes'
+import type { CvProfile } from '~~/shared/contracts/hiring'
 import { canonicalCityKey, cityAliases, normalizeCityValue } from '../../shared/locationCatalog'
 import {
   publicCandidateGender,

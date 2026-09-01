@@ -7,7 +7,7 @@
 import { emptyWebCursor, loadWebCursors, saveWebCursor } from '../../../shared/hiring/hiringCursors'
 import { recordWebDiagnostic, type SourceRun, type WebSourceDiagnostic } from '../../utils/hiringDiagnostics'
 import { normalizeCandidate } from '../../utils/hiringNormalize'
-import type { CvProfile } from '../../utils/hiringTypes'
+import type { CvProfile } from '~~/shared/contracts/hiring'
 import { hiringDbEnabled, saveDbCandidates } from '../infrastructure/database'
 import { persistWebProfiles } from '../webProfilePersistence'
 import { cityFrom } from '../../../shared/hiring/webFields'

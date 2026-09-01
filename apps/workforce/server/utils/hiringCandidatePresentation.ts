@@ -1,4 +1,4 @@
-import type { CvProfile } from './hiringTypes'
+import type { CvProfile } from '~~/shared/contracts/hiring'
 import { parseExtendedLanguageContext } from '@whiteslove/parsing-lexicon/hiring-language-extensions'
 import { normalizeSourceRole } from '@whiteslove/parsing-lexicon/hiring-source-aliases'
 import {

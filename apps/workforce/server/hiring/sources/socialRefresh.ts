@@ -3,7 +3,7 @@ import { detectCandidateRemotePreference } from '@whiteslove/parsing-lexicon/hir
 import { HIRING_FACEBOOK_GROUPS } from '../../../shared/hiring/sources/facebookGroups'
 import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../utils/hiringDiagnostics'
 import { normalizeCandidate, trimThreadsProfileText } from '../../utils/hiringNormalize'
-import type { CvProfile } from '../../utils/hiringTypes'
+import type { CvProfile } from '~~/shared/contracts/hiring'
 import { socialFetcherBaseUrl } from '../../utils/socialFetcherTransport'
 import { detectCity, isLikelyCvPost } from '../domain/telegramCandidateParser'
 import { persistWebProfiles } from '../webProfilePersistence'

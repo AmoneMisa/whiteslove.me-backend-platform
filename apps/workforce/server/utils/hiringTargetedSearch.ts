@@ -1,7 +1,7 @@
 import { detectCandidateRemotePreference } from '@whiteslove/parsing-lexicon/hiring-semantics'
 import { parseHiringActivityDate } from '@whiteslove/parsing-lexicon/hiring-temporal'
 import { normalizeCandidate } from './hiringNormalize'
-import type { CvProfile } from './hiringTypes'
+import type { CvProfile } from '~~/shared/contracts/hiring'
 import { absoluteUrl, cityFrom, contacts, employment, htmlText, isRecent, parseSalary } from './hiringWebFields'
 
 const UA =

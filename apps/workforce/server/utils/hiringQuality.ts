@@ -14,7 +14,7 @@ import {
   isHiringRecruitingOpportunity,
   parseCandidateSalary,
 } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
-import type { CvProfile } from './hiringTypes'
+import type { CvProfile } from '~~/shared/contracts/hiring'
 import { detectMentionedProfessions } from './hiringNormalize'
 import {
   detectCandidateProfessionLabels,

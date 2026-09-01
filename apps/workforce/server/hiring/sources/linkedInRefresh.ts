@@ -3,7 +3,7 @@ import { detectCandidateRemotePreference } from '@whiteslove/parsing-lexicon/hir
 import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../utils/hiringDiagnostics'
 import { SHARED_CANDIDATE_INTENT_RE, SHARED_EMPLOYER_INTENT_RE } from '../../utils/hiringLexicon'
 import { normalizeCandidate } from '../../utils/hiringNormalize'
-import type { CvProfile } from '../../utils/hiringTypes'
+import type { CvProfile } from '~~/shared/contracts/hiring'
 import { detectCity } from '../domain/telegramCandidateParser'
 import { persistWebProfiles } from '../webProfilePersistence'
 import {

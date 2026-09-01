@@ -24,7 +24,7 @@ import {
   parseHiringDayMonthDate,
 } from '@whiteslove/parsing-lexicon/hiring-temporal'
 import { decodeHtmlEntities } from '../htmlText'
-import type { CvProfile } from './hiringTypes'
+import type { CvProfile } from '~~/shared/contracts/hiring'
 
 export const MAX_AGE_MONTHS = 3
 

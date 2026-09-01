@@ -1,6 +1,6 @@
 import { extractCandidateExperienceMentions } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
 import { detectMentionedProfessions } from './hiringNormalize'
-import type { CvProfile, ProfessionExperience } from './hiringTypes'
+import type { CvProfile, ProfessionExperience } from '~~/shared/contracts/hiring'
 
 function normalizeExisting(items: ProfessionExperience[] | undefined): ProfessionExperience[] {
   const out = new Map<string, ProfessionExperience>()
