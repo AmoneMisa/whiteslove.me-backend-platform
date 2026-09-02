@@ -1,13 +1,13 @@
 // A single normalized Listing shape that the Flutter app consumes.
 import {createHash} from 'node:crypto';
 import {extractTags} from './tags.js';
-import {
-  classifyChildren, classifyDealType, classifyPets, looksCommercial, looksRoomOnly,
-  parseAirConditioner, parseAmenities, parseAreaFromText, parseBalcony, parseBathrooms, parseBedrooms,
-  parseCommunalSeparated, parseContact, parseDeposit, parseElevator, parseFurnished, parseGasSupply,
-  parseHeating, parseHotWater, parseInternet, parseKvartal, parseNearbyShops, parseNearbyPlaces, parseNegotiable,
-  parseNewBuilding, parseParking, parseSmoking, parseYear,
-} from './textparse.js';
+import { classifyHousingDealType } from '@whiteslove/parsing-lexicon/housing-intent';
+import { looksCommercialHousing } from '@whiteslove/parsing-lexicon/housing-commercial';
+import { looksHousingRoomOnly } from '@whiteslove/parsing-lexicon/housing';
+import { parsePrimaryContact } from '@whiteslove/parsing-lexicon/contact';
+import { parseHousingAreaFromText } from '@whiteslove/parsing-lexicon/housing-text';
+import { parseHousingListingFields } from '@whiteslove/parsing-lexicon/housing-listing-fields';
+import { parseAmenities, parseKvartal, parseNearbyShops, parseNearbyPlaces } from './textparse-legacy.js';
 import {
   classifyAudience, parseCommission, parseExplicitDistrict, parseFloor, parseResidentialComplex,
   parseRoomsFromText,
@@ -134,6 +134,7 @@ export function makeListing(partial) {
   const combined = `${sourceTitle} ${description}`;
   const country = parseCanonicalCountryCode(partial.country) || '';
   const propertyType = partial.propertyType === 'house' ? 'house' : 'flat';
+  const listingFields = parseHousingListingFields(combined, {country});
   const housingStructured = parseHousingStructuredContext(combined);
   const byAgency = partial.byAgency != null
     ? Boolean(partial.byAgency)
@@ -145,7 +146,7 @@ export function makeListing(partial) {
   const housingContext = housingStructured.context ?? parseHousingSemanticContext(combined);
   const housingAction = partial.housingAction ?? partial.action ?? housingIntent?.action ?? null;
   const listingKind = partial.listingKind ?? housingIntent?.listingKind ?? 'propertyOffer';
-  const parsedDealType = housingIntent?.dealType ?? parseLexiconDealType(combined) ?? classifyDealType(combined);
+  const parsedDealType = housingIntent?.dealType ?? parseLexiconDealType(combined) ?? classifyHousingDealType(combined);
   const explicitShortStay = parsedDealType === 'shortRent' || EXPLICIT_SHORT_STAY_RE.test(combined);
 
   // Explicit short-term language outranks a scraper's generic long-rent default.
@@ -186,10 +187,10 @@ export function makeListing(partial) {
   const totalFloors = partial.totalFloors != null
     ? Number(partial.totalFloors)
     : (parsedFloor.totalFloors ?? housingStructured.floor.totalFloors);
-  const buildingYear = partial.buildingYear != null ? Number(partial.buildingYear) : parseYear(combined);
-  const bedrooms = partial.bedrooms != null ? Number(partial.bedrooms) : parseBedrooms(combined);
+  const buildingYear = partial.buildingYear != null ? Number(partial.buildingYear) : listingFields.buildingYear ?? null;
+  const bedrooms = partial.bedrooms != null ? Number(partial.bedrooms) : listingFields.bedrooms ?? null;
   const audience = partial.audience ?? classifyAudience(combined);
-  const contact = partial.contact ?? parseContact(combined);
+  const contact = partial.contact ?? parsePrimaryContact(combined);
   const sourceCity = parseCanonicalCity(country, partial.city || '');
   const explicitDistrict = parseExplicitDistrict(combined, country);
   const loc = parseLocation(combined, country, sourceCity || null);
@@ -211,27 +212,25 @@ export function makeListing(partial) {
     ?? (preferLocalResidence ? (canonicalLocalResidence ?? loc.residentialComplex) : (loc.residentialComplex ?? canonicalLocalResidence));
   const street = partial.street ?? loc.street ?? null;
   const address = partial.address ?? parseLexiconAddress(combined, street);
-  const commercial = partial.commercial === true || looksCommercial(combined) || looksParkingOnly(combined);
-  const petsAllowed = partial.petsAllowed ?? classifyPets(combined);
-  const childrenAllowed = partial.childrenAllowed ?? classifyChildren(combined);
+  const commercial = partial.commercial === true || looksCommercialHousing(combined) || looksParkingOnly(combined);
+  const petsAllowed = partial.petsAllowed ?? listingFields.petsAllowed ?? null;
+  const childrenAllowed = partial.childrenAllowed ?? listingFields.childrenAllowed ?? null;
   const occupancyType = partial.occupancyType ?? parseHousingOccupancyType(combined);
   const roomOnly = partial.roomOnly
-    ?? (['room', 'sharedRoom', 'bedSpace'].includes(occupancyType) || looksRoomOnly(combined));
+    ?? (['room', 'sharedRoom', 'bedSpace'].includes(occupancyType) || looksHousingRoomOnly(combined));
 
-  const dep = parseDeposit(combined);
   const structuredDeposit = housingStructured.payments.deposit;
   const depositKind = partial.depositKind
     ?? structuredDeposit.kind
     ?? parseDepositKind(combined);
   const deposit = partial.deposit
     ?? structuredDeposit.required
-    ?? (depositKind === 'noDeposit' ? false : dep.required);
+    ?? (depositKind === 'noDeposit' ? false : listingFields.depositRequired ?? null);
   const depositAmount = partial.depositAmount
     ?? structuredDeposit.amount
-    ?? dep.amount;
+    ?? null;
   const depositCurrency = partial.depositCurrency
     ?? structuredDeposit.currency
-    ?? dep.currency
     ?? null;
 
   const com = parseCommission(combined);
@@ -243,30 +242,30 @@ export function makeListing(partial) {
     ?? structuredCommission.percent
     ?? com.percent;
 
-  const balcony = partial.balcony ?? parseBalcony(combined);
+  const balcony = partial.balcony ?? listingFields.balcony ?? null;
   const terrace = partial.terrace ?? parseTerrace(combined);
   const privateYard = partial.privateYard ?? parsePrivateYard(combined);
   const dishwasher = partial.dishwasher ?? parseDishwasher(combined);
-  const airConditioner = partial.airConditioner ?? parseAirConditioner(combined);
-  const gas = partial.gas ?? parseGasSupply(combined);
-  const bathrooms = partial.bathrooms != null ? Number(partial.bathrooms) : parseBathrooms(combined);
+  const airConditioner = partial.airConditioner ?? listingFields.airConditioner ?? null;
+  const gas = partial.gas ?? listingFields.gas ?? null;
+  const bathrooms = partial.bathrooms != null ? Number(partial.bathrooms) : listingFields.bathrooms ?? null;
   const newBuilding = partial.newBuilding
-    ?? (parseNewBuilding(combined) || (buildingYear && buildingYear >= new Date().getFullYear() - 5 ? true : null));
-  const communalSeparated = partial.communalSeparated ?? parseCommunalSeparated(combined);
+    ?? (listingFields.newBuilding || (buildingYear && buildingYear >= new Date().getFullYear() - 5 ? true : null));
+  const communalSeparated = partial.communalSeparated ?? listingFields.communalSeparated ?? null;
   const parsedKvartal = parseKvartal(combined);
   const area = partial.area ?? loc.area ?? partial.kvartal ?? parsedKvartal;
   const kvartal = partial.kvartal ?? area;
   const nearbyShops = partial.nearbyShops ?? parseNearbyShops(combined);
   const amenities = Array.isArray(partial.amenities) ? partial.amenities : parseAmenities(combined);
   const appliances = Array.isArray(partial.appliances) ? partial.appliances : parseAppliances(combined);
-  const parking = partial.parking ?? parseParking(combined);
-  const elevator = partial.elevator ?? parseElevator(combined);
-  const heating = partial.heating ?? parseHeating(combined);
-  const hotWater = partial.hotWater ?? parseHotWater(combined);
-  const internet = partial.internet ?? parseInternet(combined);
-  const smokingAllowed = partial.smokingAllowed ?? parseSmoking(combined);
-  const negotiable = partial.negotiable ?? parseNegotiable(combined);
-  const furnished = partial.furnished ?? parseFurnished(combined);
+  const parking = partial.parking ?? listingFields.parking ?? null;
+  const elevator = partial.elevator ?? listingFields.elevator ?? null;
+  const heating = partial.heating ?? listingFields.heating ?? null;
+  const hotWater = partial.hotWater ?? listingFields.hotWater ?? null;
+  const internet = partial.internet ?? listingFields.internet ?? null;
+  const smokingAllowed = partial.smokingAllowed ?? listingFields.smokingAllowed ?? null;
+  const negotiable = partial.negotiable ?? listingFields.negotiable ?? null;
+  const furnished = partial.furnished ?? listingFields.furnished ?? null;
   const title = normalizeListingTitle(sourceTitle, {
     propertyType,
     rooms,
@@ -278,7 +277,7 @@ export function makeListing(partial) {
   const currency = partial.currency ?? '';
   const areaSqm = partial.areaSqm != null
     ? Number(partial.areaSqm)
-    : (housingStructured.area.total ?? parseAreaFromText(combined));
+    : (housingStructured.area.total ?? parseHousingAreaFromText(combined));
   const photoFingerprints = [...new Set(
     (Array.isArray(partial.photoFingerprints) ? partial.photoFingerprints : [])
       .map((value) => String(value || '').toLowerCase())

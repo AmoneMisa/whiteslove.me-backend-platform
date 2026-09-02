@@ -3,11 +3,11 @@ import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structur
 import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
 import { makeListing } from '../normalize.js';
 import { MAX_AGE_MS } from '../listing-policy.js';
+import { parseHousingPrice as parsePriceFromText } from '@whiteslove/parsing-lexicon/housing-money';
 import {
-  parsePriceFromText,
-  parseRoomsFromText,
-  parseAreaFromText,
-} from '../textparse.js';
+  parseHousingRoomsFromText as parseRoomsFromText,
+  parseHousingAreaFromText as parseAreaFromText,
+} from '@whiteslove/parsing-lexicon/housing-text';
 
 const SOCIAL_FETCHER_URL = String(process.env.SOCIAL_FETCHER_URL || '').replace(/\/$/, '');
 const SOCIAL_TIMEOUT_MS = Math.max(30_000, Math.min(170_000, Number(process.env.SOCIAL_HOUSING_TIMEOUT_MS) || 150_000));

@@ -1,11 +1,13 @@
+import { parseHousingListingFields } from '@whiteslove/parsing-lexicon/housing-listing-fields';
 import {
-  classifyAudience as baseClassifyAudience,
-  classifyChildren as baseClassifyChildren,
-  parseFloor as baseParseFloor,
-  parseKvartal as baseParseKvartal,
-  parseResidentialComplex as baseParseResidentialComplex,
-  parseRoomsFromText as baseParseRoomsFromText,
-} from './textparse.js';
+  parseHousingAudience as baseClassifyAudience,
+  parseHousingFloorFromText as baseParseFloor,
+  parseHousingResidentialComplex as baseParseResidentialComplex,
+  parseHousingRoomsFromText as baseParseRoomsFromText,
+} from '@whiteslove/parsing-lexicon/housing-text';
+import { parseKvartal as baseParseKvartal } from './textparse-legacy.js';
+
+const baseClassifyChildren = (text) => parseHousingListingFields(text).childrenAllowed ?? null;
 import {hasZeroCommissionSignal} from './seller-signals.js';
 
 const COMMISSION_PERCENT_RE = [

@@ -3,7 +3,10 @@ import assert from 'node:assert/strict';
 
 import { makeListing } from '../src/normalize.js';
 import { applyListingFilters } from '../src/legacy-listing-filter.js';
-import { classifyAgency, parseContact, parseDeposit, parseFloor, parsePriceFromText } from '../src/textparse.js';
+import { parsePrimaryContact as parseContact } from '@whiteslove/parsing-lexicon/contact';
+import { parseHousingPrice as parsePriceFromText } from '@whiteslove/parsing-lexicon/housing-money';
+import { parseHousingPayments, parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
+import { parseHousingFloorFromText as parseFloor } from '@whiteslove/parsing-lexicon/housing-text';
 import { cityLocations, parseLocation } from '../src/locations.js';
 import { resolveTashkentArea } from '../src/tashkent-areas.js';
 
@@ -28,7 +31,7 @@ test('parses converted-room Uzbek Telegram shorthand and rental details', () => 
     description,
     price: 500,
     currency: 'USD',
-    byAgency: classifyAgency(description),
+    byAgency: parseHousingSeller(description).type === 'agency',
   });
 
   assert.equal(listing.propertyType, 'flat');
@@ -303,9 +306,9 @@ test('infers Tashkent from Darkhan and Novomoskovskaya landmarks', () => {
 
 test('does not use a following phone number as the deposit amount', () => {
   const text = `Цена 450$\n\nИмеется договорной депозит.\n\n+998903720270 @arenda_tashkent10`;
-  assert.deepEqual(parseDeposit(text), { required: true, amount: null, currency: null });
-  assert.deepEqual(parseDeposit('Залог 500$; телефон +998 90 123 45 67'), { required: true, amount: 500, currency: 'USD' });
-  assert.deepEqual(parseDeposit('Депозит 1 500 000 UZS'), { required: true, amount: 1_500_000, currency: 'UZS' });
+  assert.deepEqual(parseHousingPayments(text).deposit, { required: true, kind: 'deposit', amount: null, currency: null });
+  assert.deepEqual(parseHousingPayments('Залог 500$; телефон +998 90 123 45 67').deposit, { required: true, kind: 'deposit', amount: 500, currency: 'USD' });
+  assert.deepEqual(parseHousingPayments('Депозит 1 500 000 UZS').deposit, { required: true, kind: 'deposit', amount: 1_500_000, currency: 'UZS' });
 });
 
 test('finds one shared listing by exact id outside normal pagination', () => {
@@ -380,7 +383,7 @@ test('parses Cyrillic Uzbek shared rent, included utilities and local price', ()
   const parsedPrice = parsePriceFromText(text, 'UZS');
   const listing = makeListing({
     id: 'sergeli-shared-test', source: 'telegram', country: 'UZ', title: 'КВАРТИРА БОР ХАЗАЙКАЛИ',
-    description: text, price: parsedPrice.amount, currency: parsedPrice.currency, byAgency: classifyAgency(text),
+    description: text, price: parsedPrice.amount, currency: parsedPrice.currency, byAgency: parseHousingSeller(text).type === 'agency',
   });
 
   assert.equal(listing.price, 1_000_000);
@@ -411,7 +414,7 @@ test('parses Sergeli hudud, realtor shorthand and bare daily UZS', () => {
   const listing = makeListing({
     id: 'sergeli-commission-test', source: 'telegram', country: 'UZ', title: 'Сергели 10 худуд',
     description: commissionText, price: commissionPrice.amount, currency: commissionPrice.currency,
-    byAgency: classifyAgency(commissionText),
+    byAgency: parseHousingSeller(commissionText).type === 'agency',
   });
   assert.equal(listing.kvartal, 'Sergeli-10');
   assert.equal(listing.areaAmbiguous, true);
@@ -455,7 +458,7 @@ Makler 50%`;
   const listing = makeListing({
     id: 'sergeli-compact-test', source: 'telegram', country: 'UZ', title: 'ARENDA',
     description: text, price: parsedPrice.amount, currency: parsedPrice.currency,
-    byAgency: classifyAgency(text),
+    byAgency: parseHousingSeller(text).type === 'agency',
   });
 
   assert.equal(listing.rooms, 3);

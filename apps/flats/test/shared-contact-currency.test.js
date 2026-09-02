@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { parsePhoneNumbers, findTelegramContacts } from '@whiteslove/parsing-lexicon/contact';
 import { countryCurrency, countryPhoneHint } from '@whiteslove/parsing-lexicon/country-context';
 import { moneyCurrencyFromText } from '@whiteslove/parsing-lexicon/currency';
-import { parsePriceFromText } from '../src/textparse.js';
+import { parseHousingPrice as parsePriceFromText } from '@whiteslove/parsing-lexicon/housing-money';
 
 test('backend consumes shared country-aware contact parsing', () => {
   assert.equal(countryCurrency('Украина'), 'UAH');

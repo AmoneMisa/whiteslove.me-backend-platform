@@ -13,11 +13,11 @@ import {makeListing} from '../normalize.js';
 import {MAX_AGE_MS} from '../listing-policy.js';
 import {looksTelegramRoomShare} from '../telegram-room-share.js';
 import {isDirectOwner} from '../seller-signals.js';
+import { parseHousingPrice as parsePriceFromText } from '@whiteslove/parsing-lexicon/housing-money';
 import {
-  parsePriceFromText,
-  parseRoomsFromText,
-  parseAreaFromText,
-} from '../textparse.js';
+  parseHousingRoomsFromText as parseRoomsFromText,
+  parseHousingAreaFromText as parseAreaFromText,
+} from '@whiteslove/parsing-lexicon/housing-text';
 import {classifyChildren, parseCondition, parseKvartal} from '../textparse-overrides.js';
 
 const TG_WORKER_URL = process.env.TG_WORKER_URL || '';

@@ -2,11 +2,11 @@ import { resolveHousingIntent } from '@whiteslove/parsing-lexicon/housing-intent
 import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
 import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
 import { makeListing } from '../normalize.js';
+import { parseHousingPrice as parsePriceFromText } from '@whiteslove/parsing-lexicon/housing-money';
 import {
-  parseAreaFromText,
-  parsePriceFromText,
-  parseRoomsFromText,
-} from '../textparse.js';
+  parseHousingRoomsFromText as parseRoomsFromText,
+  parseHousingAreaFromText as parseAreaFromText,
+} from '@whiteslove/parsing-lexicon/housing-text';
 
 // Hosts whose entire curated catalogue is owner/direct by source contract.
 const OWNER_HOSTS = new Set([

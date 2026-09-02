@@ -67,6 +67,17 @@ test('listing freshness policy is imported directly instead of re-exported by no
   assert.match(telegram, /from '\.\.\/listing-policy\.js'/);
   assert.match(social, /from '\.\.\/listing-policy\.js'/);
 });
+test('retired text parser facade stays absent from flats runtime', () => {
+  assert.deepEqual(consumersOf(/textparse\\.js/), []);
+  assert.throws(() => readFileSync(path.join(srcRoot, 'textparse.js'), 'utf8'), {code: 'ENOENT'});
+});
+
+test('listing normalization consumes aggregate package-owned fields', () => {
+  const source = readFileSync(path.join(srcRoot, 'normalize-legacy.js'), 'utf8');
+  assert.match(source, /parseHousingListingFields\(combined, \{country\}\)/);
+  assert.doesNotMatch(source, /from '\.\/textparse\.js'/);
+});
+
 test('source adapters consume package-owned housing semantics', () => {
   for (const name of [
     'queueTasks.js',

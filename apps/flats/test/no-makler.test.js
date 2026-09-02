@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { makeListing } from '../src/normalize.js';
-import { classifyAgency } from '../src/textparse.js';
+import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
 import { parseCommission } from '../src/textparse-overrides.js';
 
 const text = `Квартира ЖК NRG BAXT БЕЗ МАКЛЕР!\n\nСдается квартира порядочным людям и иностранцам со всеми удобствами.`;
@@ -14,7 +14,7 @@ test('no-makler listing has no commission and clean residential-complex name', (
     country: 'UZ',
     title: 'Квартира ЖК NRG BAXT',
     description: 'БЕЗ МАКЛЕР!\nСдается квартира порядочным людям и иностранцам со всеми удобствами.',
-    byAgency: classifyAgency(text),
+    byAgency: parseHousingSeller(text).type === 'agency',
   });
 
   assert.equal(listing.byAgency, false);
