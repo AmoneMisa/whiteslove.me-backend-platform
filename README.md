@@ -12,17 +12,17 @@ linked as a submodule.
 
 | Service | Path | Port | Status |
 | --- | --- | ---: | --- |
-| AI Worker | `apps/ai-worker` | 4030 | migrated |
-| Flats API/worker | `apps/flats` | 4000 | imported |
+| AI Worker | [`apps/ai-worker`](apps/ai-worker/README.md) | 4030 | migrated |
+| Flats API/worker | [`apps/flats`](apps/flats/README.md) | 4000 | imported |
 | OLX transport | `services/olx-fetcher` | internal | imported |
 | Social transport | `services/social-fetcher` | internal | imported |
-| Vacancies worker | `apps/workforce` | internal | imported |
-| CV worker | `apps/workforce` | internal | imported |
-| Crawler core | `apps/workforce/packages/crawler-core` | library | extracted |
+| Vacancies worker | [`apps/workforce`](apps/workforce/README.md) | internal | imported |
+| CV worker | [`apps/workforce`](apps/workforce/README.md) | internal | imported |
+| Crawler core | [`apps/workforce/packages/crawler-core`](apps/workforce/packages/crawler-core/README.md) | library | extracted |
 | Job browser transport | `services/job-browser-fetcher` | internal | imported |
-| Vacancies API | `apps/workforce` | 4010 | imported |
-| CV API | `apps/workforce` | 4011 | imported |
-| Telegram subscription bot | `apps/subscription-bot` | internal | imported |
+| Vacancies API | [`apps/workforce`](apps/workforce/README.md) | 4010 | imported |
+| CV API | [`apps/workforce`](apps/workforce/README.md) | 4011 | imported |
+| Telegram subscription bot | [`apps/subscription-bot`](apps/subscription-bot/README.md) | internal | imported |
 
 ## Local development
 
