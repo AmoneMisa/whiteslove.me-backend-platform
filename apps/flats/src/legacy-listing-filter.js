@@ -1,5 +1,5 @@
 import {toUsd} from './fx.js';
-import {looksHousingWanted} from './textparse.js';
+import { resolveHousingIntent } from '@whiteslove/parsing-lexicon/housing-intent';
 import {MAX_AGE_MS} from './listing-policy.js';
 
 function normCity(value) {
@@ -94,7 +94,7 @@ export function applyListingFilters(listings, filters, rates = null) {
       const listingText = [listing.title, listing.description]
         .filter(Boolean)
         .join('\n');
-      if (looksHousingWanted(listingText)) return false;
+      if (resolveHousingIntent(listingText)?.listingKind === 'propertyWanted') return false;
     }
 
     // `dealType` is a public API filter and mobile exposes shortRent explicitly.

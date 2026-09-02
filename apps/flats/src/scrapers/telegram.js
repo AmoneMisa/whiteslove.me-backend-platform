@@ -6,6 +6,9 @@
 // transport-only: it returns raw message text/date, and all the housing
 // parsing/filtering below stays here so there's a single source of truth.
 
+import { resolveHousingIntent } from '@whiteslove/parsing-lexicon/housing-intent';
+import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
+import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
 import {makeListing} from '../normalize.js';
 import {MAX_AGE_MS} from '../listing-policy.js';
 import {looksTelegramRoomShare} from '../telegram-room-share.js';
@@ -14,9 +17,6 @@ import {
   parsePriceFromText,
   parseRoomsFromText,
   parseAreaFromText,
-  guessPropertyType,
-  classifyAgency,
-  looksHousingWanted,
 } from '../textparse.js';
 import {classifyChildren, parseCondition, parseKvartal} from '../textparse-overrides.js';
 
@@ -31,7 +31,7 @@ const TELEGRAM_BARE_USD_RE =
 export function classifyTelegramAgency(text) {
   if (!text) return false;
   if (isDirectOwner(text)) return false;
-  return classifyAgency(text);
+  return parseHousingSeller(text).type === 'agency';
 }
 
 export function guessTelegramPropertyType(text) {
@@ -39,7 +39,7 @@ export function guessTelegramPropertyType(text) {
   if (/(?:^|[^\p{L}\p{N}_])[xh]ovli(?:ni|da|dan|ning)?(?=$|[^\p{L}\p{N}_])/iu.test(text)) {
     return 'house';
   }
-  return guessPropertyType(text);
+  return resolveHousingPropertyType(text);
 }
 
 export function parseTelegramPrice(text, country, dealType = null) {
@@ -71,7 +71,7 @@ function messageToListing(msg, channelConfig, country) {
   const channel = channelConfig.name;
   const text = (msg.text || '').replace(/[ \t]+/g, ' ').trim();
 
-  if (looksHousingWanted(text)) return null;
+  if (resolveHousingIntent(text)?.listingKind === 'propertyWanted') return null;
   if (text.length < 10) return null;
   if (!HOUSING_RE.test(text)) return null;
 

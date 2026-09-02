@@ -17,7 +17,7 @@
 import dns from 'node:dns/promises';
 import net from 'node:net';
 import { makeListing } from '../normalize.js';
-import { classifyAgency } from '../textparse.js';
+import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
 import { fetchChannel } from './telegram.js';
 import { extractKnownOwnerHtml } from './owner-html.js';
 
@@ -261,7 +261,7 @@ function mapLdNode(node, country, sourceUrl, idx) {
     (typeof node.url === 'string' && node.url) ||
     (typeof offer.url === 'string' && offer.url) ||
     sourceUrl;
-  const agency = classifyAgency(sellerText(node, offer));
+  const agency = parseHousingSeller(sellerText(node, offer)).type === 'agency';
 
   return makeListing({
     id: `custom-${hash(sourceUrl + '|' + url + '|' + idx)}`,
@@ -337,7 +337,7 @@ function extractFeed(xml, country, sourceUrl) {
         title: decodedTitle,
         description: decodedDesc,
         propertyType: 'flat',
-        byAgency: classifyAgency(`${decodedTitle} ${decodedDesc}`) ? true : undefined,
+        byAgency: parseHousingSeller(`${decodedTitle} ${decodedDesc}`).type === 'agency' ? true : undefined,
         price: null,
         currency: country.currency,
         city: '',

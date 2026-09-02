@@ -1,6 +1,8 @@
 import { COUNTRIES } from './countries.js';
 import { makeListing } from './normalize.js';
-import { classifyAgency, guessPropertyType, looksHousingWanted } from './textparse.js';
+import { resolveHousingIntent } from '@whiteslove/parsing-lexicon/housing-intent';
+import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
+import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
 import { isDirectOwner } from './seller-signals.js';
 import { fetchChannel } from './scrapers/telegram.js';
 import { scrapeCustomUrl } from './scrapers/custom.js';
@@ -99,7 +101,7 @@ function mapOlxStateItem(item, country, forcedCity = null, forcedDealType = null
     country: country.code,
     title: item.title,
     description: item.description ?? '',
-    propertyType: guessPropertyType(`${item.title || ''} ${paramText}`),
+    propertyType: resolveHousingPropertyType(`${item.title || ''} ${paramText}`),
     byAgency: Boolean(item.isBusiness),
     price: regularPrice.value ?? null,
     currency: normalizeCurrency(regularPrice.currencyCode) ?? country.currency,
@@ -219,13 +221,13 @@ export function enforceOwnerOnlyListings(listings, policy = {}) {
   return listings
     .filter((listing) => {
       const text = `${listing?.title || ''}\n${listing?.description || ''}`.trim();
-      if (!text || looksHousingWanted(text)) return false;
+      if (!text || resolveHousingIntent(text)?.listingKind === 'propertyWanted') return false;
       if (hasMarker(text, policy.ownerRejectMarkers)) return false;
 
       const ownerMarker = hasMarker(text, policy.ownerMarkers);
       const directOwner = ownerMarker || isDirectOwner(text);
       if (listing?.byAgency === true && !directOwner) return false;
-      if (classifyAgency(text) && !directOwner) return false;
+      if (parseHousingSeller(text).type === 'agency' && !directOwner) return false;
 
       if (Array.isArray(policy.ownerMarkers) && policy.ownerMarkers.length) {
         return directOwner;

@@ -1,12 +1,12 @@
 import { resolveHousingIntent } from '@whiteslove/parsing-lexicon/housing-intent';
+import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
+import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
 import { makeListing } from '../normalize.js';
 import { MAX_AGE_MS } from '../listing-policy.js';
 import {
   parsePriceFromText,
   parseRoomsFromText,
   parseAreaFromText,
-  guessPropertyType,
-  classifyAgency,
 } from '../textparse.js';
 
 const SOCIAL_FETCHER_URL = String(process.env.SOCIAL_FETCHER_URL || '').replace(/\/$/, '');
@@ -76,8 +76,8 @@ function itemToListing(item, source, targetConfig, country) {
     country: country.code,
     title: text.split('\n')[0].slice(0, 90),
     description: text,
-    propertyType: guessPropertyType(text),
-    byAgency: classifyAgency(text),
+    propertyType: resolveHousingPropertyType(text),
+    byAgency: parseHousingSeller(text).type === 'agency',
     price,
     currency,
     rooms: parseRoomsFromText(text),

@@ -67,3 +67,21 @@ test('listing freshness policy is imported directly instead of re-exported by no
   assert.match(telegram, /from '\.\.\/listing-policy\.js'/);
   assert.match(social, /from '\.\.\/listing-policy\.js'/);
 });
+test('source adapters consume package-owned housing semantics', () => {
+  for (const name of [
+    'queueTasks.js',
+    'legacy-listing-filter.js',
+    'scrapers/custom.js',
+    'scrapers/olx.js',
+    'scrapers/owner-html.js',
+    'scrapers/social.js',
+    'scrapers/telegram.js',
+  ]) {
+    const source = readFileSync(path.join(srcRoot, name), 'utf8');
+    assert.doesNotMatch(
+      source,
+      /\b(?:classifyAgency|guessPropertyType|looksHousingWanted)\b/,
+      name + ' must consume package-owned housing semantics',
+    );
+  }
+});

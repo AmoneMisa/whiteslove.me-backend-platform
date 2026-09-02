@@ -1,8 +1,8 @@
+import { resolveHousingIntent } from '@whiteslove/parsing-lexicon/housing-intent';
+import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
+import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
 import { makeListing } from '../normalize.js';
 import {
-  classifyAgency,
-  guessPropertyType,
-  looksHousingWanted,
   parseAreaFromText,
   parsePriceFromText,
   parseRoomsFromText,
@@ -122,7 +122,7 @@ function plausibleCard(text, country) {
     return false;
   }
   if (!PRICE_RE.test(text)) return false;
-  if (looksHousingWanted(text)) return false;
+  if (resolveHousingIntent(text)?.listingKind === 'propertyWanted') return false;
   const parsed = parsePriceFromText(text, country?.currency || '');
   return parsed?.amount != null;
 }
@@ -130,14 +130,14 @@ function plausibleCard(text, country) {
 function toListing(fragment, text, country, sourceUrl, index, ownerHost) {
   const parsedPrice = parsePriceFromText(text, country?.currency || '');
   const url = firstHref(fragment, sourceUrl) || sourceUrl;
-  const agency = !ownerHost && classifyAgency(text);
+  const agency = !ownerHost && parseHousingSeller(text).type === 'agency';
   return makeListing({
     id: `owner-${hash(`${sourceUrl}|${url}|${text.slice(0, 320)}|${index}`)}`,
     source: 'custom',
     country: country.code,
     title: heading(fragment, text),
     description: text,
-    propertyType: guessPropertyType(text),
+    propertyType: resolveHousingPropertyType(text),
     // Owner-only hosts keep their source contract. Mixed hosts only set true
     // when an explicit realtor/agency signal exists; otherwise normalization is
     // free to apply shared seller semantics instead of us inventing an owner.

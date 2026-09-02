@@ -14,7 +14,7 @@
 // through the sidecar.
 
 import {makeListing} from '../normalize.js';
-import {guessPropertyType} from '../textparse.js';
+import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
 import {sleep, throttle} from '../ratelimit.js';
 import {olxSegmentDealType} from '../olx-segment.js';
 
@@ -509,7 +509,7 @@ function mapStateItem(item, country, segment = null) {
     country: country.code,
     title: item.title,
     description: item.description ?? '',
-    propertyType: guessPropertyType(`${item.title || ''} ${paramText}`),
+    propertyType: resolveHousingPropertyType(`${item.title || ''} ${paramText}`),
     byAgency: Boolean(item.isBusiness),
     price: rp.value ?? null,
     currency: normalizeCurrency(rp.currencyCode) ?? country.currency,
@@ -585,7 +585,7 @@ function mapItem(item, country) {
     item.category?.label,
     ...Object.values(params).flatMap((param) => [param?.name, param?.value?.label]),
   ].filter(Boolean).join(' ');
-  const propertyType = guessPropertyType(`${item.title || ''} ${categoryText}`);
+  const propertyType = resolveHousingPropertyType(`${item.title || ''} ${categoryText}`);
 
   return makeListing({
     id: item.id,
