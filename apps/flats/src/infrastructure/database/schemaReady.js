@@ -4,11 +4,11 @@ import {listMigrationFiles} from '../../support/migration-files.js';
 export async function assertDatabaseReady() {
   const relationResult = await pool.query(`
     SELECT
-      to_regclass('public.schema_migrations')::text AS schema_migrations,
-      to_regclass('public.listings')::text AS listings,
-      to_regclass('public.crawl_tasks')::text AS crawl_tasks,
-      to_regclass('public.crawl_task_runs')::text AS crawl_task_runs,
-      to_regclass('public.places')::text AS places
+      to_regclass('schema_migrations')::text AS schema_migrations,
+      to_regclass('listings')::text AS listings,
+      to_regclass('crawl_tasks')::text AS crawl_tasks,
+      to_regclass('crawl_task_runs')::text AS crawl_task_runs,
+      to_regclass('places')::text AS places
   `);
 
   const relations = relationResult.rows[0] || {};
