@@ -1,6 +1,6 @@
 import { extractJobStructuredField, parseHiringSourceSalary } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
 import type { Job } from '~~/shared/contracts/jobs'
-import { detectWorkModes } from '../../utils/hiringLexicon'
+import { detectWorkModes } from '../../utils/hiring/hiringLexicon'
 import { isLikelyTelegramVacancy } from './telegramVacancyClassifier'
 
 const UA = 'jobFinder/1.0 (job aggregator; contact: admin@whiteslove.me)'

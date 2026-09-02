@@ -7,7 +7,7 @@ import { HIRING_FACEBOOK_GROUPS } from '../shared/hiring/sources/facebookGroups.
 const jobs = await readFile(new URL('../server/vacancies/sources/socialJobSources.ts', import.meta.url), 'utf8')
 const hiring = await readFile(new URL('../server/hiring/sources/socialRefresh.ts', import.meta.url), 'utf8')
 const linkedin = await readFile(new URL('../server/hiring/sources/linkedInRefresh.ts', import.meta.url), 'utf8')
-const transport = await readFile(new URL('../server/utils/socialFetcherTransport.ts', import.meta.url), 'utf8')
+const transport = await readFile(new URL('../server/utils/support/socialFetcherTransport.ts', import.meta.url), 'utf8')
 const compose = await readFile(new URL('../../../docker-compose.yml', import.meta.url), 'utf8')
 
 test('Threads vacancy discovery uses one durable target and passes the domain cutoff', () => {

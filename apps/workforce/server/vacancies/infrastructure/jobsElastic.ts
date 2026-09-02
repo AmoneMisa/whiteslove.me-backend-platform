@@ -1,5 +1,5 @@
 import type { Job } from '~~/shared/contracts/jobs'
-import { transliterationMappings } from '../../utils/cyrillicTransliteration'
+import { transliterationMappings } from '../../utils/support/cyrillicTransliteration'
 
 const ELASTICSEARCH_URL =
     (

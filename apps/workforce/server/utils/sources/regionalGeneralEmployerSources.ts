@@ -1,7 +1,7 @@
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
 import type { Job } from '~~/shared/contracts/jobs'
-import { detectWorkModes } from './hiringLexicon'
-import { absoluteHttpUrl as absoluteUrl, stripHtml } from './htmlText'
+import { detectWorkModes } from '../hiring/hiringLexicon'
+import { absoluteHttpUrl as absoluteUrl, stripHtml } from '../support/htmlText'
 
 const UA = 'jobFinder/1.0 (job aggregator; contact: admin@whiteslove.me)'
 

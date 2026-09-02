@@ -5,7 +5,7 @@ import {
   enrichStandardJobBoardDetails,
 } from './cyclicJobBoardCrawler'
 import type { Job, JobSource } from '~~/shared/contracts/jobs'
-import { detectWorkModes } from './hiringLexicon'
+import { detectWorkModes } from '../hiring/hiringLexicon'
 
 const UA = 'jobFinder/1.0 (job aggregator; contact: admin@whiteslove.me)'
 const DESC_MAX = Number.POSITIVE_INFINITY

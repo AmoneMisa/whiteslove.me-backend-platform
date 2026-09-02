@@ -7,7 +7,7 @@ import {
 import type { CvProfile } from '../../../shared/contracts/hiring'
 import type { HiringTelegramChannelDescriptor } from '../../../shared/hiring/sources/telegramChannels'
 import { extractCandidateName } from '../../../shared/hiring/candidateFields'
-import { isLikelyTelegramVacancy } from '../../utils/sources'
+import { isLikelyTelegramVacancy } from '../../utils/sources/sources'
 import {
   classifySharedHiringMessage,
   detectEmploymentTypes,
@@ -20,7 +20,7 @@ import {
   parseHiringSalary,
   parseSharedLanguageContext,
   resolveSharedProfessionContext,
-} from '../../utils/hiringLexicon'
+} from '../../utils/hiring/hiringLexicon'
 
 export type TelegramCandidateChannel = HiringTelegramChannelDescriptor
 

@@ -4,8 +4,8 @@ import {
   enrichDetails,
   STANDARD_CRAWL_POLICY,
   type CrawlerStateStore,
-} from '../../packages/crawler-core/src/index.ts'
-import { useStateStore } from './stateStore'
+} from '../../../packages/crawler-core/src/index.ts'
+import { useStateStore } from '../support/stateStore'
 import type { Job } from '~~/shared/contracts/jobs'
 
 const JOB_CRAWLER_NAMESPACE = 'jobs:board'

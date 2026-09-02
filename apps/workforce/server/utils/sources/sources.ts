@@ -3,7 +3,7 @@
 
 import { XMLParser } from 'fast-xml-parser'
 import type { Job } from '~~/shared/contracts/jobs'
-import { detectWorkModes } from './hiringLexicon'
+import { detectWorkModes } from '../hiring/hiringLexicon'
 
 const UA = 'jobFinder/1.0 (job aggregator; contact: admin@whiteslove.me)'
 
@@ -192,4 +192,4 @@ export async function fetchDevKg(q: string): Promise<Job[]> {
   )
 }
 
-export { isLikelyTelegramVacancy } from '../vacancies/sources/telegramVacancyClassifier'
+export { isLikelyTelegramVacancy } from '../../vacancies/sources/telegramVacancyClassifier'

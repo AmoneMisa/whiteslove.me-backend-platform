@@ -3,4 +3,4 @@ export {
   decodeHtmlEntities,
   htmlLines,
   stripHtml,
-} from '../../shared/htmlText'
+} from '../../../shared/htmlText'

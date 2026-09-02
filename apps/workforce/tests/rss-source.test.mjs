@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { parseRssFeed } from '../server/utils/standardJobSourceTargets.ts'
+import { parseRssFeed } from '../server/utils/sources/standardJobSourceTargets.ts'
 
 test('We Work Remotely RSS vacancies stay remote without relying on title text', () => {
   const jobs = parseRssFeed(`<?xml version="1.0" encoding="UTF-8"?>
@@ -30,7 +30,7 @@ test('We Work Remotely RSS vacancies stay remote without relying on title text',
 
 test('default RSS targets include each official service-oriented WWR category', async () => {
   const source = await import('node:fs/promises').then((fs) =>
-    fs.readFile(new URL('../server/utils/standardJobSourceTargets.ts', import.meta.url), 'utf8'),
+    fs.readFile(new URL('../server/utils/sources/standardJobSourceTargets.ts', import.meta.url), 'utf8'),
   )
 
   assert.match(source, /remote-customer-support-jobs\.rss/)

@@ -3,7 +3,7 @@ import test from 'node:test'
 import {
   USA_TECH_GREENHOUSE_COMPANIES,
   mapUsGreenhouseJobs,
-} from '../server/utils/usaTechCompanySources.ts'
+} from '../server/utils/sources/usaTechCompanySources.ts'
 
 test('US tech company catalog includes additional direct employers without UI sources', () => {
   const labels = new Set(USA_TECH_GREENHOUSE_COMPANIES.map((company) => company.label))

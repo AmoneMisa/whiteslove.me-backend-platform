@@ -3,12 +3,12 @@ import test from 'node:test'
 import {
   parseFlagmaVacancies,
   parseFlagmaVacancyDetail,
-} from '../server/utils/extraPublicJobSources.ts'
+} from '../server/utils/sources/extraPublicJobSources.ts'
 import {
   COMMUNITY_JOB_BOARDS,
   COMMUNITY_JOB_BOARD_TARGET_PREFIX,
   configuredCommunityJobBoardTargets,
-} from '../server/utils/communityJobBoardSources.ts'
+} from '../server/utils/sources/communityJobBoardSources.ts'
 
 const summary = {
   id: 'flagma-22245',

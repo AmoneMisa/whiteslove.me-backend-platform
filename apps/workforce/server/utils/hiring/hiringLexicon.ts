@@ -29,7 +29,7 @@ import {
   type HiringProbationKind,
   type HiringWorkSchedule,
 } from '@whiteslove/parsing-lexicon/hiring-work-semantics'
-import type { CandidateEmploymentType, CandidateWorkMode } from '../../shared/contracts/hiring'
+import type { CandidateEmploymentType, CandidateWorkMode } from '../../../shared/contracts/hiring'
 
 export {
   detectCountryCodeFromText as resolveSharedCountryFromText,

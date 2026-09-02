@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { parseQanotSharqHtml } from '../server/utils/sourceExpansionJobs.ts'
+import { parseQanotSharqHtml } from '../server/utils/sources/sourceExpansionJobs.ts'
 
 const card = (title, body, state = '') => `
   <div data-headlessui-state="${state}" class="vacancy-card">

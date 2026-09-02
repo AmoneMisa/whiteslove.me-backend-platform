@@ -4,7 +4,7 @@ import { parseHiringSourceSalary } from '@whiteslove/parsing-lexicon/hiring-sour
 import { detectEmploymentTypes } from '@whiteslove/parsing-lexicon/hiring-work-semantics'
 import type { CvProfile } from '../../../../shared/contracts/hiring'
 import { cityFrom, parseAge } from '../../../../shared/hiring/webFields'
-import { normalizeCandidate } from '../../../utils/hiringNormalize'
+import { normalizeCandidate } from '../../../utils/hiring/hiringNormalize'
 
 export type SecondarySourceKey = 'novarobota-ua' | 'layboard-kz' | 'amountwork-ro'
 

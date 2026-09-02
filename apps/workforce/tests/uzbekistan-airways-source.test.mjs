@@ -4,7 +4,7 @@ import test from 'node:test'
 import {
   parseUzbekistanAirwaysVacancyDetail,
   parseUzbekistanAirwaysVacancyPage,
-} from '../server/utils/sourceExpansionJobs.ts'
+} from '../server/utils/sources/sourceExpansionJobs.ts'
 
 test('Uzbekistan Airways parser ignores global node links and service pages', () => {
   const html = `<html><body>

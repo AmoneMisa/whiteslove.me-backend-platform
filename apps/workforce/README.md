@@ -34,7 +34,10 @@ server/
   hiring/       CV/candidate bounded context — same layering (see its README; folder kept as "hiring" for now, see below)
   jobs/         Legacy vacancies DB pool, not yet folded into server/vacancies/infrastructure
   routes/       Route handlers shared by api/ and the Personal Site BFF
-  utils/        Compatibility-era grab-bag: source configs, parsing glue, rate limiting, health/queue helpers — not yet sorted into a bounded context
+  utils/        Compatibility-era grab-bag, grouped by concern (not yet sorted into a bounded context — see below)
+    hiring/       CV/candidate presentation, parsing glue, Tashkent metro labels
+    sources/      Job-board/source registries, adapters, and the crawler-facing wrapper around crawler-core
+    support/      Cross-cutting: AI-worker client, caching, rate limiting, currency, queue mechanics, share-preview, social-fetcher transport, Cyrillic folding
 shared/         Cross-cutting contracts, types and presentation helpers used by both domains
 packages/
   crawler-core/ Traversal mechanics, cursor state, pacing, dedup — shared by all crawling source adapters (see its README)
@@ -76,4 +79,6 @@ time.
 
 `server/utils` is legacy surface area, not a template to extend — if you're
 adding something new that fits one of the categories above, put it there
-instead of growing `server/utils` further.
+instead of growing `server/utils` further. Within `server/utils` itself,
+put a new file in `hiring/`, `sources/`, or `support/` matching its concern
+rather than adding another file at the `utils/` root.

@@ -10,7 +10,7 @@ import {
   parseExperience,
   parseSalary,
 } from '../../../../shared/hiring/webFields'
-import { normalizeCandidate } from '../../../utils/hiringNormalize'
+import { normalizeCandidate } from '../../../utils/hiring/hiringNormalize'
 
 export interface WebCvAdapter {
   key: string

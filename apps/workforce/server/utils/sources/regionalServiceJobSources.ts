@@ -1,6 +1,6 @@
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
 import type { Job } from '~~/shared/contracts/jobs'
-import { absoluteHttpUrl as absoluteUrl, stripHtml } from './htmlText'
+import { absoluteHttpUrl as absoluteUrl, stripHtml } from '../support/htmlText'
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +

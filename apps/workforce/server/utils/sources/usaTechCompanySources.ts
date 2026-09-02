@@ -1,6 +1,6 @@
 import { detectUsLocation } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
 import type { Job } from '~~/shared/contracts/jobs'
-import { detectWorkModes } from './hiringLexicon'
+import { detectWorkModes } from '../hiring/hiringLexicon'
 
 const UA = 'jobFinder/1.0 (job aggregator; contact: admin@whiteslove.me)'
 const MAX_DESCRIPTION = 12_000

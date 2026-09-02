@@ -1,4 +1,4 @@
-import { stateStoreReady, useStateStore } from '~~/server/utils/stateStore'
+import { stateStoreReady, useStateStore } from '~~/server/utils/support/stateStore'
 import { hiringDbEnabled, loadDbCandidates } from '../infrastructure/database'
 import type { CvProfile } from '../../../shared/contracts/hiring'
 

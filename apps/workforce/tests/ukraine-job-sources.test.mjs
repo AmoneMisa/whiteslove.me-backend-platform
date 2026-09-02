@@ -7,7 +7,7 @@ import {
   parseRobotaUaProfessionalStreams,
   parseWorkUaCategoryIndex,
   parseWorkUaPage,
-} from '../server/utils/ukraineJobSources.ts'
+} from '../server/utils/sources/ukraineJobSources.ts'
 
 const NOW = new Date('2026-08-28T12:00:00.000Z')
 

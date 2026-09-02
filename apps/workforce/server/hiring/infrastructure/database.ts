@@ -2,22 +2,22 @@
 // so the site's tables never collide with flat-finder's public ones.
 
 import { Pool, type PoolClient } from 'pg'
-import { candidateFingerprint, normalizeCandidate } from '../../utils/hiringNormalize'
-import { withProfessionExperience } from '../../utils/hiringExperience'
+import { candidateFingerprint, normalizeCandidate } from '../../utils/hiring/hiringNormalize'
+import { withProfessionExperience } from '../../utils/hiring/hiringExperience'
 import type { CvProfile, HiringStatistics } from '../../../shared/contracts/hiring'
 import { runOrigin, type SourceRun } from '../../../shared/hiring/hiringDiagnostics'
 import { publicEntityId } from '../../../shared/publicEntityId'
 import { canonicalCityValue } from '../../../shared/locationCatalog'
 import { hiringStatisticGroupsForProfessions } from '../../../shared/hiringStatisticGroups'
 import { expandHiringProfessionFilters } from '../../../shared/hiringProfessionGroups'
-import { convertCurrency } from '../../utils/currency'
-import { BoundedTtlCache } from '../../utils/boundedTtlCache'
+import { convertCurrency } from '../../utils/support/currency'
+import { BoundedTtlCache } from '../../utils/support/boundedTtlCache'
 import {
   publicCandidateGender,
   publicCandidateProfessionKeys,
   publicCandidateRemote,
   publicCandidateSalary,
-} from '../../utils/hiringCandidatePresentation'
+} from '../../utils/hiring/hiringCandidatePresentation'
 import {
   rebuildCurrentCandidates,
   syncCurrentCandidateKeys,

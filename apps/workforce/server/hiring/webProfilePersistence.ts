@@ -1,4 +1,4 @@
-import { useStateStore } from '~~/server/utils/stateStore'
+import { useStateStore } from '~~/server/utils/support/stateStore'
 
 import type { CvProfile } from '../../shared/contracts/hiring'
 import type { SourceRun } from '../../shared/hiring/hiringDiagnostics'

@@ -3,29 +3,29 @@ import { access, readFile } from 'node:fs/promises'
 import test from 'node:test'
 
 const sourceModules = [
-  'aviationExpansionJobs.ts',
-  'communityJobBoardSources.ts',
-  'coreCompanyJobTargets.ts',
-  'curatedRemoteJobBoardTargets.ts',
-  'expandedRegionalRemoteSources.ts',
-  'extraPublicJobSources.ts',
-  'hhJobSource.ts',
-  'intelliasJobs.ts',
-  'jobsUaSource.ts',
-  'linkedinSource.ts',
-  'publicJobBoardTargets.ts',
-  'regionalGeneralEmployerSources.ts',
-  'regionalJobBoardSources.ts',
-  'regionalServiceJobSources.ts',
-  'regionalTechCompanySources.ts',
+  'sources/aviationExpansionJobs.ts',
+  'sources/communityJobBoardSources.ts',
+  'sources/coreCompanyJobTargets.ts',
+  'sources/curatedRemoteJobBoardTargets.ts',
+  'sources/expandedRegionalRemoteSources.ts',
+  'sources/extraPublicJobSources.ts',
+  'sources/hhJobSource.ts',
+  'sources/intelliasJobs.ts',
+  'sources/jobsUaSource.ts',
+  'sources/linkedinSource.ts',
+  'sources/publicJobBoardTargets.ts',
+  'sources/regionalGeneralEmployerSources.ts',
+  'sources/regionalJobBoardSources.ts',
+  'sources/regionalServiceJobSources.ts',
+  'sources/regionalTechCompanySources.ts',
   '../server/vacancies/sources/socialJobSources.ts',
-  'sourceExpansionJobs.ts',
-  'sources.ts',
-  'standardJobSourceTargets.ts',
+  'sources/sourceExpansionJobs.ts',
+  'sources/sources.ts',
+  'sources/standardJobSourceTargets.ts',
   '../server/vacancies/sources/telegramJobTargets.ts',
-  'ukraineJobSources.ts',
-  'usaTechCompanySources.ts',
-  'usaVisaSponsorSource.ts',
+  'sources/ukraineJobSources.ts',
+  'sources/usaTechCompanySources.ts',
+  'sources/usaVisaSponsorSource.ts',
 ]
 
 const hiringTransportModules = [
@@ -73,7 +73,7 @@ test('hiring transports do not own result/depth caps or local deadlines', async 
 
 test('shared crawler traversal is semantic rather than count/page bounded', async () => {
   const crawler = await readFile(new URL('../packages/crawler-core/src/index.ts', import.meta.url), 'utf8')
-  const facade = await readFile(new URL('../server/utils/cyclicJobBoardCrawler.ts', import.meta.url), 'utf8')
+  const facade = await readFile(new URL('../server/utils/sources/cyclicJobBoardCrawler.ts', import.meta.url), 'utf8')
 
   assert.match(crawler, /shouldStop/u)
   assert.match(crawler, /acceptItem/u)
@@ -89,7 +89,7 @@ test('shared crawler traversal is semantic rather than count/page bounded', asyn
 test('jobs worker schedules queue targets instead of a second aggregate refresh path', async () => {
   const runtime = await readFile(new URL('../jobs-worker/jobsRuntime.ts', import.meta.url), 'utf8')
   const refresh = await readFile(new URL('../server/vacancies/application/jobsSourceRefresh.ts', import.meta.url), 'utf8')
-  const directFetcher = await readFile(new URL('../server/utils/jobSourceFetchers.ts', import.meta.url), 'utf8')
+  const directFetcher = await readFile(new URL('../server/utils/sources/jobSourceFetchers.ts', import.meta.url), 'utf8')
 
   assert.match(runtime, /return configuredJobRefreshTargets\(\)/u)
   assert.match(runtime, /return refreshJobTarget\(source\)/u)

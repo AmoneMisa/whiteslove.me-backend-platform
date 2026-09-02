@@ -71,9 +71,9 @@ test('candidate integrations never implement recruiter login or gated contact ac
 })
 
 test('regional vacancy boards are independent durable queue targets', async () => {
-  const boards = await read('server/utils/regionalJobBoardSources.ts')
+  const boards = await read('server/utils/sources/regionalJobBoardSources.ts')
   const refresh = await read('server/vacancies/application/jobsSourceRefresh.ts')
-  const fetchers = await read('server/utils/jobSourceFetchers.ts')
+  const fetchers = await read('server/utils/sources/jobSourceFetchers.ts')
 
   for (const key of VACANCY_KEYS) {
     assert.match(boards, new RegExp(`key: ['"]${escapeRe(key)}['"]`), key)
@@ -88,7 +88,7 @@ test('regional vacancy boards are independent durable queue targets', async () =
 })
 
 test('HH public API covers UZ, KZ and KG without changing the UZ stable id', async () => {
-  const hh = await read('server/utils/hhJobSource.ts')
+  const hh = await read('server/utils/sources/hhJobSource.ts')
 
   assert.match(hh, /country: 'UZ'.*area: '2759'.*host: 'hh\.uz'/)
   assert.match(hh, /country: 'KZ'.*area: '40'.*host: 'hh\.kz'/)

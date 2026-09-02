@@ -27,7 +27,7 @@ import type {
   Seniority,
   WorkMode,
 } from '~~/shared/contracts/jobs'
-import { toUsd } from '../../utils/currency'
+import { toUsd } from '../../utils/support/currency'
 import {
   detectEmploymentTypes,
   detectExperienceRequirement,
@@ -43,7 +43,7 @@ import {
   parseSharedHiringContext,
   parseSharedLanguageContext,
   resolveSharedCountryFromText,
-} from '../../utils/hiringLexicon'
+} from '../../utils/hiring/hiringLexicon'
 import {
   extractSkillDetails,
   extractSkillNames,

@@ -3,7 +3,7 @@ import test from 'node:test'
 import {
   REGIONAL_GENERAL_EMPLOYERS,
   parseRegionalEmployerPage,
-} from '../server/utils/regionalGeneralEmployerSources.ts'
+} from '../server/utils/sources/regionalGeneralEmployerSources.ts'
 
 test('general employer catalog covers Ukraine, Romania and Uzbekistan', () => {
   const countries = new Set(REGIONAL_GENERAL_EMPLOYERS.map((employer) => employer.country))

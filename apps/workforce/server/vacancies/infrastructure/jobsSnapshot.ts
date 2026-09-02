@@ -1,4 +1,4 @@
-import { useStateStore } from '../../utils/stateStore'
+import { useStateStore } from '../../utils/support/stateStore'
 import type { Job } from '~~/shared/contracts/jobs'
 
 const STORE_KEY = 'jobs:store:v4'

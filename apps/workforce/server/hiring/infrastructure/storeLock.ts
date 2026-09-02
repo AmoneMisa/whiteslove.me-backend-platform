@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { useStateStore } from '~~/server/utils/stateStore'
+import { useStateStore } from '~~/server/utils/support/stateStore'
 
 const LOCK_KEY = 'hiring:store:v4:write-lock'
 const LOCK_TTL_MS = 60_000

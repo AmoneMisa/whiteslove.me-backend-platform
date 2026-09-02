@@ -6,8 +6,8 @@ import {
   enrichStandardJobBoardDetails,
 } from './cyclicJobBoardCrawler'
 import { parseFlagmaVacancies, parseFlagmaVacancyDetail } from './extraPublicJobSources'
-import { absoluteHttpUrl, stripHtml } from './htmlText'
-import { detectWorkModes } from './hiringLexicon'
+import { absoluteHttpUrl, stripHtml } from '../support/htmlText'
+import { detectWorkModes } from '../hiring/hiringLexicon'
 import type { Job } from '~~/shared/contracts/jobs'
 
 const UA =

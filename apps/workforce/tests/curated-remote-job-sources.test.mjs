@@ -3,7 +3,7 @@ import test from 'node:test'
 import {
   parseCuratedRemoteBoardHtml,
   parseWorkingNomadsItems,
-} from '../server/utils/curatedRemoteJobSources.ts'
+} from '../server/utils/sources/curatedRemoteJobSources.ts'
 
 test('Remote.co JSON-LD maps through the shared jobs contract', () => {
   const html = `

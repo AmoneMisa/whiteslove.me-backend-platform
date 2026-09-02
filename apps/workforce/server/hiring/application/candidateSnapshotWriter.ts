@@ -1,14 +1,14 @@
-import { useStateStore } from '~~/server/utils/stateStore'
+import { useStateStore } from '~~/server/utils/support/stateStore'
 import { isLikelyCvPost } from '../domain/telegramCandidateParser'
-import { mentionsEmploymentOrSchedule, normalizeCandidate } from '../../utils/hiringNormalize'
-import { withProfessionExperience } from '../../utils/hiringExperience'
-import { isCharityAppeal, isRecruitingOpportunity, repairCandidateProfile } from '../../utils/hiringQuality'
+import { mentionsEmploymentOrSchedule, normalizeCandidate } from '../../utils/hiring/hiringNormalize'
+import { withProfessionExperience } from '../../utils/hiring/hiringExperience'
+import { isCharityAppeal, isRecruitingOpportunity, repairCandidateProfile } from '../../utils/hiring/hiringQuality'
 import {
   aiFingerprint,
   aiWorkerEnabled,
   scheduleAiExtraction,
   type AiExtractionResult,
-} from '../../utils/aiWorker'
+} from '../../utils/support/aiWorker'
 import { hiringDbEnabled, loadDbCandidates, saveDbCandidates } from '../infrastructure/database'
 import { withHiringStoreLock } from '../infrastructure/storeLock'
 import type { CandidateEmploymentType, CvProfile } from '../../../shared/contracts/hiring'

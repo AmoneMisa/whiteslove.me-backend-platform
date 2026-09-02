@@ -8,7 +8,7 @@ import {
   enrichStandardJobBoardDetails,
 } from './cyclicJobBoardCrawler'
 import type { Job } from '~~/shared/contracts/jobs'
-import { detectWorkModes } from './hiringLexicon'
+import { detectWorkModes } from '../hiring/hiringLexicon'
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +

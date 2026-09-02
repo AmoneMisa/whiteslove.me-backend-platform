@@ -2,7 +2,7 @@ import { detectCandidateRemotePreference } from '@whiteslove/parsing-lexicon/hir
 import { parseHiringActivityDate } from '@whiteslove/parsing-lexicon/hiring-temporal'
 import { normalizeCandidate } from './hiringNormalize'
 import type { CvProfile } from '~~/shared/contracts/hiring'
-import { absoluteUrl, cityFrom, contacts, employment, htmlText, isRecent, parseSalary } from '../../shared/hiring/webFields'
+import { absoluteUrl, cityFrom, contacts, employment, htmlText, isRecent, parseSalary } from '../../../shared/hiring/webFields'
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +

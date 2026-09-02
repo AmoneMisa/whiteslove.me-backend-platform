@@ -8,8 +8,8 @@ import {
   crawlStandardJobBoard,
   enrichStandardJobBoardDetails,
 } from './cyclicJobBoardCrawler'
-import { detectWorkModes } from './hiringLexicon'
-import { decodeHtmlEntities } from './htmlText'
+import { detectWorkModes } from '../hiring/hiringLexicon'
+import { decodeHtmlEntities } from '../support/htmlText'
 
 const LINKEDIN_BASE_URL = 'https://www.linkedin.com'
 const LINKEDIN_SEARCH_URL =

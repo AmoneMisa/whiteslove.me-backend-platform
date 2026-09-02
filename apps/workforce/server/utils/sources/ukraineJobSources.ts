@@ -1,8 +1,8 @@
 import { XMLParser } from 'fast-xml-parser'
 import { parseHiringActivityDate } from '@whiteslove/parsing-lexicon/hiring-temporal'
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
-import { extractSalaryFromText } from '../vacancies/domain/enrich'
-import { detectLexiconCity, detectWorkModes } from './hiringLexicon'
+import { extractSalaryFromText } from '../../vacancies/domain/enrich'
+import { detectLexiconCity, detectWorkModes } from '../hiring/hiringLexicon'
 import type { Job } from '~~/shared/contracts/jobs'
 
 const MAX_DESCRIPTION = 2_400

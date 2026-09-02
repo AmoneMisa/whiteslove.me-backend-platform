@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { parseIshkopVacancyDetail } from '../server/utils/sourceExpansionJobs.ts'
+import { parseIshkopVacancyDetail } from '../server/utils/sources/sourceExpansionJobs.ts'
 
 const detailHtml = `
 <html lang="ru"><head>

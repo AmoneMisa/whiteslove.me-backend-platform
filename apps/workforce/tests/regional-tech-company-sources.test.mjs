@@ -4,7 +4,7 @@ import {
   REGIONAL_TECH_COMPANIES,
   mapRegionalLeverPostings,
   mapRegionalSmartRecruitersPostings,
-} from '../server/utils/regionalTechCompanySources.ts'
+} from '../server/utils/sources/regionalTechCompanySources.ts'
 
 const posting = (location, title = 'Frontend Engineer') => ({
   id: `${location}-${title}`,

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { parseJobsUaVacancies } from '../server/utils/jobsUaSource.ts'
+import { parseJobsUaVacancies } from '../server/utils/sources/jobsUaSource.ts'
 
 const NOW = new Date('2026-08-27T12:00:00.000Z')
 

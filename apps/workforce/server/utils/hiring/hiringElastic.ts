@@ -3,7 +3,7 @@
 // the source of truth and Elasticsearch is only the search/ranking layer.
 
 import type { CvProfile } from '~~/shared/contracts/hiring'
-import { transliterationMappings } from './cyrillicTransliteration'
+import { transliterationMappings } from '../support/cyrillicTransliteration'
 
 const ELASTICSEARCH_URL = (
     process.env.ELASTICSEARCH_URL || 'http://flat-finder-elasticsearch:9200'

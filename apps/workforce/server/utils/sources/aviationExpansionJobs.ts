@@ -1,7 +1,7 @@
 import { detectCityFromText, detectCountryCodeFromText } from '@whiteslove/parsing-lexicon/geography-detection'
 import type { Job } from '~~/shared/contracts/jobs'
-import { detectWorkModes } from './hiringLexicon'
-import { absoluteHttpUrl as absoluteUrl, htmlLines, stripHtml } from './htmlText'
+import { detectWorkModes } from '../hiring/hiringLexicon'
+import { absoluteHttpUrl as absoluteUrl, htmlLines, stripHtml } from '../support/htmlText'
 
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +

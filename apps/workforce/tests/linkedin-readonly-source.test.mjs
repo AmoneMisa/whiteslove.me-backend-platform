@@ -6,7 +6,7 @@ import {
   parseLinkedInJobCards,
   parseLinkedInJobAvailability,
   parseLinkedInJobDetail,
-} from '../server/utils/linkedinSource.ts'
+} from '../server/utils/sources/linkedinSource.ts'
 import { linkedinVoyagerConfigured } from '../server/hiring/sources/linkedinVoyager.ts'
 
 const cardHtml = `

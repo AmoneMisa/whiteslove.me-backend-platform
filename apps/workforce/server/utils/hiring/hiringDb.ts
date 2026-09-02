@@ -5,4 +5,4 @@ export {
   pruneDbCandidates,
   recordDbSourceRun,
   saveDbCandidates,
-} from '../hiring/infrastructure/database'
+} from '../../hiring/infrastructure/database'

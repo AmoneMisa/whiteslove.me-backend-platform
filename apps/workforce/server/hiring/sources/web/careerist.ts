@@ -1,6 +1,6 @@
 import type { CvProfile } from '../../../../shared/contracts/hiring'
 import { activityDate, cityFrom, isRecent, parseAge } from '../../../../shared/hiring/webFields'
-import { trimCareeristProfileText } from '../../../utils/hiringCareeristFields'
+import { trimCareeristProfileText } from '../../../utils/hiring/hiringCareeristFields'
 import { buildWebProfile, type CandidateBlock, type WebCvAdapter } from './common'
 import { crawlWebAdapter } from './crawler'
 

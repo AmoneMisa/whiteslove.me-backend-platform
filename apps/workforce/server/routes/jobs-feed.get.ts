@@ -17,10 +17,10 @@ import {
 } from '~~/shared/contracts/jobs'
 import { filterAndPaginate } from '../vacancies/domain/aggregate'
 import { getStoredJobsSnapshot } from '../vacancies/infrastructure/jobsSnapshot'
-import { getRates, loadRates } from '../utils/currency'
+import { getRates, loadRates } from '../utils/support/currency'
 import { jobSearchKey, searchJobMatches } from '../vacancies/infrastructure/jobsElastic'
 import { keepUsaForeignerCandidate } from '../vacancies/domain/jobVisaSponsorship'
-import { isJobSourceAvailable } from '../utils/jobSourceConfig'
+import { isJobSourceAvailable } from '../utils/sources/jobSourceConfig'
 import { publicEntityId } from '../../shared/publicEntityId'
 import { queryJobsDb } from '../jobs/infrastructure/database'
 

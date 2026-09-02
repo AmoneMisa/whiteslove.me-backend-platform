@@ -7,14 +7,14 @@ import { getHiringSourceDiagnostics } from '../hiring/sources/telegramDiagnostic
 import { HIRING_COUNTRIES } from '../../shared/hiring/hiringMarkets'
 import { DERIVED_VERSION, getStoredCvProfilesSnapshot } from '../hiring/application/readSnapshot'
 import { getStoredWebCvProfiles } from '../hiring/application/readWebProfiles'
-import { candidateSearchAvailable, searchCandidates } from '../utils/hiringElastic'
-import { dedupeCandidates, detectMentionedProfessions, normalizeCandidate } from '../utils/hiringNormalize'
-import { withProfessionExperience } from '../utils/hiringExperience'
+import { candidateSearchAvailable, searchCandidates } from '../utils/hiring/hiringElastic'
+import { dedupeCandidates, detectMentionedProfessions, normalizeCandidate } from '../utils/hiring/hiringNormalize'
+import { withProfessionExperience } from '../utils/hiring/hiringExperience'
 import { listWebSources } from '../hiring/sources/webCvRefresh'
 import { listUzJobsSources } from '../hiring/sources/uzJobsRefresh'
 import { getHiringWebDiagnostics } from '../../shared/hiring/hiringDiagnostics'
-import { loadDbSourceRuns } from '../utils/hiringDb'
-import { convertCurrency, getRates, loadRates } from '../utils/currency'
+import { loadDbSourceRuns } from '../utils/hiring/hiringDb'
+import { convertCurrency, getRates, loadRates } from '../utils/support/currency'
 import { buildHiringStatistics } from '../../shared/hiringStatistics'
 import type { CvProfile } from '~~/shared/contracts/hiring'
 import { canonicalCityKey, cityAliases, normalizeCityValue } from '../../shared/locationCatalog'
@@ -25,7 +25,7 @@ import {
   publicCandidateProfessionKeys,
   publicCandidateRemote,
   publicCandidateSalary,
-} from '../utils/hiringCandidatePresentation'
+} from '../utils/hiring/hiringCandidatePresentation'
 import {
   HIRING_PROFESSION_LABELS,
   hiringProfessionLabel,

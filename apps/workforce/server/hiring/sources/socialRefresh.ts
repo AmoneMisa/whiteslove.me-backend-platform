@@ -2,9 +2,9 @@ import { extractCandidateContacts } from '@whiteslove/parsing-lexicon/hiring-can
 import { detectCandidateRemotePreference } from '@whiteslove/parsing-lexicon/hiring-semantics'
 import { HIRING_FACEBOOK_GROUPS } from '../../../shared/hiring/sources/facebookGroups'
 import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../../shared/hiring/hiringDiagnostics'
-import { normalizeCandidate, trimThreadsProfileText } from '../../utils/hiringNormalize'
+import { normalizeCandidate, trimThreadsProfileText } from '../../utils/hiring/hiringNormalize'
 import type { CvProfile } from '~~/shared/contracts/hiring'
-import { socialFetcherBaseUrl } from '../../utils/socialFetcherTransport'
+import { socialFetcherBaseUrl } from '../../utils/support/socialFetcherTransport'
 import { detectCity, isLikelyCvPost } from '../domain/telegramCandidateParser'
 import { persistWebProfiles } from '../webProfilePersistence'
 

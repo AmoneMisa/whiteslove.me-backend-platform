@@ -3,7 +3,7 @@ import test from 'node:test'
 
 import { isLikelyCvPost } from '../server/hiring/domain/telegramCandidateParser.ts'
 
-import { extractProfessionExperience } from '../server/utils/hiringExperience.ts'
+import { extractProfessionExperience } from '../server/utils/hiring/hiringExperience.ts'
 
 // Every one of these was rejected while the intent patterns were anchored
 // with \b next to Cyrillic, where a JavaScript word boundary never fires:

@@ -4,7 +4,7 @@ import {
   EXPANDED_REGIONAL_REMOTE_COMPANIES,
   mapExpandedGreenhousePostings,
   mapExpandedLeverPostings,
-} from '../server/utils/expandedRegionalRemoteSources.ts'
+} from '../server/utils/sources/expandedRegionalRemoteSources.ts'
 
 const posting = (location, title = 'Operations Manager', workplaceType = 'remote') => ({
   id: `${location}-${title}`,

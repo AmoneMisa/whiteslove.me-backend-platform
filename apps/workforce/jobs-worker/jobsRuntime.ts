@@ -1,4 +1,4 @@
-import { COMMUNITY_JOB_BOARDS } from '../server/utils/communityJobBoardSources'
+import { COMMUNITY_JOB_BOARDS } from '../server/utils/sources/communityJobBoardSources'
 import { configuredJobRefreshTargets, refreshJobTarget } from '../server/vacancies/application/jobsSourceRefresh'
 
 export function configuredSources(): string[] {

@@ -1,8 +1,8 @@
 import { parseHiringSourceSalary } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
 import { parseHiringActivityDate } from '@whiteslove/parsing-lexicon/hiring-temporal'
 import type { Job } from '~~/shared/contracts/jobs'
-import { detectWorkModes } from './hiringLexicon'
-import { absoluteHttpUrl, stripHtml } from './htmlText'
+import { detectWorkModes } from '../hiring/hiringLexicon'
+import { absoluteHttpUrl, stripHtml } from '../support/htmlText'
 
 const MAX_DESCRIPTION = 4_000
 

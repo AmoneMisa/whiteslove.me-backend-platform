@@ -1,7 +1,7 @@
 import { Pool } from 'pg'
 import type { Job, JobQuery, JobResponse, JobStats } from '../../../shared/contracts/jobs'
 import { publicEntityId } from '../../../shared/publicEntityId'
-import { BoundedTtlCache } from '../../utils/boundedTtlCache'
+import { BoundedTtlCache } from '../../utils/support/boundedTtlCache'
 import { jobProfessionArea } from '../../vacancies/domain/aggregate'
 import { keepUsaForeignerCandidate } from '../../vacancies/domain/jobVisaSponsorship'
 

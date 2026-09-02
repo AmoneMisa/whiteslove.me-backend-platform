@@ -8,14 +8,14 @@ import {
   REMOTE_JOB_QUERIES,
   USA_RELOCATION_QUERIES,
   threadsJobCoverage,
-} from '../../utils/jobSearchCoverage'
+} from '../../utils/sources/jobSearchCoverage'
 import {
   classifySharedHiringMessage,
   detectHiringIntent,
   detectWorkModes,
   parseSharedHiringContext,
-} from '../../utils/hiringLexicon'
-import { socialFetcherBaseUrl } from '../../utils/socialFetcherTransport'
+} from '../../utils/hiring/hiringLexicon'
+import { socialFetcherBaseUrl } from '../../utils/support/socialFetcherTransport'
 
 type Platform = 'facebook' | 'threads'
 type Target = { key: string; platform: Platform; country: string; city?: string; region?: string; target?: string; query?: string }

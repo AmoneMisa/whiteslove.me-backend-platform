@@ -9,7 +9,7 @@
 // The static table below is only a FALLBACK for a cold cache or an API outage —
 // the live fetch overwrites it.
 
-import { useStateStore } from '~~/server/utils/stateStore'
+import { useStateStore } from '~~/server/utils/support/stateStore'
 
 const FALLBACK_USD_RATES: Record<string, number> = {
   USD: 1, EUR: 1.09, GBP: 1.27, PLN: 0.25, UAH: 0.024, KZT: 0.0019,

@@ -8,7 +8,7 @@ import {
   publicCandidateRemote,
   publicCandidateSalary,
   type HiringCandidateLocale,
-} from '../../shared/hiring/candidatePresentationCore'
+} from '../../../shared/hiring/candidatePresentationCore'
 
 export {
   publicCandidateGender,

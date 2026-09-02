@@ -6,9 +6,9 @@ const {
   COMMUNITY_JOB_BOARD_TARGET_PREFIX,
   configuredCommunityJobBoardTargets,
   isCommunityJobBoardTarget,
-} = await import('../server/utils/communityJobBoardSources.ts')
+} = await import('../server/utils/sources/communityJobBoardSources.ts')
 
-const { STANDARD_JOB_BOARD_CRAWL_POLICY } = await import('../server/utils/cyclicJobBoardCrawler.ts')
+const { STANDARD_JOB_BOARD_CRAWL_POLICY } = await import('../server/utils/sources/cyclicJobBoardCrawler.ts')
 
 test('community board registry exposes one durable queue target per board', () => {
   const targets = configuredCommunityJobBoardTargets()

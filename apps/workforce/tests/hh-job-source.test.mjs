@@ -11,7 +11,7 @@ const {
   configuredHhJobTargets,
   fetchHhJobTarget,
   mapHhVacancy,
-} = await import('../server/utils/hhJobSource.ts')
+} = await import('../server/utils/sources/hhJobSource.ts')
 
 test.after(async () => {
   if (originalStateDir === undefined) delete process.env.SITE_STATE_DIR

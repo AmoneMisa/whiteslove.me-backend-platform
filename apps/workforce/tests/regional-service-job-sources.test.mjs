@@ -4,7 +4,7 @@ import {
   REGIONAL_SERVICE_JOB_FEEDS,
   parseJobKoreaServicePage,
   parseOlxUzServicePage,
-} from '../server/utils/regionalServiceJobSources.ts'
+} from '../server/utils/sources/regionalServiceJobSources.ts'
 
 test('service feed catalog covers Korea and Uzbekistan service categories', () => {
   const markets = new Set(REGIONAL_SERVICE_JOB_FEEDS.map((feed) => feed.market))

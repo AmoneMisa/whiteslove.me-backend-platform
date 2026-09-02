@@ -1,7 +1,7 @@
 import { detectUsLocation } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
 import type { Job, SponsorshipConfidence } from '~~/shared/contracts/jobs'
-import { detectWorkModes } from './hiringLexicon'
-import { absoluteHttpUrl as absoluteUrl, decodeHtmlEntities, stripHtml } from './htmlText'
+import { detectWorkModes } from '../hiring/hiringLexicon'
+import { absoluteHttpUrl as absoluteUrl, decodeHtmlEntities, stripHtml } from '../support/htmlText'
 
 export type PublicBoard = {
   label: string
