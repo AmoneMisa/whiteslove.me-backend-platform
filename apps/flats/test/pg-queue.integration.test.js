@@ -4,7 +4,7 @@ import {randomUUID} from 'node:crypto';
 
 import {closeDb, pool} from '../src/infrastructure/database/listingRepository.js';
 import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
-import {claimCustomSourceTask} from '../src/custom-source-queue.js';
+import {claimCustomSourceTask} from '../src/sources/custom-source-queue.js';
 import {
   claimTask,
   completeTask,

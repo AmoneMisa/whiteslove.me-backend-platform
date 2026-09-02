@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { COUNTRIES } from '../src/countries.js';
-import { ownerHousingSources } from '../src/owner-housing-sources.js';
-import { realtorHousingSources } from '../src/realtor-housing-sources.js';
-import { telegramHousingChannels } from '../src/telegram-housing-sources.js';
-import { buildCrawlPlan } from '../src/queuePlan.js';
-import { enforceOwnerOnlyListings } from '../src/queueTasks.js';
+import { COUNTRIES } from '../src/geo/countries.js';
+import { ownerHousingSources } from '../src/sources/owner-housing-sources.js';
+import { realtorHousingSources } from '../src/sources/realtor-housing-sources.js';
+import { telegramHousingChannels } from '../src/sources/telegram-housing-sources.js';
+import { buildCrawlPlan } from '../src/scheduling/queuePlan.js';
+import { enforceOwnerOnlyListings } from '../src/scheduling/queueTasks.js';
 
 test('owner registry covers curated direct-owner platforms in every configured country', () => {
   const urls = Object.keys(COUNTRIES).flatMap((country) => ownerHousingSources(country).map((source) => source.url));

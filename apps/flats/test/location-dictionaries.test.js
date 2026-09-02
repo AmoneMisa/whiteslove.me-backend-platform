@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { matchDictionaryEntities } from '../src/location-dictionary-resolver.js';
+import { matchDictionaryEntities } from '../src/geo/location-dictionary-resolver.js';
 
 const cases = [
   ['Квартира Юнусабад 19, рядом метро', 'UZ', 'Tashkent', 'microdistrict', 'Yunusabad-19'],

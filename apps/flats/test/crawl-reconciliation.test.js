@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { olxSegmentDealType } from '../src/olx-segment.js';
+import { olxSegmentDealType } from '../src/geo/olx-segment.js';
 
 test('OLX sale segment maps to sale', () => {
   assert.equal(olxSegmentDealType('flat:sale'), 'sale');

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { annotateListing, indexPlaces } from '../src/nearby-places.js';
-import { annotateNearbyTransportWithCatalog } from '../src/transport-nearby.js';
+import { annotateListing, indexPlaces } from '../src/geo/nearby-places.js';
+import { annotateNearbyTransportWithCatalog } from '../src/geo/transport-nearby.js';
 
 test('nearby POI storage keeps every in-radius place while legacy views stay bounded', () => {
   const rows = Array.from({ length: 6 }, (_, index) => ({

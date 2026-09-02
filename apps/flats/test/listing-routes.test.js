@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
-import {parseListingFilters} from '../src/listing-routes.js';
-import {applyListingFilters} from '../src/legacy-listing-filter.js';
+import {parseListingFilters} from '../src/routes/listing-routes.js';
+import {applyListingFilters} from '../src/legacy/legacy-listing-filter.js';
 
 const appSource = readFileSync(
   new URL('../src/app.js', import.meta.url),
@@ -13,7 +13,7 @@ const serverSource = readFileSync(
   'utf8',
 );
 const listingRoutesSource = readFileSync(
-  new URL('../src/listing-routes.js', import.meta.url),
+  new URL('../src/routes/listing-routes.js', import.meta.url),
   'utf8',
 );
 const postgresSearchSource = readFileSync(

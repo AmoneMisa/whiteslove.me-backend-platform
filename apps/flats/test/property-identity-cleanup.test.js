@@ -3,9 +3,9 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 
 test('photo anti-fake uses the shared database pool and never mutates schema at runtime', async () => {
-  const source = await readFile(new URL('../src/photo-antifake.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/listing/photo-antifake.js', import.meta.url), 'utf8');
 
-  assert.match(source, /import \{pool\} from '\.\/infrastructure\/database\/pool\.js';/);
+  assert.match(source, /import \{pool\} from '\.\.\/infrastructure\/database\/pool\.js';/);
   assert.doesNotMatch(source, /from 'pg'/);
   assert.doesNotMatch(source, /\bensureSchema\b/);
   assert.doesNotMatch(source, /CREATE\s+TABLE/i);

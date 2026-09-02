@@ -1,9 +1,9 @@
-import {COUNTRY_CODES} from './countries.js';
+import {COUNTRY_CODES} from './geo/countries.js';
 import {closeDb} from './infrastructure/database/listingRepository.js';
 import {assertDatabaseReady} from './infrastructure/database/schemaReady.js';
 import {closeElasticsearch, initElasticsearch} from './infrastructure/search/elasticsearch.js';
 import {createApp} from './app.js';
-import {startMobileSubscriptionScanner, stopMobileSubscriptionScanner} from './mobile-subscriptions.js';
+import {startMobileSubscriptionScanner, stopMobileSubscriptionScanner} from './mobile/mobile-subscriptions.js';
 
 const PORT = process.env.PORT || 4000;
 

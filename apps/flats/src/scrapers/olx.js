@@ -13,10 +13,10 @@
 // (fetchOlxOffer); it will 403 from a blocked server until it is also routed
 // through the sidecar.
 
-import {makeListing} from '../normalize.js';
+import {makeListing} from '../listing/normalize.js';
 import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
-import {sleep, throttle} from '../ratelimit.js';
-import {olxSegmentDealType} from '../olx-segment.js';
+import {sleep, throttle} from '../support/ratelimit.js';
+import {olxSegmentDealType} from '../geo/olx-segment.js';
 
 // Rate limiting: keep at least OLX_MIN_INTERVAL_MS (+ up to OLX_JITTER_MS random)
 // between requests to the same OLX portal so we don't hammer it. Keyed per host,

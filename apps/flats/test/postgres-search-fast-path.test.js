@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 
-import {canUseFastListingPath} from '../src/postgres-search-fast.js';
+import {canUseFastListingPath} from '../src/support/postgres-search-fast.js';
 
 const baseFilters = {
   listingId: '932949554',

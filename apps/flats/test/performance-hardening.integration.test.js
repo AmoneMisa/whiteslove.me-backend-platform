@@ -3,8 +3,8 @@ import test from 'node:test';
 
 import {closeDb, pool, upsertListings} from '../src/infrastructure/database/listingRepository.js';
 import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
-import {searchPostgresMapPoints} from '../src/map-feed.js';
-import {searchPostgresListings} from '../src/postgres-search.js';
+import {searchPostgresMapPoints} from '../src/routes/map-feed.js';
+import {searchPostgresListings} from '../src/support/postgres-search.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 

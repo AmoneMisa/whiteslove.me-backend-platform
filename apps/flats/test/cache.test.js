@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {createMemoryCache} from '../src/cache.js';
+import {createMemoryCache} from '../src/support/cache.js';
 
 test('runtime cache expires entries by TTL', () => {
   let timestamp = 1_000;

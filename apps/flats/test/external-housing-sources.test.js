@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { COUNTRIES } from '../src/countries.js';
-import { externalHousingSources } from '../src/external-housing-sources.js';
-import { buildCrawlPlan } from '../src/queuePlan.js';
+import { COUNTRIES } from '../src/geo/countries.js';
+import { externalHousingSources } from '../src/sources/external-housing-sources.js';
+import { buildCrawlPlan } from '../src/scheduling/queuePlan.js';
 import { extractKnownOwnerHtml } from '../src/scrapers/owner-html.js';
 
 test('external housing registry keeps mixed and owner-filtered catalogues side by side', () => {

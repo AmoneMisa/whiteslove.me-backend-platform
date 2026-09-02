@@ -1,14 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { makeListing } from '../src/normalize.js';
-import { applyListingFilters } from '../src/legacy-listing-filter.js';
+import { makeListing } from '../src/listing/normalize.js';
+import { applyListingFilters } from '../src/legacy/legacy-listing-filter.js';
 import { parsePrimaryContact as parseContact } from '@whiteslove/parsing-lexicon/contact';
 import { parseHousingPrice as parsePriceFromText } from '@whiteslove/parsing-lexicon/housing-money';
 import { parseHousingPayments, parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
 import { parseHousingFloorFromText as parseFloor } from '@whiteslove/parsing-lexicon/housing-text';
-import { cityLocations, parseLocation } from '../src/locations.js';
-import { resolveTashkentArea } from '../src/tashkent-areas.js';
+import { cityLocations, parseLocation } from '../src/geo/locations.js';
+import { resolveTashkentArea } from '../src/geo/tashkent-areas.js';
 
 const description = `Chilonzor 12
 Shoxmed sentr

@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { COUNTRIES } from '../src/countries.js';
-import { telegramHousingChannels } from '../src/telegram-housing-sources.js';
-import { buildCrawlPlan } from '../src/queuePlan.js';
+import { COUNTRIES } from '../src/geo/countries.js';
+import { telegramHousingChannels } from '../src/sources/telegram-housing-sources.js';
+import { buildCrawlPlan } from '../src/scheduling/queuePlan.js';
 
 test('Romania keeps live general feeds alongside owner sources', () => {
   const channels = telegramHousingChannels('RO', COUNTRIES.RO.telegramChannels);

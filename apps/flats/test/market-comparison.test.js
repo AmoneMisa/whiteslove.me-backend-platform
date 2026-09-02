@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
-const comparison = await readFile(new URL('../src/market-comparison.js', import.meta.url), 'utf8');
-const routes = await readFile(new URL('../src/listing-routes.js', import.meta.url), 'utf8');
+const comparison = await readFile(new URL('../src/geo/market-comparison.js', import.meta.url), 'utf8');
+const routes = await readFile(new URL('../src/routes/listing-routes.js', import.meta.url), 'utf8');
 const marketIndexes = await readFile(new URL('../migrations/009_market_comparison_indexes.sql', import.meta.url), 'utf8');
 const optimizedMarketIndexes = await readFile(new URL('../migrations/015_market_comparison_expression_indexes.sql', import.meta.url), 'utf8');
 const persistedDedupe = await readFile(new URL('../migrations/010_persisted_dedupe_key.sql', import.meta.url), 'utf8');

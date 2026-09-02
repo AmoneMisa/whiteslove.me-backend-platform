@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { COUNTRIES } from '../src/countries.js';
-import { looksParkingOnly, makeListing } from '../src/normalize.js';
-import { applyListingFilters } from '../src/legacy-listing-filter.js';
-import { parseResidentialComplex } from '../src/textparse-overrides.js';
+import { COUNTRIES } from '../src/geo/countries.js';
+import { looksParkingOnly, makeListing } from '../src/listing/normalize.js';
+import { applyListingFilters } from '../src/legacy/legacy-listing-filter.js';
+import { parseResidentialComplex } from '../src/listing/textparse-overrides.js';
 
 const OBLAST_CENTRES = [
   'Vinnytsia', 'Lutsk', 'Dnipro', 'Donetsk', 'Zhytomyr', 'Uzhhorod',

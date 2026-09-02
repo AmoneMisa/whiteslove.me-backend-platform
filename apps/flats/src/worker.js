@@ -2,7 +2,7 @@ import {hostname} from 'node:os';
 import {closeDb} from './infrastructure/database/listingRepository.js';
 import {assertDatabaseReady} from './infrastructure/database/schemaReady.js';
 import {closeElasticsearch, initElasticsearch} from './infrastructure/search/elasticsearch.js';
-import {processQueueTask} from './queueTasks.js';
+import {processQueueTask} from './scheduling/queueTasks.js';
 import {
   claimTask,
   completeTask,
@@ -10,12 +10,12 @@ import {
   failTask,
   pruneQueueHistory,
 } from './infrastructure/queue/pgQueue.js';
-import {claimCustomSourceTask} from './custom-source-queue.js';
-import {buildCrawlPlan, QUEUE_SHARDS} from './queuePlan.js';
-import {refreshPlaces} from './scheduler.js';
-import {startSocialHousingScheduler} from './social-housing-scheduler.js';
-import {verifyDueListingAvailability} from './availability-sweep.js';
-import {deactivateExpiredListings} from './listing-lifecycle.js';
+import {claimCustomSourceTask} from './sources/custom-source-queue.js';
+import {buildCrawlPlan, QUEUE_SHARDS} from './scheduling/queuePlan.js';
+import {refreshPlaces} from './scheduling/scheduler.js';
+import {startSocialHousingScheduler} from './sources/social-housing-scheduler.js';
+import {verifyDueListingAvailability} from './availability/availability-sweep.js';
+import {deactivateExpiredListings} from './listing/listing-lifecycle.js';
 
 const REFRESH_SECONDS = Math.max(60, Number(process.env.QUEUE_REFRESH_SECONDS) || 1800);
 const POLL_MS = Math.max(200, Number(process.env.QUEUE_POLL_SECONDS || 1) * 1000);

@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { realtorHousingSources } from '../src/realtor-housing-sources.js';
-import { buildCrawlPlan } from '../src/queuePlan.js';
+import { realtorHousingSources } from '../src/sources/realtor-housing-sources.js';
+import { buildCrawlPlan } from '../src/scheduling/queuePlan.js';
 
 const customScraper = readFileSync(
   new URL('../src/scrapers/custom.js', import.meta.url),

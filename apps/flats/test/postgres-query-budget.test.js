@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 
 test('map feed uses one narrow PostgreSQL query instead of listing-page fanout', async () => {
-  const source = await readFile(new URL('../src/map-feed.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/routes/map-feed.js', import.meta.url), 'utf8');
 
   assert.match(source, /buildSearchContext/u);
   assert.match(source, /const \{ rows \} = await pool\.query\(sql, params\)/u);
@@ -19,7 +19,7 @@ test('map feed uses one narrow PostgreSQL query instead of listing-page fanout',
 
 test('cursor pages carry total and use limit plus one instead of repeated exact counts', async () => {
   const source = await readFile(new URL('../src/infrastructure/search/postgres-search-core.js', import.meta.url), 'utf8');
-  const wrapper = await readFile(new URL('../src/postgres-search.js', import.meta.url), 'utf8');
+  const wrapper = await readFile(new URL('../src/support/postgres-search.js', import.meta.url), 'utf8');
 
   assert.match(source, /const cursorCount = Number\(cursor\?\.c\)/u);
   assert.match(source, /else if \(hasCursorCount\) \{[\s\S]*pageResult = await pool\.query\(pageSql, pageParams\)[\s\S]*count: cursorCount/u);

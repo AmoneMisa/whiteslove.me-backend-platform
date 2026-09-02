@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { COUNTRIES } from '../src/countries.js';
+import { COUNTRIES } from '../src/geo/countries.js';
 import { extractKnownOwnerHtml } from '../src/scrapers/owner-html.js';
 
 test('owner SSR fallback extracts a rental card with stable detail URL', () => {

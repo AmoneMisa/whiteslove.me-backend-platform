@@ -1,7 +1,7 @@
 import { resolveHousingIntent } from '@whiteslove/parsing-lexicon/housing-intent';
 import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
 import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
-import { makeListing } from '../normalize.js';
+import { makeListing } from '../listing/normalize.js';
 import { parseHousingPrice as parsePriceFromText } from '@whiteslove/parsing-lexicon/housing-money';
 import {
   parseHousingRoomsFromText as parseRoomsFromText,

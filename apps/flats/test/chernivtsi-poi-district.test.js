@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseLocation } from '../src/locations.js';
+import { parseLocation } from '../src/geo/locations.js';
 
 test('Chernivtsi named park does not become a current district', () => {
   const location = parseLocation(

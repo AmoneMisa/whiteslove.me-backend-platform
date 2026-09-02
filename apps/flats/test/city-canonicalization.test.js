@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { COUNTRIES } from '../src/countries.js';
-import { geocodeCandidates } from '../src/geocode.js';
-import { makeListing } from '../src/normalize.js';
+import { COUNTRIES } from '../src/geo/countries.js';
+import { geocodeCandidates } from '../src/geo/geocode.js';
+import { makeListing } from '../src/listing/normalize.js';
 
 function listing(city) {
   return makeListing({

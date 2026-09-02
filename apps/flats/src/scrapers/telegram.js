@@ -9,16 +9,16 @@
 import { resolveHousingIntent } from '@whiteslove/parsing-lexicon/housing-intent';
 import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
 import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
-import {makeListing} from '../normalize.js';
-import {MAX_AGE_MS} from '../listing-policy.js';
-import {looksTelegramRoomShare} from '../telegram-room-share.js';
+import {makeListing} from '../listing/normalize.js';
+import {MAX_AGE_MS} from '../listing/listing-policy.js';
+import {looksTelegramRoomShare} from '../sources/telegram-room-share.js';
 import {isDirectOwner} from '@whiteslove/parsing-lexicon/housing-commercial';
 import { parseHousingPrice as parsePriceFromText } from '@whiteslove/parsing-lexicon/housing-money';
 import {
   parseHousingRoomsFromText as parseRoomsFromText,
   parseHousingAreaFromText as parseAreaFromText,
 } from '@whiteslove/parsing-lexicon/housing-text';
-import {classifyChildren, parseCondition, parseKvartal} from '../textparse-overrides.js';
+import {classifyChildren, parseCondition, parseKvartal} from '../listing/textparse-overrides.js';
 
 const TG_WORKER_URL = process.env.TG_WORKER_URL || '';
 

@@ -6,8 +6,8 @@ import {
   parseCondition,
   parseExplicitDistrict,
   parseKvartal,
-} from '../src/textparse-overrides.js';
-import {makeListing} from '../src/normalize.js';
+} from '../src/listing/textparse-overrides.js';
+import {makeListing} from '../src/listing/normalize.js';
 
 const text = 'Юнусобод 13квартил Туркистон метроси якин 1 этаж 2 хонали.Ремонт дан чиккан.Oilaga .Bollar';
 

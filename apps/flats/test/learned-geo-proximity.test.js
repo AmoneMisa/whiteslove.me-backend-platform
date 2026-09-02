@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import * as geoCatalog from '@whiteslove/geo-catalog';
 import { pool } from '../src/infrastructure/database/listingRepository.js';
-import { nearestAddressToMetro, nearestMetroToAddress, loadLearnedAddressesNear } from '../src/learned-geo-proximity.js';
+import { nearestAddressToMetro, nearestMetroToAddress, loadLearnedAddressesNear } from '../src/geo/learned/learned-geo-proximity.js';
 
 // nearestAddressToMetro/nearestMetroToAddress ship in @whiteslove/geo-catalog
 // from 0.5.0 onward. Guard rather than hard-assume, so an environment that

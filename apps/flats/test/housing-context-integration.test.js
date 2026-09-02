@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeListing } from '../src/normalize.js';
+import { makeListing } from '../src/listing/normalize.js';
 
 const base = {
   id: 'ctx-1',

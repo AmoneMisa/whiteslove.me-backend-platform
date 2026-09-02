@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import pg from 'pg';
-import {listMigrationFiles} from './migration-files.js';
+import {listMigrationFiles} from './support/migration-files.js';
 
 const { Pool } = pg;
 const MIGRATION_MAX_ATTEMPTS = Math.max(

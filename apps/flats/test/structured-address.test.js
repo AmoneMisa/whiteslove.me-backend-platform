@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { applyStructuredAddressFields } from '../src/structured-address.js';
+import { applyStructuredAddressFields } from '../src/geo/structured-address.js';
 
 test('canonical dictionary street gains direct house fields from listing prose', () => {
   const listing = {

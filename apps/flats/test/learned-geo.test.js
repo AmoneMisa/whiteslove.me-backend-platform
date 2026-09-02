@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { learnedGeoDescriptor } from '../src/learned-geo.js';
-import { __learnedGeoExportTest } from '../src/learned-geo-export.js';
+import { learnedGeoDescriptor } from '../src/geo/learned/learned-geo.js';
+import { __learnedGeoExportTest } from '../src/geo/learned/learned-geo-export.js';
 
 test('address descriptor requires structured street and house number', () => {
   const candidate = { source: 'address', q: 'Воробкевича 12, Chernivtsi, Ukraine', accuracyM: 40 };

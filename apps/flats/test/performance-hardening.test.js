@@ -31,7 +31,7 @@ test('hot listing filters use typed columns and normalized relations', async () 
 });
 
 test('mobile subscription scans claim durable delivery before FCM send', async () => {
-  const mobile = await source('../src/mobile-subscriptions.js');
+  const mobile = await source('../src/mobile/mobile-subscriptions.js');
 
   assert.match(mobile, /pg_try_advisory_lock/u);
   assert.match(mobile, /async function claimDelivery/u);
@@ -45,7 +45,7 @@ test('mobile subscription scans claim durable delivery before FCM send', async (
 });
 
 test('photo anti-fake uses indexed bands and one atomic cluster merge call', async () => {
-  const antiFake = await source('../src/photo-antifake.js');
+  const antiFake = await source('../src/listing/photo-antifake.js');
 
   assert.match(antiFake, /SUBSTRING\(perceptual_hash FROM 1 FOR 2\)/u);
   assert.match(antiFake, /SUBSTRING\(perceptual_hash FROM 15 FOR 2\)/u);

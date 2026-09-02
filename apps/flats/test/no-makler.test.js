@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { makeListing } from '../src/normalize.js';
+import { makeListing } from '../src/listing/normalize.js';
 import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
-import { parseCommission } from '../src/textparse-overrides.js';
+import { parseCommission } from '../src/listing/textparse-overrides.js';
 
 const text = `Квартира ЖК NRG BAXT БЕЗ МАКЛЕР!\n\nСдается квартира порядочным людям и иностранцам со всеми удобствами.`;
 

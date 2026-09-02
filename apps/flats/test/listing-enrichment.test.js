@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {enrichListingDetails, __listingEnrichmentTest as detail} from '../src/listing-enrichment.js';
+import {enrichListingDetails, __listingEnrichmentTest as detail} from '../src/listing/listing-enrichment.js';
 
 test('extracts bedrooms, bathrooms and 5\\5 floor notation', () => {
   const listing = enrichListingDetails({

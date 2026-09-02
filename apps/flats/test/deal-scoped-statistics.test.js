@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 
 const source = await readFile(new URL('../src/infrastructure/search/postgres-search-core.js', import.meta.url), 'utf8');
-const routes = await readFile(new URL('../src/listing-routes.js', import.meta.url), 'utf8');
+const routes = await readFile(new URL('../src/routes/listing-routes.js', import.meta.url), 'utf8');
 
 test('listing geography statistics are split by sale, rent, short rent and room rent', () => {
   assert.match(source, /AS deal_key/u);

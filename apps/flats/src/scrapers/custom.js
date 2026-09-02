@@ -16,7 +16,7 @@
 
 import dns from 'node:dns/promises';
 import net from 'node:net';
-import { makeListing } from '../normalize.js';
+import { makeListing } from '../listing/normalize.js';
 import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
 import { fetchChannel } from './telegram.js';
 import { extractKnownOwnerHtml } from './owner-html.js';

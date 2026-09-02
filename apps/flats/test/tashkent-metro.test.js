@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { TASHKENT_METRO, canonicalTashkentMetro } from '../src/tashkent-metro.js';
-import { dictionaryLocationLists, matchDictionaryEntities } from '../src/location-dictionary-resolver.js';
+import { TASHKENT_METRO, canonicalTashkentMetro } from '../src/geo/tashkent-metro.js';
+import { dictionaryLocationLists, matchDictionaryEntities } from '../src/geo/location-dictionary-resolver.js';
 
 test('Tashkent metro catalog contains all 50 current stations across four lines', () => {
   assert.equal(TASHKENT_METRO.length, 50);

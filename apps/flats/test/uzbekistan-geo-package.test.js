@@ -6,8 +6,8 @@ import {
   applyGeoCatalogCityFallback,
   applyGeoCatalogExactAnchor,
   canonicalGeoCatalogCity,
-} from '../src/geo-catalog.js';
-import { applyReverseGeo } from '../src/reverse-geo.js';
+} from '../src/geo/geo-catalog.js';
+import { applyReverseGeo } from '../src/geo/reverse-geo.js';
 
 test('geo package adapter preserves unknown values and existing coordinates', () => {
   assert.equal(canonicalGeoCatalogCity('UZ', ' Exampleville '), 'Exampleville');

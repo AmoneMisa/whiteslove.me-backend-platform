@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {mobilePresetSearch} from '../src/mobile-subscriptions.js';
+import {mobilePresetSearch} from '../src/mobile/mobile-subscriptions.js';
 
 test('mobile preset snapshot becomes the canonical apartment search filter', () => {
   const result = mobilePresetSearch({

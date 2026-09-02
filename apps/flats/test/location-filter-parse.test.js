@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseListingFilters } from '../src/listing-routes.js';
+import { parseListingFilters } from '../src/routes/listing-routes.js';
 
 test('structured map locations stay separate from full-text query', () => {
   const filters = parseListingFilters({

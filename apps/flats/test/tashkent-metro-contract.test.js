@@ -5,7 +5,7 @@ import {
   TASHKENT_METRO,
   TASHKENT_METRO_BY_NAME,
   canonicalTashkentMetro,
-} from '../src/tashkent-metro.js';
+} from '../src/geo/tashkent-metro.js';
 
 test('Tashkent metro wrapper only relies on the public parsing-lexicon contract', () => {
   assert.ok(Array.isArray(TASHKENT_METRO));

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 
 const source = readFileSync(
-  new URL('../src/listing-item-routes.js', import.meta.url),
+  new URL('../src/routes/listing-item-routes.js', import.meta.url),
   'utf8',
 );
 

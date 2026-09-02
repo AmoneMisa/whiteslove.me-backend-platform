@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {parseLexiconAddress} from '../src/lexicon-parse.js';
+import {parseLexiconAddress} from '../src/listing/lexicon-parse.js';
 import {maskPhoneLikeSpans} from '@whiteslove/parsing-lexicon/contact';
 import {parseHousingPrice} from '@whiteslove/parsing-lexicon/housing-money';
 

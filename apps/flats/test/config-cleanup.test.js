@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 
 const compose = readFileSync(new URL('../../../docker-compose.yml', import.meta.url), 'utf8');
 const platformEnv = readFileSync(new URL('../../../.env.example', import.meta.url), 'utf8');
-const cache = readFileSync(new URL('../src/cache.js', import.meta.url), 'utf8');
+const cache = readFileSync(new URL('../src/support/cache.js', import.meta.url), 'utf8');
 
 test('retired scheduler toggles stay out of runtime config', () => {
   assert.doesNotMatch(compose, /DISABLE_SCHEDULER/);

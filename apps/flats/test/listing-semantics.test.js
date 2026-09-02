@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isAgencyLikeListing } from '../src/listing-semantics.js';
-import { confirmRepeatedOlxGenericError } from '../src/availability.js';
+import { isAgencyLikeListing } from '../src/legacy/listing-semantics.js';
+import { confirmRepeatedOlxGenericError } from '../src/availability/availability.js';
 
 test('explicit commission makes a listing agency-like even when source account is not business', () => {
   assert.equal(isAgencyLikeListing({ byAgency: false, commission: true }), true);

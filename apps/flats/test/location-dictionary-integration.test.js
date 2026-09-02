@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseLocation, cityLocations } from '../src/locations.js';
-import { makeListing } from '../src/normalize.js';
-import { matchUkraineRegion, matchUkraineSecondaryCity } from '../src/location-dictionaries-ua-regions.js';
+import { parseLocation, cityLocations } from '../src/geo/locations.js';
+import { makeListing } from '../src/listing/normalize.js';
+import { matchUkraineRegion, matchUkraineSecondaryCity } from '../src/geo/location-dictionaries-ua-regions.js';
 
 test('Tashkent microdistrict + ЖК + metro aliases', () => {
   const loc = parseLocation('Юнусабад 19, ЖК Хон Сарой, рядом метро Шахристан', 'UZ');

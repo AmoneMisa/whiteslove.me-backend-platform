@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { geocodeCandidates, geocodeListings, poiDistanceM, solveSpatialPoint } from '../src/geocode.js';
+import { geocodeCandidates, geocodeListings, poiDistanceM, solveSpatialPoint } from '../src/geo/geocode.js';
 
 const country = {
   name: 'Uzbekistan',

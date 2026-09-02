@@ -1,5 +1,5 @@
 import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
-import {enrichListingDetails} from '../../listing-enrichment.js';
+import {enrichListingDetails} from '../../listing/listing-enrichment.js';
 
 function finiteNumber(value) {
     if (

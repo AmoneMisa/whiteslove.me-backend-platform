@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import {closeDb, pool} from '../src/infrastructure/database/listingRepository.js';
 import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
-import {hammingDistanceHex} from '../src/photo-antifake.js';
+import {hammingDistanceHex} from '../src/listing/photo-antifake.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 const OLD_SOURCE = 'perceptual-recall-old';

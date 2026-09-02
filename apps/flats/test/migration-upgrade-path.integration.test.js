@@ -4,7 +4,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 import pg from 'pg';
 
-import {listMigrationFiles} from '../src/migration-files.js';
+import {listMigrationFiles} from '../src/support/migration-files.js';
 
 const {Client} = pg;
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';

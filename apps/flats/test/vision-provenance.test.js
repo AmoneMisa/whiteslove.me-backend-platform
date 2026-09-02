@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { mergeVision } from '../src/vision-enrichment.js';
+import { mergeVision } from '../src/listing/vision-enrichment.js';
 
 function item(value, confidence = 0.9) {
   return { value, confidence, evidence: ['photo_1'] };

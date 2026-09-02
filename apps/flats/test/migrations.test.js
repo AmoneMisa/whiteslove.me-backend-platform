@@ -43,7 +43,7 @@ test('baseline migration creates listings before altering it', async () => {
 test('search indexes are versioned instead of created by API startup', async () => {
   const sql = await migration('003_search_indexes.sql');
   const server = await readFile(new URL('../src/server.js', import.meta.url), 'utf8');
-  const search = await readFile(new URL('../src/postgres-search.js', import.meta.url), 'utf8');
+  const search = await readFile(new URL('../src/support/postgres-search.js', import.meta.url), 'utf8');
 
   assert.match(sql, /listings_feed_newest_idx/);
   assert.match(sql, /listings_feed_price_idx/);
@@ -78,7 +78,7 @@ test('runtime entrypoints validate every migration file instead of creating sche
     '../src/reindex.js',
   ];
   const ready = await readFile(new URL('../src/infrastructure/database/schemaReady.js', import.meta.url), 'utf8');
-  const policy = await readFile(new URL('../src/migration-files.js', import.meta.url), 'utf8');
+  const policy = await readFile(new URL('../src/support/migration-files.js', import.meta.url), 'utf8');
   const runner = await readFile(new URL('../src/migrate.js', import.meta.url), 'utf8');
 
   for (const file of entrypoints) {
@@ -102,14 +102,14 @@ test('runtime entrypoints validate every migration file instead of creating sche
 test('migrated runtime modules never mutate database schema', async () => {
   const files = [
     '../src/infrastructure/database/listingRepository.js',
-    '../src/postgres-search.js',
-    '../src/availability.js',
-    '../src/availability-sweep.js',
-    '../src/availability-routes.js',
+    '../src/support/postgres-search.js',
+    '../src/availability/availability.js',
+    '../src/availability/availability-sweep.js',
+    '../src/routes/availability-routes.js',
     '../src/infrastructure/queue/pgQueue.js',
     '../src/infrastructure/queue/queueTaskDedup.js',
     '../src/infrastructure/database/placesRepository.js',
-    '../src/listing-semantics.js',
+    '../src/legacy/listing-semantics.js',
   ];
 
   for (const file of files) {

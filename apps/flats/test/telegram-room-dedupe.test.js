@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
 
-import {makeListing} from '../src/normalize.js';
-import {looksTelegramRoomShare} from '../src/telegram-room-share.js';
+import {makeListing} from '../src/listing/normalize.js';
+import {looksTelegramRoomShare} from '../src/sources/telegram-room-share.js';
 
 const postgresSearch = await readFile(new URL('../src/infrastructure/search/postgres-search-core.js', import.meta.url), 'utf8');
 const dedupeMigration = await readFile(new URL('../migrations/010_persisted_dedupe_key.sql', import.meta.url), 'utf8');
@@ -18,7 +18,7 @@ test('recognizes Uzbek place-in-flat offers without treating audience alone as r
 });
 
 test('Telegram scraper forwards colloquial share detection into normalized roomOnly', () => {
-  assert.match(telegramScraper, /import \{looksTelegramRoomShare\} from '\.\.\/telegram-room-share\.js'/);
+  assert.match(telegramScraper, /import \{looksTelegramRoomShare\} from '\.\.\/sources\/telegram-room-share\.js'/);
   assert.match(
     telegramScraper,
     /roomOnly:\s*looksTelegramRoomShare\(text\)(?:\s*\?\s*true\s*:\s*undefined)?/,

@@ -8,7 +8,7 @@ const {assertDatabaseReady} = await import('../src/infrastructure/database/schem
 const {
   recordListingAvailability,
   verifyListingAvailability,
-} = await import('../src/availability.js');
+} = await import('../src/availability/availability.js');
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 

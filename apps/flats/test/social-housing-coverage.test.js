@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { classifyHousingOffer } from '../src/scrapers/social.js';
-import { buildThreadsHousingCoverage, UKRAINE_OBLASTS } from '../src/social-search-coverage.js';
+import { buildThreadsHousingCoverage, UKRAINE_OBLASTS } from '../src/sources/social-search-coverage.js';
 
 test('social housing covers all 24 Ukrainian oblasts without assigning an oblast centre as city', () => {
   assert.equal(UKRAINE_OBLASTS.length, 24);

@@ -86,11 +86,11 @@ test('canonical public feed chooses and maintains the winner at write time', {sk
 test('structured canonical feed reads winners without request-time dedupe ranking', async () => {
   const migrationSql = await migration('037_canonical_public_feed.sql');
   const feedSql = await readFile(
-    new URL('../src/postgres-canonical-feed.js', import.meta.url),
+    new URL('../src/support/postgres-canonical-feed.js', import.meta.url),
     'utf8',
   );
   const routerSql = await readFile(
-    new URL('../src/postgres-search-fast.js', import.meta.url),
+    new URL('../src/support/postgres-search-fast.js', import.meta.url),
     'utf8',
   );
 

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {createRateLimiter} from '../src/request-rate-limit.js';
+import {createRateLimiter} from '../src/support/request-rate-limit.js';
 
 function responseRecorder() {
   const headers = new Map();

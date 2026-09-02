@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { olxSegmentDealType } from '../src/olx-segment.js';
-import { telegramHousingChannels } from '../src/telegram-housing-sources.js';
+import { olxSegmentDealType } from '../src/geo/olx-segment.js';
+import { telegramHousingChannels } from '../src/sources/telegram-housing-sources.js';
 
 test('OLX dedicated daily-rent segment maps to shortRent', () => {
   assert.equal(olxSegmentDealType('flat:shortRent'), 'shortRent');

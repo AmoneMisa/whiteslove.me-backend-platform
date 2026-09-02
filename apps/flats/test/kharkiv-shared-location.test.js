@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { makeListing } from '../src/normalize.js';
+import { makeListing } from '../src/listing/normalize.js';
 
 test('normalizes Vorobiovi Hory and abbreviated Akademika Pavlova metro together', () => {
   const listing = makeListing({

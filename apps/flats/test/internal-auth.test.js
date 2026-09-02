@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { internalKey, requireInternal } from '../src/internal-auth.js';
+import { internalKey, requireInternal } from '../src/support/internal-auth.js';
 
 function withEnv(values, fn) {
   const previous = {};

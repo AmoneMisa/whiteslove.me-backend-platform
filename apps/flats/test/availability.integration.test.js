@@ -6,7 +6,7 @@ import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js
 import {
   recordListingAvailability,
   verifyListingAvailability,
-} from '../src/availability.js';
+} from '../src/availability/availability.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 

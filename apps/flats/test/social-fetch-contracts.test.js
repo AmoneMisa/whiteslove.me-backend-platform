@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const proxy = readFileSync(new URL('../src/social-routes.js', import.meta.url), 'utf8');
+const proxy = readFileSync(new URL('../src/routes/social-routes.js', import.meta.url), 'utf8');
 const dockerfile = readFileSync(new URL('../../../services/social-fetcher/Dockerfile', import.meta.url), 'utf8');
 const main = readFileSync(new URL('../../../services/social-fetcher/main.py', import.meta.url), 'utf8');
 

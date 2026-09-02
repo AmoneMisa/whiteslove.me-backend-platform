@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 
 import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
 import {closeDb, pool, upsertListings} from '../src/infrastructure/database/listingRepository.js';
-import {applyListingFilters} from '../src/legacy-listing-filter.js';
-import {searchPostgresListings} from '../src/postgres-search.js';
+import {applyListingFilters} from '../src/legacy/legacy-listing-filter.js';
+import {searchPostgresListings} from '../src/support/postgres-search.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 const SOURCE = 'filter-parity-test';

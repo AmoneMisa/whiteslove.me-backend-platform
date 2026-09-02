@@ -4,7 +4,7 @@ import test from 'node:test';
 
 import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
 import {pool} from '../src/infrastructure/database/listingRepository.js';
-import {computeStatisticsSnapshot} from '../src/statistics-snapshot.js';
+import {computeStatisticsSnapshot} from '../src/support/statistics-snapshot.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 const SOURCE = 'statistics-snapshot-test';
@@ -78,7 +78,7 @@ test('full statistics snapshot reads canonical winners and preserves aggregate s
 });
 
 test('statistics snapshot avoids request-time dedupe ranking', async () => {
-  const source = await readFile(new URL('../src/statistics-snapshot.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/support/statistics-snapshot.js', import.meta.url), 'utf8');
   assert.match(source, /listing_public_feed_canonical/);
   assert.match(source, /JOIN listing_public_feed_members AS m/);
   assert.doesNotMatch(source, /PARTITION BY[^\n]*dedupe/i);

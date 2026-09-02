@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {parseListingFilters} from '../src/listing-routes.js';
+import {parseListingFilters} from '../src/routes/listing-routes.js';
 
 test('listing feed defaults to 20 rows without shrinking the public max', () => {
   assert.equal(parseListingFilters({}).limit, 20);
@@ -12,6 +12,6 @@ test('listing feed defaults to 20 rows without shrinking the public max', () => 
 });
 
 test('listing feed does not do per-row nearby transport enrichment', async () => {
-  const source = await readFile(new URL('../src/listing-routes.js', import.meta.url), 'utf8');
+  const source = await readFile(new URL('../src/routes/listing-routes.js', import.meta.url), 'utf8');
   assert.doesNotMatch(source, /annotateNearbyTransport/);
 });

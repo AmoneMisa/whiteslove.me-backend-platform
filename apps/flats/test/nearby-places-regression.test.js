@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { annotateListing, indexPlaces, nearestOfKind } from '../src/nearby-places.js';
+import { annotateListing, indexPlaces, nearestOfKind } from '../src/geo/nearby-places.js';
 
 test('nearestOfKind returns all in-radius POIs by default', () => {
   const rows = Array.from({ length: 5 }, (_, index) => ({

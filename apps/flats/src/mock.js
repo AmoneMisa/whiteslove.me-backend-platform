@@ -2,9 +2,9 @@
 // Production must report degraded/unavailable sources instead of presenting
 // realistic synthetic listings as if they came from a live marketplace.
 
-import { COUNTRIES } from './countries.js';
-import { makeListing } from './normalize.js';
-import { cityLocations } from './locations.js';
+import { COUNTRIES } from './geo/countries.js';
+import { makeListing } from './listing/normalize.js';
+import { cityLocations } from './geo/locations.js';
 
 const FEATURES = [
   'furnished, renovated, with balcony',

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const scraper = readFileSync(new URL('../src/scrapers/social.js', import.meta.url), 'utf8');
-const scheduler = readFileSync(new URL('../src/social-housing-scheduler.js', import.meta.url), 'utf8');
+const scheduler = readFileSync(new URL('../src/sources/social-housing-scheduler.js', import.meta.url), 'utf8');
 
 test('partial or unexpectedly empty social crawls do not report complete', () => {
   assert.match(scraper, /const errors = \[\]/);

@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseLexiconAddress } from '../src/lexicon-parse.js';
+import { parseLexiconAddress } from '../src/listing/lexicon-parse.js';
 import {
   parseFloor,
   parseResidentialComplex,
   parseRoomsFromText,
-} from '../src/textparse-overrides.js';
+} from '../src/listing/textparse-overrides.js';
 
 const OLX_TEXT = 'Chilonzor 10 mavze 11 a dom 9 etashka 4 etajda 2 honali barcha qulayli bor';
 

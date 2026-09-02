@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 
 const appSource = readFileSync(new URL('../src/app.js', import.meta.url), 'utf8');
 const itemRoutes = readFileSync(
-  new URL('../src/listing-item-routes.js', import.meta.url),
+  new URL('../src/routes/listing-item-routes.js', import.meta.url),
   'utf8',
 );
 

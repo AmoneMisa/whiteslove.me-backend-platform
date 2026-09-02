@@ -19,7 +19,7 @@ const WORKER_COUNT = 4;
 const SEND_MARKER = 'MOCK_FCM_SEND:';
 
 const backendDir = fileURLToPath(new URL('..', import.meta.url));
-const mobileModuleUrl = new URL('../src/mobile-subscriptions.js', import.meta.url).href;
+const mobileModuleUrl = new URL('../src/mobile/mobile-subscriptions.js', import.meta.url).href;
 
 function fakeServiceAccount() {
   const {privateKey} = generateKeyPairSync('rsa', {modulusLength: 2048});

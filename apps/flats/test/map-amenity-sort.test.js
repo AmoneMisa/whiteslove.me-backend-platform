@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { makeListing } from '../src/normalize.js';
-import { applyListingFilters } from '../src/legacy-listing-filter.js';
-import { coordinateInsideBbox } from '../src/coordinate-validation.js';
-import { sortListings } from '../src/listing-sort.js';
+import { makeListing } from '../src/listing/normalize.js';
+import { applyListingFilters } from '../src/legacy/legacy-listing-filter.js';
+import { coordinateInsideBbox } from '../src/geo/coordinate-validation.js';
+import { sortListings } from '../src/legacy/listing-sort.js';
 
 test('bare street plus house number is retained as an address', () => {
   const listing = makeListing({

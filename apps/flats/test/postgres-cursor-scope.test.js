@@ -5,7 +5,7 @@ import {
   attachScopeToCursor,
   prepareCursorForScope,
   searchCursorScope,
-} from '../src/postgres-cursor-scope.js';
+} from '../src/support/postgres-cursor-scope.js';
 
 function encodeCursor(value) {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');

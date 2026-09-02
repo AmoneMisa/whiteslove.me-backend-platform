@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {mergeStoredFreshListing} from '../src/listing-public.js';
+import {mergeStoredFreshListing} from '../src/routes/listing-public.js';
 
 test('live reload preserves external fields but drops stale transport and market data', () => {
   const stored = {

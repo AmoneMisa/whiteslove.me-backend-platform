@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-import { installSystemRoutes } from '../src/system-routes.js';
+import { installSystemRoutes } from '../src/routes/system-routes.js';
 
 const systemRoutesSource = readFileSync(
-  new URL('../src/system-routes.js', import.meta.url),
+  new URL('../src/routes/system-routes.js', import.meta.url),
   'utf8',
 );
 

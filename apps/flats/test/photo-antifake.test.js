@@ -6,7 +6,7 @@ import {
   hammingDistanceHex,
   isPropertyClusterMatch,
   scoreCloneRelationship,
-} from '../src/photo-antifake.js';
+} from '../src/listing/photo-antifake.js';
 
 function listing(overrides = {}) {
   return {

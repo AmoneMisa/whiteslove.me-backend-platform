@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { makeListing } from '../src/normalize.js'
-import { applyListingFilters } from '../src/legacy-listing-filter.js'
+import { makeListing } from '../src/listing/normalize.js'
+import { applyListingFilters } from '../src/legacy/legacy-listing-filter.js'
 
 const base = {
   propertyType: 'any', dealType: 'any', agency: 'any', audience: 'any',
