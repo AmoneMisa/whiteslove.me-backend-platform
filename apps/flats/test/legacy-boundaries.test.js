@@ -70,6 +70,8 @@ test('listing freshness policy is imported directly instead of re-exported by no
 test('retired text parser facade stays absent from flats runtime', () => {
   assert.deepEqual(consumersOf(/textparse\\.js/), []);
   assert.throws(() => readFileSync(path.join(srcRoot, 'textparse.js'), 'utf8'), {code: 'ENOENT'});
+  assert.deepEqual(consumersOf(/textparse-legacy\\.js/), []);
+  assert.throws(() => readFileSync(path.join(srcRoot, 'textparse-legacy.js'), 'utf8'), {code: 'ENOENT'});
 });
 
 test('listing normalization consumes aggregate package-owned fields', () => {

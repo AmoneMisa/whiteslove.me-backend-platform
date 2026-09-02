@@ -7,7 +7,12 @@ import { looksHousingRoomOnly } from '@whiteslove/parsing-lexicon/housing';
 import { parsePrimaryContact } from '@whiteslove/parsing-lexicon/contact';
 import { parseHousingAreaFromText } from '@whiteslove/parsing-lexicon/housing-text';
 import { parseHousingListingFields } from '@whiteslove/parsing-lexicon/housing-listing-fields';
-import { parseAmenities, parseKvartal, parseNearbyShops, parseNearbyPlaces } from './textparse-legacy.js';
+import {
+  parseHousingCardAmenities as parseAmenities,
+  parseHousingNearbyMentions as parseNearbyPlaces,
+  parseHousingNearbyShops as parseNearbyShops,
+  parseHousingQuarterLabel as parseKvartal,
+} from '@whiteslove/parsing-lexicon/housing-card-fields';
 import {
   classifyAudience, parseCommission, parseExplicitDistrict, parseFloor, parseResidentialComplex,
   parseRoomsFromText,

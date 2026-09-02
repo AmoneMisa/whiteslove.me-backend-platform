@@ -5,7 +5,7 @@ import {
   parseHousingResidentialComplex as baseParseResidentialComplex,
   parseHousingRoomsFromText as baseParseRoomsFromText,
 } from '@whiteslove/parsing-lexicon/housing-text';
-import { parseKvartal as baseParseKvartal } from './textparse-legacy.js';
+import { parseHousingQuarterLabel as baseParseKvartal } from '@whiteslove/parsing-lexicon/housing-card-fields';
 
 const baseClassifyChildren = (text) => parseHousingListingFields(text).childrenAllowed ?? null;
 import {hasZeroCommissionSignal} from './seller-signals.js';

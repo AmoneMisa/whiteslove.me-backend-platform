@@ -1,0 +1,2 @@
+minimumReleaseAgeExclude:
+  - '@whiteslove/parsing-lexicon@0.5.15'
