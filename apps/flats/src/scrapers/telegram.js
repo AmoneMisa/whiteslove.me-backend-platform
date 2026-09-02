@@ -28,6 +28,61 @@ const HOUSING_RE =
 const TELEGRAM_BARE_USD_RE =
   /^.{0,70}?(?<![\d+])([1-9]\d{2,3})(?!\d)(?=\s+(?!m2\b|m²\b|м2\b|м²\b|qavat\b|этаж\b|xona\b|xonali\b|хона\b|хонали\b|комнат\b|kvartal\b|квартал\b)[\p{L}])/iu;
 
+// Source-specific digest syntax used by Uzbek Telegram rental channels.
+// Each numbered key entry is one apartment; generic housing semantics still
+// belong to parsing-lexicon. Shared broker/contact footer text is copied into
+// every child so downstream contact/commission extraction keeps working.
+const TELEGRAM_DIGEST_ENTRY_RE =
+  /^\s*(\d{1,3})\.\s*🔑\s*(?:№|N(?:o|º)?\.?)\s*(\d{1,8})\b/u;
+const TELEGRAM_DIGEST_SECTION_RE = /^\s*📍\s*#/u;
+const TELEGRAM_DIGEST_SEPARATOR_RE = /^\s*[━─—_=]{5,}\s*$/u;
+const TELEGRAM_DIGEST_FOOTER_RE =
+  /(?:makler\s+haqqi|комисс(?:ия|ии)|rieltor|realtor|@\w+|\+\d{7,})/iu;
+
+export function splitTelegramHousingMessage(text) {
+  const source = String(text || '').replace(/\r\n?/g, '\n').trim();
+  if (!source) return [];
+
+  const lines = source.split('\n');
+  const entries = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const match = lines[index].match(TELEGRAM_DIGEST_ENTRY_RE);
+    if (match) entries.push({lineIndex: index, ordinal: match[1], listingNo: match[2]});
+  }
+
+  if (entries.length < 2) return [{text: source, suffix: null}];
+
+  const lastEntryLine = entries.at(-1).lineIndex;
+  let footerStart = -1;
+  for (let index = lastEntryLine + 1; index < lines.length; index += 1) {
+    if (!TELEGRAM_DIGEST_SEPARATOR_RE.test(lines[index])) continue;
+    const tail = lines.slice(index + 1).join('\n').trim();
+    if (tail && TELEGRAM_DIGEST_FOOTER_RE.test(tail)) {
+      footerStart = index;
+      break;
+    }
+  }
+  const footer = footerStart >= 0 ? lines.slice(footerStart).join('\n').trim() : '';
+
+  return entries.map((entry, entryIndex) => {
+    const nextStart = entries[entryIndex + 1]?.lineIndex ?? (footerStart >= 0 ? footerStart : lines.length);
+    let end = nextStart;
+    for (let index = entry.lineIndex + 1; index < nextStart; index += 1) {
+      if (TELEGRAM_DIGEST_SECTION_RE.test(lines[index]) || TELEGRAM_DIGEST_SEPARATOR_RE.test(lines[index])) {
+        end = index;
+        break;
+      }
+    }
+
+    const body = lines.slice(entry.lineIndex, end).join('\n').trim();
+    const childText = footer ? `${body}\n\n${footer}` : body;
+    return {
+      text: childText,
+      suffix: `listing-${entry.listingNo}-${entry.ordinal}`,
+    };
+  }).filter((entry) => entry.text);
+}
+
 export function classifyTelegramAgency(text) {
   if (!text) return false;
   if (isDirectOwner(text)) return false;
@@ -67,7 +122,7 @@ export function parseTelegramPrice(text, country, dealType = null) {
   return {amount, currency: 'USD', approximate: false};
 }
 
-function messageToListing(msg, channelConfig, country) {
+function messageToListing(msg, channelConfig, country, suffix = null) {
   const channel = channelConfig.name;
   const text = (msg.text || '').replace(/[ \t]+/g, ' ').trim();
 
@@ -94,7 +149,7 @@ function messageToListing(msg, channelConfig, country) {
   ].sort();
 
   return makeListing({
-    id: `tg-${channel}-${postPath}`,
+    id: suffix ? `tg-${channel}-${postPath}-${suffix}` : `tg-${channel}-${postPath}`,
     source: 'telegram',
     country: country.code,
     title,
@@ -121,6 +176,12 @@ function messageToListing(msg, channelConfig, country) {
     url: `https://t.me/${postPath}`,
     createdAt: msg.date,
   });
+}
+
+export function telegramMessageToListings(msg, channelConfig, country) {
+  return splitTelegramHousingMessage(msg?.text).map((part) =>
+    messageToListing({...msg, text: part.text}, channelConfig, country, part.suffix),
+  ).filter(Boolean);
 }
 
 async function fetchWorkerPage(channel, beforeId, deadline) {
@@ -151,8 +212,7 @@ export async function fetchChannel(channelConfig, country, _filters = {}, deadli
 
     let oldestTs = null;
     for (const message of messages) {
-      const listing = messageToListing(message, channelConfig, country);
-      if (listing) listings.push(listing);
+      listings.push(...telegramMessageToListings(message, channelConfig, country));
 
       if (message.date) {
         const time = Date.parse(message.date);
