@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {isDirectOwner, hasZeroCommissionSignal} from '../src/seller-signals.js';
+import {isDirectOwner, hasZeroCommissionSignal} from '@whiteslove/parsing-lexicon/housing-commercial';
 import {parseCommission} from '../src/textparse-overrides.js';
 import {classifyTelegramAgency} from '../src/scrapers/telegram.js';
 

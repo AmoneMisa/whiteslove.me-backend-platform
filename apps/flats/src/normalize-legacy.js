@@ -1,9 +1,10 @@
 // A single normalized Listing shape that the Flutter app consumes.
 import {createHash} from 'node:crypto';
 import {extractTags} from './tags.js';
-import { classifyHousingDealType } from '@whiteslove/parsing-lexicon/housing-intent';
-import { looksCommercialHousing } from '@whiteslove/parsing-lexicon/housing-commercial';
+import { classifyHousingDealType, looksExplicitDailyRentalMention } from '@whiteslove/parsing-lexicon/housing-intent';
+import { looksCommercialHousing, looksParkingOnly } from '@whiteslove/parsing-lexicon/housing-commercial';
 import { looksHousingRoomOnly } from '@whiteslove/parsing-lexicon/housing';
+import { dedupeHousingNearbyMentions } from '@whiteslove/parsing-lexicon/housing-card-fields';
 import { parsePrimaryContact } from '@whiteslove/parsing-lexicon/contact';
 import { parseHousingAreaFromText } from '@whiteslove/parsing-lexicon/housing-text';
 import { parseHousingListingFields } from '@whiteslove/parsing-lexicon/housing-listing-fields';
@@ -18,7 +19,6 @@ import {
   parseRoomsFromText,
 } from './textparse-overrides.js';
 import {canonicalDistrict, parseLocation} from './locations.js';
-import {housingSemanticCanonical} from '@whiteslove/parsing-lexicon';
 import {parseDishwasher, parsePrivateYard, parseTerrace} from './amenity-parse.js';
 import {
   parseAppliances,
@@ -41,59 +41,12 @@ function stripHtml(s) {
     .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
 }
 
-const PARKING_OBJECT_RE = /(?:парко?мест[а-яёіїґ]*|парковочн[а-яёіїґ]*\s+мест[а-яёіїґ]*|машино[-\s]?мест[а-яёіїґ]*|мест[а-яёіїґ]*\s+(?:в|на)\s+(?:паркинг[а-яёіїґ]*|парковк[а-яёіїґ]*)|parking\s+(?:space|spot)s?)/iu;
-const HOUSING_OBJECT_RE = /(?:квартир[а-яёіїґ]*|апартамент[а-яёіїґ]*|студи[яії][а-яёіїґ]*|будин[а-яіїґ]*|(?:^|[^\p{L}\p{N}_])дом(?:а|ом|у|ов)?(?=$|[^\p{L}\p{N}_])|жиль[а-яё]*|житл[а-яіїґ]*|flat\b|apartment\b|studio\b|house\b|xonadon\b|kvartira\b|apartament\b|garsonier[ăa]\b)/iu;
-const EXPLICIT_SHORT_STAY_RE = /(?:^|[^\p{L}\p{N}_])сут(?:ки|ок)(?=$|[^\p{L}\p{N}_])/iu;
-
-const NEARBY_CATEGORY_ALIASES = [
-  ['park', ['park', 'парк']],
-  ['school', ['school', 'школа']],
-  ['market', ['market', 'рынок', 'ринок', 'базар']],
-  ['stadium', ['stadium', 'стадион', 'стадіон']],
-  ['clinic', ['clinic', 'клиника', 'клініка']],
-];
-
-function normalizeNearbyPlaces(values) {
-  const unique = [];
-  const seen = new Set();
-  for (const raw of values || []) {
-    const value = String(raw || '').replace(/\s+/g, ' ').trim();
-    if (!value) continue;
-    // Generic terms (parks, markets, restaurants...) come back from the
-    // shared lexicon as an English canonical name; dedupe by that canonical
-    // identity so "Park"/"Парк"/"парки" collapse to one entry instead of
-    // three near-duplicate chips. The canonical/English form is kept as
-    // stored value; the client is responsible for localized display.
-    const key = housingSemanticCanonical(value).toLocaleLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    unique.push(value);
-  }
-
-  const categoryForExact = (value) => {
-    const key = value.toLocaleLowerCase();
-    return NEARBY_CATEGORY_ALIASES.find(([, aliases]) => aliases.includes(key))?.[0] || null;
-  };
-  const hasSpecific = (category) => {
-    const aliases = NEARBY_CATEGORY_ALIASES.find(([name]) => name === category)?.[1] || [];
-    return unique.some((value) => {
-      const key = value.toLocaleLowerCase();
-      if (aliases.includes(key)) return false;
-      return aliases.some((alias) => key.startsWith(`${alias} `) || key.endsWith(` ${alias}`));
-    });
-  };
-
-  return unique.filter((value) => {
-    const category = categoryForExact(value);
-    return !category || !hasSpecific(category);
-  });
-}
-
-export function looksParkingOnly(text) {
-  const value = String(text || '').replace(/\s+/g, ' ').trim();
-  if (!value || !PARKING_OBJECT_RE.test(value)) return false;
-  return !HOUSING_OBJECT_RE.test(value);
-}
+// Nearby-place dedupe and the "parking space only" / "explicit daily rental"
+// signals now live in @whiteslove/parsing-lexicon (housing-card-fields /
+// housing-commercial / housing-intent); re-export looksParkingOnly so
+// existing consumers of this module keep working unchanged.
+const normalizeNearbyPlaces = dedupeHousingNearbyMentions;
+export { looksParkingOnly };
 
 function normalizeListingTitle(value, {propertyType, rooms, residenceComplex, address, city}) {
   const cleaned = stripHtml(value ?? '')
@@ -152,7 +105,7 @@ export function makeListing(partial) {
   const housingAction = partial.housingAction ?? partial.action ?? housingIntent?.action ?? null;
   const listingKind = partial.listingKind ?? housingIntent?.listingKind ?? 'propertyOffer';
   const parsedDealType = housingIntent?.dealType ?? parseLexiconDealType(combined) ?? classifyHousingDealType(combined);
-  const explicitShortStay = parsedDealType === 'shortRent' || EXPLICIT_SHORT_STAY_RE.test(combined);
+  const explicitShortStay = parsedDealType === 'shortRent' || looksExplicitDailyRentalMention(combined);
 
   // Explicit short-term language outranks a scraper's generic long-rent default.
   // An explicit sale stays authoritative because sale copy can mention rental yield.

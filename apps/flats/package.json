@@ -19,7 +19,7 @@
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.1",
     "@whiteslove/geo-catalog": "^0.7.2",
-    "@whiteslove/parsing-lexicon": "^0.5.15",
+    "@whiteslove/parsing-lexicon": "^0.6.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "pg": "^8.23.0"

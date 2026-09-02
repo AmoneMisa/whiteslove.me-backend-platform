@@ -8,7 +8,7 @@ import {
 import { parseHousingQuarterLabel as baseParseKvartal } from '@whiteslove/parsing-lexicon/housing-card-fields';
 
 const baseClassifyChildren = (text) => parseHousingListingFields(text).childrenAllowed ?? null;
-import {hasZeroCommissionSignal} from './seller-signals.js';
+import {hasZeroCommissionSignal} from '@whiteslove/parsing-lexicon/housing-commercial';
 
 const COMMISSION_PERCENT_RE = [
   /(?:комисси[а-яёіїґ]*|комісі[а-яіїґ]*|commission|comision|komissiya|комиссия)\s*[:=\-]?\s*(\d{1,3})\s*%/iu,

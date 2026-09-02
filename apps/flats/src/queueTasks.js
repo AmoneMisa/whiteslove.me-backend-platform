@@ -3,7 +3,7 @@ import { makeListing } from './normalize.js';
 import { resolveHousingIntent } from '@whiteslove/parsing-lexicon/housing-intent';
 import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
 import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
-import { isDirectOwner } from './seller-signals.js';
+import { isDirectOwner } from '@whiteslove/parsing-lexicon/housing-commercial';
 import { fetchChannel } from './scrapers/telegram.js';
 import { scrapeCustomUrl } from './scrapers/custom.js';
 import { telegramHousingChannels } from './telegram-housing-sources.js';
