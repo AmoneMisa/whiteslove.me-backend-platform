@@ -144,7 +144,10 @@ export async function indexDbRows(rows) {
         );
     }
 
-    const result = await client.bulk({operations, refresh: false});
+    const result = await client.bulk(
+        {operations, refresh: false},
+        {requestTimeout: 60_000},
+    );
 
     if (result.errors) {
         const failed = (result.items || [])
