@@ -16,6 +16,34 @@ The LLM remains an enrichment layer. If inference is unavailable, caller applica
 
 `ai-worker` is intentionally stateless apart from a bounded in-process queue and TTL/LRU result cache. It does **not** use Redis. Durable crawl/job state stays in the caller applications.
 
+## Source layout
+
+```text
+src/
+  server.js            HTTP entry point: routes, API-key auth, health/metrics wiring
+  config.js             Fail-fast environment validation and typed config
+  application/          Use cases — the only layer server.js calls into
+    extraction.js        POST /ai/extract: queue + cache + provider dispatch for apartment/vacancy/candidate/translation
+    job-handler.js        Queued-job lifecycle (submit, poll, versioned result)
+    health.js              Health/readiness checks
+  services/              Provider-facing logic, one file per concern
+    extract.js, vision.js  Orchestrate a single extraction/vision call end to end
+    text.js, text-providers.js, vision-providers.js  FreeLLMAPI (and provider-agnostic fallback) client logic
+    free-translation.js    No-key MyMemory translation path, falls through to the FreeLLMAPI text gateway
+  prompts/               One file per extraction kind (apartment/vacancy/candidate/translation/vision) + common.js shared instructions
+  schemas/               Zod validation schemas, one per extraction kind — PROMPT_VERSION/SCHEMA_VERSION bumps live next to the schema they version
+  queue/                 Bounded in-process queue (no Redis — see Architecture above)
+  cache/                 TTL/LRU result cache, versioned by PROMPT_VERSION/SCHEMA_VERSION
+  util/                  Cross-cutting: logging, metrics, privacy redaction, hashing, the FreeLLMAPI key reader, translation-guard heuristics
+```
+
+Add a new extraction `kind` by adding one file to each of `prompts/` and
+`schemas/`, then wiring both into `services/extract.js` — don't grow
+`application/extraction.js` with kind-specific parsing logic that belongs
+in a schema or prompt file; it should stay a thin queue/cache/dispatch
+layer. Provider selection/failover changes belong in `services/text*.js` /
+`vision*.js`, not in `application/`.
+
 ## Zero-copy FreeLLMAPI setup
 
 The production stack is designed so an existing `ai-worker/.env` does not need to be re-entered in the FreeLLMAPI dashboard.
