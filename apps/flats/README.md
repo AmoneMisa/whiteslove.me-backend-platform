@@ -72,7 +72,14 @@ its folder, move it rather than letting the grouping drift from the code.
 - **`scheduling/`** — `queuePlan.js`, `queueTasks.js`, `scheduler.js`.
 - **`availability/`** — `availability.js`, `availability-policy.js`,
   `availability-sweep.js`.
-- **`mobile/`** — `mobile-fcm.js`, `mobile-subscriptions.js`.
+- **`mobile/`** — `mobile-fcm.js` (FCM transport), `mobile-preset-search.js`
+  (turns a stored preset into search filters), `mobile-subscription-routes.js`
+  (the `PUT /api/mobile-subscriptions` HTTP surface),
+  `mobile-subscription-scanner.js` (the background delivery scanner —
+  advisory-locked, durable per-delivery claim/complete/fail so a crash
+  mid-scan never double-sends). `mobile-subscriptions.js` is a thin barrel
+  re-exporting all three, kept only so the multi-worker delivery test's
+  dynamic `import()` and existing consumer paths didn't need to change.
 - **`support/`** — `internal-auth.js`, `ratelimit.js`,
   `request-rate-limit.js`, `cache.js`, `photoCache.js`,
   `postgres-canonical-feed.js`, `postgres-cursor-scope.js`,
