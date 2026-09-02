@@ -1,46 +1,8 @@
-import pg from 'pg';
+import {closePool, pool} from './infrastructure/database/pool.js';
+export {pool} from './infrastructure/database/pool.js';
 import {enrichListingDetails} from './listing-enrichment.js';
 import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
 
-const { Pool } = pg;
-
-export const pool = new Pool({
-    host:
-        process.env.PGHOST ||
-        'flat-finder-postgres',
-
-    port:
-        Number(process.env.PGPORT) ||
-        5432,
-
-    database:
-        process.env.POSTGRES_DB ||
-        'flatfinder',
-
-    user:
-        process.env.POSTGRES_USER ||
-        'flatfinder',
-
-    password:
-    process.env.POSTGRES_PASSWORD,
-
-    max:
-        Number(process.env.PG_POOL_MAX) ||
-        10,
-
-    idleTimeoutMillis:
-        30_000,
-
-    connectionTimeoutMillis:
-        10_000,
-});
-
-pool.on('error', (err) => {
-    console.error(
-        '[postgres] idle client error:',
-        err.message,
-    );
-});
 
 function finiteNumber(value) {
     if (
@@ -631,7 +593,7 @@ export async function getActiveListingsBatch(
 }
 
 export async function closeDb() {
-    await pool.end();
+    await closePool();
 }
 
 export async function getAvailableListingLocations(

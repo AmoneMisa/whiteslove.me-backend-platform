@@ -1,4 +1,4 @@
-import {pool} from '../../db.js';
+import {pool} from './pool.js';
 import {listMigrationFiles} from '../../migration-files.js';
 
 export async function assertDatabaseReady() {
