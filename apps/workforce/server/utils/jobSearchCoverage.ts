@@ -1,4 +1,5 @@
 import { UZ_CITY_CATALOG, KZ_CITY_CATALOG } from '@whiteslove/parsing-lexicon/central-asia'
+import { CITIES_BY_COUNTRY } from '@whiteslove/parsing-lexicon/geography'
 
 export type SearchPlace = {
   country: 'UZ' | 'KZ' | 'UA' | 'RO'
@@ -35,13 +36,12 @@ export const UKRAINE_OBLASTS: SearchPlace[] = [
   ['Chernihiv Oblast', 'Чернігівська область'],
 ].map(([location, label]) => ({ country: 'UA' as const, location, label, region: label }))
 
-// UZ/KZ canonical names + Russian labels come from parsing-lexicon's city
-// catalog so this list can't drift from the shared geography data. RO has no
-// lexicon coverage yet, so it stays a local static list.
-function majorCitiesFor(country: 'UZ' | 'KZ', catalog: readonly { canonical: string; aliases: Record<string, readonly string[]> }[], names: readonly string[]): SearchPlace[] {
+// Canonical names + local-language labels come from parsing-lexicon's city
+// catalog so this list can't drift from the shared geography data.
+function majorCitiesFor(country: 'UZ' | 'KZ' | 'RO', catalog: readonly { canonical: string; aliases: Record<string, readonly string[]> }[], names: readonly string[], labelLang: string): SearchPlace[] {
   return names.map((location) => {
     const entry = catalog.find((city) => city.canonical === location)
-    const label = entry?.aliases.ru?.[0] ?? location
+    const label = entry?.aliases[labelLang]?.[0] ?? location
     return { country, location, label, city: location }
   })
 }
@@ -50,16 +50,15 @@ const MAJOR_CITIES: SearchPlace[] = [
   ...majorCitiesFor('UZ', UZ_CITY_CATALOG, [
     'Tashkent', 'Samarkand', 'Bukhara', 'Namangan', 'Andijan', 'Fergana',
     'Qarshi', 'Nukus', 'Jizzakh', 'Urgench',
-  ]),
+  ], 'ru'),
   ...majorCitiesFor('KZ', KZ_CITY_CATALOG, [
     'Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau',
     'Pavlodar', 'Kostanay', 'Aktau', 'Oskemen',
-  ]),
-  ...[
-    ['Bucharest', 'București'], ['Cluj-Napoca', 'Cluj-Napoca'], ['Timișoara', 'Timișoara'],
-    ['Iași', 'Iași'], ['Brașov', 'Brașov'], ['Constanța', 'Constanța'],
-    ['Craiova', 'Craiova'], ['Sibiu', 'Sibiu'], ['Oradea', 'Oradea'], ['Ploiești', 'Ploiești'],
-  ].map(([location, label]) => ({ country: 'RO' as const, location, label, city: location })),
+  ], 'ru'),
+  ...majorCitiesFor('RO', CITIES_BY_COUNTRY.RO, [
+    'Bucharest', 'Cluj-Napoca', 'Timisoara', 'Iasi', 'Brasov', 'Constanta',
+    'Craiova', 'Sibiu', 'Oradea', 'Ploiesti',
+  ], 'ro'),
 ]
 
 export const COUNTRY_LOCATIONS: SearchPlace[] = [
