@@ -54,17 +54,8 @@ export function memorySet(key, value, ttlMs) {
   return value;
 }
 
-export function memoryDelete(key) {
-  entries.delete(key);
-}
-
 export function memoryClear() {
   entries.clear();
-}
-
-export function memorySize() {
-  sweepExpired();
-  return entries.size;
 }
 
 export function memoryStats() {

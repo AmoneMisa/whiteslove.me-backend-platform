@@ -43,14 +43,6 @@ export function recordProviderResult(bucket, provider, { ok = false, ms = 0, sta
   if (timeout) item.timeouts += 1;
 }
 
-export function recordVisionProvider(provider, opts) {
-  return recordProviderResult('visionProviders', provider, opts);
-}
-
-export function recordTextProvider(provider, opts) {
-  return recordProviderResult('textProviders', provider, opts);
-}
-
 export function recordText(ms) {
   metrics.textMsTotal += ms || 0;
   metrics.textCount += 1;
