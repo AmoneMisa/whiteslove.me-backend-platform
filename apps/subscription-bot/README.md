@@ -14,6 +14,26 @@ handoff/status routes.
 - persisted delivery deduplication in PostgreSQL
 - OLX availability gate using flat-finder's worker-owned persisted availability state
 
+## Source layout
+
+```text
+src/
+  index.mjs     Entry point: Telegram long-polling loop, command/button handlers, orchestrates everything else
+  config.mjs    Env var parsing/validation (validateConfig is called once at startup)
+  db.mjs        PostgreSQL: schema setup, subscriptions/handoffs/edit-sessions, delivery dedup
+  feeds.mjs     Fetches current results from the website's flats/jobs/hiring feed APIs for a saved search
+  telegram.mjs  Thin Telegram Bot API client (HTML escaping, send/edit message calls)
+  i18n.mjs      Russian/English message strings
+  migrate.mjs   One-shot schema-migration entry point (run by the subscriptions-migrate service, see below)
+```
+
+There's no `domain/`/`application/` split here — the whole bot is small
+enough that `index.mjs` doing orchestration directly is the appropriate
+shape, not a compatibility-era shortcut to be refactored away. Keep it that
+way: if a new concern needs its own file, prefer adding a sibling module
+under `src/` (matching the list above) over growing `index.mjs`'s handler
+functions with unrelated logic.
+
 ## UX
 
 The website is the single source of truth for filters. Subscription creation does **not** happen by copying a URL into Telegram:
