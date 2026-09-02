@@ -325,9 +325,9 @@ async function searchExactListing({filters, countries}) {
       AND l.country = $2
       AND l.source_id = $3
       AND l.active = TRUE
-      AND COALESCE(l.data->>'listingKind', 'propertyOffer') <> 'propertyWanted'
-      AND COALESCE(l.data->>'listingStatus', 'active') NOT IN ('sold', 'rented', 'closed', 'outdated')
-      AND NOT (l.data @> '{"commercial":true}'::jsonb)
+      AND l.listing_kind <> 'propertyWanted'
+      AND l.listing_status NOT IN ('sold', 'rented', 'closed', 'outdated')
+      AND NOT l.commercial
       AND (l.created_at IS NULL OR l.created_at >= NOW() - ($4::double precision * INTERVAL '1 day'))
     LIMIT 1
   `, [filters.sources[0], countries[0], String(filters.listingId), ageDays]);

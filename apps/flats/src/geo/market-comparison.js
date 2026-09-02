@@ -91,11 +91,11 @@ export async function attachMarketComparisons(listings, rates) {
        AND UPPER(c.country) = t.country
        AND LOWER(BTRIM(COALESCE(c.city, ''))) = LOWER(BTRIM(t.city))
        AND c.property_type = t.property_type
-       AND (CASE WHEN c.data @> '{"roomOnly":true}'::jsonb THEN 'roomRent' ELSE c.deal_type END) = t.deal_key
+       AND (CASE WHEN c.room_only THEN 'roomRent' ELSE c.deal_type END) = t.deal_key
        AND c.rooms = t.rooms
        AND (t.district IS NULL OR LOWER(BTRIM(COALESCE(c.district, ''))) = LOWER(BTRIM(t.district)))
        AND COALESCE(c.created_at, c.first_seen_at) >= NOW() - (${MARKET_MAX_AGE_DAYS} * INTERVAL '1 day')
-       AND NOT (c.data @> '{"commercial":true}'::jsonb)
+       AND NOT c.commercial
     ),
     area_candidates AS (
       SELECT
@@ -113,14 +113,14 @@ export async function attachMarketComparisons(listings, rates) {
        AND UPPER(c.country) = t.country
        AND LOWER(BTRIM(COALESCE(c.city, ''))) = LOWER(BTRIM(t.city))
        AND c.property_type = t.property_type
-       AND (CASE WHEN c.data @> '{"roomOnly":true}'::jsonb THEN 'roomRent' ELSE c.deal_type END) = t.deal_key
+       AND (CASE WHEN c.room_only THEN 'roomRent' ELSE c.deal_type END) = t.deal_key
        AND c.area_sqm IS NOT NULL
        AND c.area_sqm BETWEEN
          t.area_sqm - GREATEST(5.0, t.area_sqm * 0.15)
          AND t.area_sqm + GREATEST(5.0, t.area_sqm * 0.15)
        AND (t.district IS NULL OR LOWER(BTRIM(COALESCE(c.district, ''))) = LOWER(BTRIM(t.district)))
        AND COALESCE(c.created_at, c.first_seen_at) >= NOW() - (${MARKET_MAX_AGE_DAYS} * INTERVAL '1 day')
-       AND NOT (c.data @> '{"commercial":true}'::jsonb)
+       AND NOT c.commercial
     ),
     candidates AS (
       SELECT * FROM room_candidates

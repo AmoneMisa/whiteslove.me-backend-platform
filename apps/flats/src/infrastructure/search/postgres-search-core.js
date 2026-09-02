@@ -67,8 +67,8 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
 
   const where = [
     'l.active = TRUE',
-    `COALESCE(l.data->>'listingKind', 'propertyOffer') <> 'propertyWanted'`,
-    `COALESCE(l.data->>'listingStatus', 'active') NOT IN ('sold', 'rented', 'closed', 'outdated')`,
+    `l.listing_kind <> 'propertyWanted'`,
+    `l.listing_status NOT IN ('sold', 'rented', 'closed', 'outdated')`,
   ];
   if (elasticsearchAuthoritative && matchRows.length === 0) where.push('FALSE');
 
@@ -83,7 +83,7 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
 
   if (filters.listingId) where.push(`l.source_id = ${add(String(filters.listingId))}`);
 
-  where.push(`NOT (l.data @> '{"commercial":true}'::jsonb)`);
+  where.push(`NOT l.commercial`);
 
   const ageDays = filters.maxAgeDays != null && filters.maxAgeDays > 0
     ? Math.min(Number(filters.maxAgeDays), MAX_AGE_DAYS)
@@ -96,7 +96,7 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
     // Room shares are stored as longRent + roomOnly. A normal long-term rent
     // query means the whole property; room-only is an explicit separate mode.
     if (filters.dealType === 'longRent' && filters.roomOnly !== true) {
-      where.push(`NOT (l.data @> '{"roomOnly":true}'::jsonb)`);
+      where.push(`NOT l.room_only`);
     }
   }
   if (filters.agency === 'agency') where.push('l.by_agency = TRUE');
@@ -162,7 +162,7 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
   if (filters.audience && filters.audience !== 'any') where.push(`l.data->>'audience' = ${add(filters.audience)}`);
   if (filters.pets === true) where.push(`l.data @> '{"petsAllowed":true}'::jsonb`);
   if (filters.children === true) where.push(`COALESCE(l.data->>'childrenAllowed', '') <> 'false'`);
-  if (filters.roomOnly === true) where.push(`l.data @> '{"roomOnly":true}'::jsonb`);
+  if (filters.roomOnly === true) where.push(`l.room_only`);
   if (filters.withPhotos === true) {
     where.push(`(
       COALESCE(NULLIF(BTRIM(l.data->>'photo'), ''), '') <> ''
@@ -309,7 +309,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   const filteredSql = `
     SELECT
       l.id, l.source, l.country, l.source_id, l.created_at, l.first_seen_at, l.price, l.currency, l.title,
-      l.deal_type, l.by_agency, l.city, l.district, l.metro, l.data,
+      l.deal_type, l.by_agency, l.city, l.district, l.metro, l.data, l.room_only,
       ${context.priceUsdExpr} AS price_usd,
       ${context.rankSelect},
       ${dedupeEnabled ? 'l.dedupe_key' : `CONCAT_WS(':', LOWER(l.source), UPPER(l.country), l.source_id)`} AS dedupe_key
@@ -332,7 +332,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
     classified AS MATERIALIZED (
       SELECT visible.*,
         CASE
-          WHEN data @> '{"roomOnly":true}'::jsonb THEN 'roomRent'
+          WHEN room_only THEN 'roomRent'
           WHEN deal_type IN ('sale', 'longRent', 'shortRent') THEN deal_type
           ELSE 'unknown'
         END AS deal_key

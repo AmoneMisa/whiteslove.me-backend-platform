@@ -88,7 +88,7 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
         l.area_sqm,
         l.lat AS lat_value,
         l.lng AS lng_value,
-        (l.data @> '{"roomOnly":true}'::jsonb) AS room_only,
+        l.room_only,
         COALESCE(
           NULLIF(BTRIM(l.data->>'photo'), ''),
           CASE

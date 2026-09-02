@@ -11,7 +11,7 @@ test('listing geography statistics are split by sale, rent, short rent and room 
   assert.match(source, /\(v\.deal_key, geo\.dimension, geo\.label\)/u);
   assert.match(source, /AS geographies_by_deal/u);
   assert.match(source, /geographiesByDeal: countOrStatsResult\.rows\[0\]\?\.geographies_by_deal/u);
-  assert.match(source, /WHEN data @> '\{"roomOnly":true\}'::jsonb THEN 'roomRent'/u);
+  assert.match(source, /WHEN room_only THEN 'roomRent'/u);
 });
 
 test('filtered listing statistics expose min and max USD prices for deals and geography', () => {
