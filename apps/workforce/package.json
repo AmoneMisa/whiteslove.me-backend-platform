@@ -17,7 +17,6 @@
     "@nuxt/icon": "^2.5.1",
     "@nuxt/image": "^2.1.0",
     "@nuxtjs/i18n": "^10.6.0",
-    "@whiteslove/geo-catalog": "^0.7.2",
     "@whiteslove/parsing-lexicon": "^0.5.15",
     "chart.js": "^4.5.1",
     "emoji-picker-element": "^1.29.1",
