@@ -75,8 +75,10 @@ Only backend processes should join the `whiteslove-backend-platform` Docker
 network. Browser code must use same-origin website routes rather than private
 Docker service names.
 
-See [ARCHITECTURE.md](./ARCHITECTURE.md) for ownership boundaries and the
-migration sequence, and [AGENTS.md](./AGENTS.md) for contributor invariants.
+See [ARCHITECTURE.md](./ARCHITECTURE.md) for ownership boundaries,
+[docs/DATABASE_VOLUME_MIGRATION.md](./docs/DATABASE_VOLUME_MIGRATION.md) for the
+mandatory production data cutover, and [AGENTS.md](./AGENTS.md) for contributor
+invariants.
 
 ## CI and image publishing
 

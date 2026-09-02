@@ -88,6 +88,14 @@ Python fetchers provide transport only (TLS/browser impersonation or social
 acquisition); semantic parsing and product normalization stay in domain
 adapters.
 
+## Production data migration gate
+
+Production cutover must preserve the existing PostgreSQL data. A new empty
+Compose volume is not a valid migration. The old volume remains immutable and
+recoverable until restore verification and the rollback window are complete.
+Follow [docs/DATABASE_VOLUME_MIGRATION.md](./docs/DATABASE_VOLUME_MIGRATION.md)
+before starting platform writers in production.
+
 ## Migration order
 
 1. Run AI Worker from this repository without changing its HTTP API.
