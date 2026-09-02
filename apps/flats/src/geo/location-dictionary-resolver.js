@@ -1,5 +1,4 @@
 import {
-  LOCATION_DICTIONARIES,
   ODESA_METROPOLITAN_ENTITIES,
   ODESA_SEARCH_CLUSTERS,
   TASHKENT_LANDMARKS,
@@ -37,14 +36,6 @@ function mergedCountry(countryCode) {
     );
   }
   return mergedUkraine;
-}
-
-export function dictionaryCities(countryCode) {
-  return mergedCountry(countryCode);
-}
-
-export function dictionaryCity(countryCode, city) {
-  return mergedCountry(countryCode)[city] || null;
 }
 
 /** Hashtags can run location words together; split only camel-case hashtag tokens. */
@@ -275,16 +266,6 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
   }
 
   return result;
-}
-
-export function matchDictionaryResidentialComplex(text, countryCode = null, preferredCity = null) {
-  if (!text) return null;
-  const countries = countryCode ? [countryCode] : [...new Set([...Object.keys(LOCATION_DICTIONARIES), 'UA'])];
-  for (const code of countries) {
-    const match = matchDictionaryEntities(text, code, preferredCity);
-    if (match.residentialComplex) return match.residentialComplex;
-  }
-  return null;
 }
 
 export function canonicalDictionaryDistrict(name, countryCode) {

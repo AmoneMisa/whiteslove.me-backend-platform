@@ -67,6 +67,3 @@ export async function cacheSet(key, entry, ttlMs) {
   cache.set(key, entry, ttlMs);
 }
 
-export function cacheBackend() {
-  return 'memory';
-}
