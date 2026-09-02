@@ -11,6 +11,14 @@ export const EXTERNAL_HOUSING_SOURCES = Object.freeze({
       city: null,
       dealType: 'longRent',
     }),
+    // m2bomber runs one nationwide catalogue per locale (no stable per-city
+    // URL), mixing owners and agencies — stays unfiltered like uybor above.
+    Object.freeze({
+      key: 'm2bomber-uzbekistan-rent',
+      url: 'https://uz.m2bomber.com/flat-rent',
+      city: null,
+      dealType: 'longRent',
+    }),
   ]),
   UA: Object.freeze([
     Object.freeze({
@@ -32,8 +40,21 @@ export const EXTERNAL_HOUSING_SOURCES = Object.freeze({
       dealType: 'longRent',
       ownerOnly: true,
     }),
+    Object.freeze({
+      key: 'm2bomber-ukraine-rent',
+      url: 'https://ua.m2bomber.com/flat-rent',
+      city: null,
+      dealType: 'longRent',
+    }),
   ]),
-  KZ: Object.freeze([]),
+  KZ: Object.freeze([
+    Object.freeze({
+      key: 'm2bomber-kazakhstan-rent',
+      url: 'https://kz.m2bomber.com/flat-rent',
+      city: null,
+      dealType: 'longRent',
+    }),
+  ]),
   RO: Object.freeze([
     Object.freeze({
       key: 'imobiliare-bucharest-rent',
@@ -85,6 +106,15 @@ export const EXTERNAL_HOUSING_SOURCES = Object.freeze({
       city: 'Bucharest',
       dealType: 'longRent',
       ownerOnly: true,
+    }),
+    // m2bomber aggregates listings nationwide (not filterable to one city via a
+    // stable URL), mixing owners and agencies, so it stays unfiltered like
+    // uybor/house.kg below.
+    Object.freeze({
+      key: 'm2bomber-romania-rent',
+      url: 'https://ro.m2bomber.com/flat-rent',
+      city: null,
+      dealType: 'longRent',
     }),
   ]),
   KG: Object.freeze([

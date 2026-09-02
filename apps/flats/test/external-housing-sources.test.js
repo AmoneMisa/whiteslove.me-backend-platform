@@ -9,11 +9,16 @@ import { extractKnownOwnerHtml } from '../src/scrapers/owner-html.js';
 test('external housing registry keeps mixed and owner-filtered catalogues side by side', () => {
   const uz = externalHousingSources('UZ');
   assert.equal(uz.find((source) => source.key === 'uybor-uzbekistan-rent')?.ownerOnly, undefined);
+  assert.equal(uz.find((source) => source.key === 'm2bomber-uzbekistan-rent')?.ownerOnly, undefined);
 
   const ua = externalHousingSources('UA');
   assert.equal(ua.find((source) => source.key === 'lun-kyiv-rent')?.ownerOnly, undefined);
   assert.equal(ua.find((source) => source.key === 'rieltor-kyiv-rent')?.ownerOnly, undefined);
   assert.equal(ua.find((source) => source.key === 'rieltor-kyiv-owner-rent')?.ownerOnly, true);
+  assert.equal(ua.find((source) => source.key === 'm2bomber-ukraine-rent')?.ownerOnly, undefined);
+
+  const kz = externalHousingSources('KZ');
+  assert.equal(kz.find((source) => source.key === 'm2bomber-kazakhstan-rent')?.ownerOnly, undefined);
 
   const kg = externalHousingSources('KG');
   assert.equal(kg.find((source) => source.key === 'house-kyrgyzstan-rent')?.ownerOnly, undefined);
@@ -26,6 +31,7 @@ test('external housing registry keeps mixed and owner-filtered catalogues side b
   assert.equal(ro.find((source) => source.key === 'lajumate-bucharest-rent')?.ownerOnly, undefined);
   assert.equal(ro.find((source) => source.key === 'anuntul-bucharest-owner-2-room-rent')?.ownerOnly, true);
   assert.equal(ro.find((source) => source.key === 'imobiliare-anunturi-bucharest-owner-rent')?.ownerOnly, true);
+  assert.equal(ro.find((source) => source.key === 'm2bomber-romania-rent')?.ownerOnly, undefined);
 });
 
 test('crawl plan queues every external source with its seller policy intact', () => {
@@ -80,6 +86,46 @@ test('mixed House.kg cards can retain agency inventory', () => {
   const listings = extractKnownOwnerHtml(html, COUNTRIES.KG, 'https://www.house.kg/snyat-kvartiru');
   assert.equal(listings.length, 1);
   assert.equal(listings[0].byAgency, true);
+});
+
+test('m2bomber div-based cards are split without matching their nested thumb wrapper', () => {
+  const html = [
+    '<div class="item-card-long">',
+    '<div class="item-card-long-thumb"><a href="/obj/1/view/flat-rent/garsoniera">',
+    '<img src="/img/1.jpg"></a></div>',
+    '<h3>Garsoniera Navodari Tabara</h3>',
+    '<p>Navodari, Constanta. Garsoniera, 1-cam, 38 m². 350 € lunar. de la agenție</p>',
+    '</div>',
+    '<div class="item-card-long">',
+    '<div class="item-card-long-thumb"><a href="/obj/2/view/flat-rent/apartament">',
+    '<img src="/img/2.jpg"></a></div>',
+    '<h3>Apartament 2 camere Centru</h3>',
+    '<p>Bucuresti, Sectorul 1. Apartament, 2-cam, 55 m². 500 € lunar. de la proprietar</p>',
+    '</div>',
+  ].join('');
+
+  const listings = extractKnownOwnerHtml(html, COUNTRIES.RO, 'https://ro.m2bomber.com/flat-rent');
+  assert.equal(listings.length, 2);
+  assert.equal(listings[0].url, 'https://ro.m2bomber.com/obj/1/view/flat-rent/garsoniera');
+  assert.equal(listings[0].byAgency, true);
+  assert.equal(listings[1].url, 'https://ro.m2bomber.com/obj/2/view/flat-rent/apartament');
+  assert.equal(listings[1].byAgency, false);
+});
+
+test('m2bomber div-based cards work the same across every locale it runs, not just Romanian', () => {
+  const html = [
+    '<div class="item-card-long">',
+    '<div class="item-card-long-thumb"><a href="/obj/1/view/flat-rent/kvartira">',
+    '<img src="/img/1.jpg"></a></div>',
+    '<a class="item-card-long-title">Сдам 2-х комн квартиру</a>',
+    '<p>Алматы. 2 комнаты, 50 м². 180 000 тенге в месяц. От собственника</p>',
+    '</div>',
+  ].join('');
+
+  const listings = extractKnownOwnerHtml(html, COUNTRIES.KZ, 'https://kz.m2bomber.com/flat-rent');
+  assert.equal(listings.length, 1);
+  assert.equal(listings[0].title, 'Сдам 2-х комн квартиру');
+  assert.equal(listings[0].url, 'https://kz.m2bomber.com/obj/1/view/flat-rent/kvartira');
 });
 
 test('owner route on a mixed host is enforced by the queue policy, not host assumptions', () => {

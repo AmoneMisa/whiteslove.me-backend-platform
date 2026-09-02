@@ -44,6 +44,22 @@ const MIXED_HOSTS = new Set([
   'anuntul.ro',
   'lajumate.ro',
   'imobiliare-anunturi.ro',
+  // m2bomber runs the same template across every locale it operates in.
+  'ro.m2bomber.com',
+  'ua.m2bomber.com',
+  'kz.m2bomber.com',
+  'uz.m2bomber.com',
+]);
+
+// Hosts whose listing cards live in <div class="..."> wrappers rather than
+// <article>/<li>, keyed by the card's marker class. Kept separate from
+// structuredBlocks() so the generic scan never has to guess arbitrary div
+// boundaries (unreliable/noisy for hosts we haven't inspected).
+const DIV_CARD_HOSTS = new Map([
+  ['ro.m2bomber.com', 'item-card-long'],
+  ['ua.m2bomber.com', 'item-card-long'],
+  ['kz.m2bomber.com', 'item-card-long'],
+  ['uz.m2bomber.com', 'item-card-long'],
 ]);
 
 const HOUSING_RE = /(apartament|garsonier|studio|квартир|квартира|будин|житл|пәтер|uy\b|xona|хона|chirie|rent|оренд|аренд|ijara|жалдау)/iu;
@@ -62,11 +78,17 @@ function decodeHtml(value) {
     .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)));
 }
 
+// Some cards (e.g. m2bomber) render the same price re-quoted in every
+// supported currency as visible toggle-button text (e.g. "L $ €"), which
+// would otherwise confuse price/currency parsing on the flattened text.
+const CURRENCY_TOGGLE_RE = /<div\b[^>]*\bclass=["'][^"']*price-currency[^"']*["'][^>]*>[\s\S]*?<\/div>/giu;
+
 function stripHtml(fragment) {
   return decodeHtml(
     String(fragment || '')
       .replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, ' ')
       .replace(/<style\b[^>]*>[\s\S]*?<\/style>/giu, ' ')
+      .replace(CURRENCY_TOGGLE_RE, ' ')
       .replace(BLOCK_END_RE, '\n')
       .replace(/<br\s*\/?>/giu, '\n')
       .replace(/<[^>]+>/g, ' '),
@@ -111,8 +133,15 @@ function images(fragment, sourceUrl) {
 }
 
 function heading(fragment, fallbackText) {
-  const match = String(fragment || '').match(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/iu);
-  const value = stripHtml(match?.[1] || '') || String(fallbackText || '').split('\n')[0];
+  const raw = String(fragment || '');
+  const headingMatch = raw.match(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/iu);
+  // Some catalogues (e.g. m2bomber) put the card title in a plain link with a
+  // "title" class instead of a heading tag.
+  const titleLinkMatch = raw.match(/<a\b[^>]*\bclass=["'][^"']*\btitle\b[^"']*["'][^>]*>([\s\S]*?)<\/a>/iu);
+  const value =
+    stripHtml(headingMatch?.[1] || '')
+    || stripHtml(titleLinkMatch?.[1] || '')
+    || String(fallbackText || '').split('\n')[0];
   return value.trim().slice(0, 120) || 'Listing';
 }
 
@@ -167,6 +196,26 @@ function structuredBlocks(html) {
   return blocks;
 }
 
+// Cards on DIV_CARD_HOSTS aren't wrapped in a single well-nested tag, so
+// instead of balanced parsing we slice the page at each card's marker <div>
+// up to the next one — good enough once fed through stripHtml + plausibleCard.
+function divBlocks(html, cardClass) {
+  const marker = new RegExp(
+    `<div\\b[^>]*\\bclass=["'][^"']*(?<![\\w-])${cardClass}(?![\\w-])[^"']*["']`,
+    'giu',
+  );
+  const starts = [];
+  let match;
+  while ((match = marker.exec(html)) && starts.length < 240) starts.push(match.index);
+
+  const blocks = [];
+  for (let i = 0; i < starts.length; i += 1) {
+    const end = i + 1 < starts.length ? starts[i + 1] : Math.min(html.length, starts[i] + 4000);
+    blocks.push(html.slice(starts[i], end));
+  }
+  return blocks;
+}
+
 function textWindows(html) {
   const text = stripHtml(html);
   const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
@@ -202,9 +251,17 @@ export function extractKnownOwnerHtml(html, country, sourceUrl) {
     listings.push(toListing(fragment, normalized, country, sourceUrl, listings.length, ownerHost));
   };
 
-  for (const block of structuredBlocks(String(html || ''))) {
-    add(block, stripHtml(block));
-    if (listings.length >= 40) break;
+  const divCardClass = DIV_CARD_HOSTS.get(host);
+  if (divCardClass) {
+    for (const block of divBlocks(String(html || ''), divCardClass)) {
+      add(block, stripHtml(block));
+      if (listings.length >= 40) break;
+    }
+  } else {
+    for (const block of structuredBlocks(String(html || ''))) {
+      add(block, stripHtml(block));
+      if (listings.length >= 40) break;
+    }
   }
 
   // Text windows are a last-resort path for catalogues without semantic card

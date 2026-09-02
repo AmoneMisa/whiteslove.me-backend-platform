@@ -107,6 +107,33 @@ duplicated per scraper.
 - [`search/`](src/infrastructure/search/README.md) — Elasticsearch and
   Postgres search implementations.
 
+## Sources
+
+Ingestion is per-country. Each country in [`geo/countries.js`](src/geo/countries.js)
+declares which mechanisms it uses (`olx`, `telegram`); curated web catalogues
+are declared separately in `sources/*.js` and queued as `flat.custom.url`
+tasks, fetched generically by [`scrapers/custom.js`](src/scrapers/custom.js)
+(JSON-LD → RSS/Atom → allowlisted SSR card extraction via
+[`scrapers/owner-html.js`](src/scrapers/owner-html.js)). Site names below are
+domains for orientation only — exact URLs, `dealType` and `ownerOnly`/city
+scoping live in the registry files, which are the source of truth.
+
+| Country | OLX | Telegram | Owner-only catalogues (`owner-housing-sources.js`) | Realtor catalogues (`realtor-housing-sources.js`) | External/mixed catalogues (`external-housing-sources.js`) |
+| --- | --- | --- | --- | --- | --- |
+| UZ | yes | yes | rentli.uz, ostona.app, turar.uz | hata.uz, realting.uz, domza.uz | uybor.uz, **m2bomber.com** |
+| UA | yes | yes | easy-house.in.ua, kvarto.app, norieltor.com.ua, dom.ria.com, bezmakler.com.ua, dobalux.com | x-estate.com, parklane.ua, blagovist.ua, atlanta.ua | lun.ua, rieltor.ua, **m2bomber.com** |
+| KZ | yes | yes | krisha.kz, kn.kz | — | **m2bomber.com** |
+| RO | yes | yes | proprietaripebune.ro, proprietar-direct.ro, directfaracomision.ro, garsoniera.ro, publi24.ro | — | imobiliare.ro, anuntul.ro, lajumate.ro, imobiliare-anunturi.ro, **m2bomber.com** |
+| KG | no | yes (empty list) | arendator.kg, myhouse.kg, sutochno.kg | — | house.kg, lalafo.kg |
+
+m2bomber runs the same platform/template across every locale it operates —
+`ro.`/`ua.`/`kz.`/`uz.m2bomber.com` — so it's registered as a mixed (owner +
+agency) catalogue in each; it doesn't have a Kyrgyzstan locale, so it's absent
+from KG. OLX is fetched through a dedicated `curl_cffi` sidecar
+([`scrapers/olx.js`](src/scrapers/olx.js)) rather than the generic adapter
+because ordinary server-side fetches are WAF-blocked; it's disabled for KG
+until a dedicated transport exists there.
+
 ## Refactoring rules
 
 Refactoring must preserve the listing contract and database migration path.
