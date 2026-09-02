@@ -1,5 +1,5 @@
 import {closeDb} from './db.js';
-import {assertDatabaseReady} from './db-ready.js';
+import {assertDatabaseReady} from './infrastructure/database/schemaReady.js';
 import {
   closeElasticsearch,
   rebuildSearchIndex,

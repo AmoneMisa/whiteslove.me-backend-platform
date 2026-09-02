@@ -11,7 +11,7 @@
 // between refreshes.
 
 import { COUNTRIES } from './countries.js';
-import { upsertPlaces } from './places-db.js';
+import { upsertPlaces } from './infrastructure/database/placesRepository.js';
 import { TASHKENT_METRO } from './tashkent-metro.js';
 
 const OVERPASS_URL = process.env.OVERPASS_URL || 'https://overpass-api.de/api/interpreter';

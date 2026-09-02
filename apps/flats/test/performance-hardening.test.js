@@ -107,8 +107,8 @@ test('performance migrations own materialization, relations, delivery leases and
 });
 
 test('places data reuses the main backend pool instead of opening an extra pool', async () => {
-  const places = await source('../src/places-db.js');
-  assert.match(places, /import \{pool\} from '\.\/db\.js'/u);
+  const places = await source('../src/infrastructure/database/placesRepository.js');
+  assert.match(places, /import \{pool\} from '\.\.\/\.\.\/db\.js'/u);
   assert.doesNotMatch(places, /new Pool\(/u);
   assert.doesNotMatch(places, /PLACES_DB_POOL_MAX/u);
 });

@@ -1,5 +1,5 @@
-import {pool} from './db.js';
-import {listMigrationFiles} from './migration-files.js';
+import {pool} from '../../db.js';
+import {listMigrationFiles} from '../../migration-files.js';
 
 export async function assertDatabaseReady() {
   const relationResult = await pool.query(`

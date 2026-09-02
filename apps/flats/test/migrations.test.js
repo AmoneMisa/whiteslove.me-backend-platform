@@ -77,7 +77,7 @@ test('runtime entrypoints validate every migration file instead of creating sche
     '../src/worker.js',
     '../src/reindex.js',
   ];
-  const ready = await readFile(new URL('../src/db-ready.js', import.meta.url), 'utf8');
+  const ready = await readFile(new URL('../src/infrastructure/database/schemaReady.js', import.meta.url), 'utf8');
   const policy = await readFile(new URL('../src/migration-files.js', import.meta.url), 'utf8');
   const runner = await readFile(new URL('../src/migrate.js', import.meta.url), 'utf8');
 
@@ -108,7 +108,7 @@ test('migrated runtime modules never mutate database schema', async () => {
     '../src/availability-routes.js',
     '../src/infrastructure/queue/pgQueue.js',
     '../src/infrastructure/queue/queueTaskDedup.js',
-    '../src/places-db.js',
+    '../src/infrastructure/database/placesRepository.js',
     '../src/listing-semantics.js',
   ];
 

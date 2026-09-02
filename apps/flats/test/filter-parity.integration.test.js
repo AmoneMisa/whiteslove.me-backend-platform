@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {assertDatabaseReady} from '../src/db-ready.js';
+import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
 import {closeDb, pool, upsertListings} from '../src/db.js';
 import {applyListingFilters} from '../src/legacy-listing-filter.js';
 import {searchPostgresListings} from '../src/postgres-search.js';

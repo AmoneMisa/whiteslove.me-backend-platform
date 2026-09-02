@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';
 import test from 'node:test';
 
 import {pool} from '../src/db.js';
-import {assertDatabaseReady} from '../src/db-ready.js';
+import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
 
 const enabled = Boolean(process.env.TEST_POSTGRES_URL);
 const DEVICE_ID = 'perf-mobile-worker-device';

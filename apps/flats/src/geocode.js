@@ -11,7 +11,7 @@
 
 import { canonicalCityName } from './countries.js'
 import { assignNearestMetro } from './metro-nearest.js'
-import { loadCityPlaces } from './places-db.js'
+import { loadCityPlaces } from './infrastructure/database/placesRepository.js'
 import { annotateListings } from './nearby-places.js'
 import { applyReverseGeo } from './reverse-geo.js'
 import {

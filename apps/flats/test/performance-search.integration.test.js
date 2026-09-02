@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {closeDb, pool, upsertListings} from '../src/db.js';
-import {assertDatabaseReady} from '../src/db-ready.js';
+import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
 import {searchPostgresMapPoints} from '../src/map-feed.js';
 import {searchPostgresListings} from '../src/postgres-search.js';
 

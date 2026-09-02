@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 process.env.OLX_FETCHER_URL = 'http://olx-fetcher.test';
 
 const {closeDb, pool, upsertListings} = await import('../src/db.js');
-const {assertDatabaseReady} = await import('../src/db-ready.js');
+const {assertDatabaseReady} = await import('../src/infrastructure/database/schemaReady.js');
 const {
   recordListingAvailability,
   verifyListingAvailability,

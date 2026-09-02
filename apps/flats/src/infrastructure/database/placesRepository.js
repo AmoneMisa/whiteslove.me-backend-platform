@@ -6,7 +6,7 @@
 // often as a city gets a new metro line. One city-wide pull fills this table,
 // and every listing after that is arithmetic over rows already in memory.
 
-import {pool} from './db.js';
+import {pool} from '../../db.js';
 
 function boundedText(value, max, fallback = null) {
   if (value == null) return fallback;

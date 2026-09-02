@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 
 import {closeDb, pool} from '../src/db.js';
-import {assertDatabaseReady} from '../src/db-ready.js';
+import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
 import {claimCustomSourceTask} from '../src/custom-source-queue.js';
 import {
   claimTask,

@@ -1,6 +1,6 @@
 import {hostname} from 'node:os';
 import {closeDb} from './db.js';
-import {assertDatabaseReady} from './db-ready.js';
+import {assertDatabaseReady} from './infrastructure/database/schemaReady.js';
 import {closeElasticsearch, initElasticsearch} from './infrastructure/search/elasticsearch.js';
 import {processQueueTask} from './queueTasks.js';
 import {

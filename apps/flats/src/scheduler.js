@@ -4,7 +4,7 @@
 
 import {geocodeBbox, geocodeQuery} from './geocode.js';
 import {promoteLearnedGeo} from './learned-geo-export.js';
-import {placesFreshness} from './places-db.js';
+import {placesFreshness} from './infrastructure/database/placesRepository.js';
 import {syncAllPlaces} from './places-sync.js';
 import {dispatchGenerationIfIdle} from './infrastructure/queue/pgQueue.js';
 import {buildCrawlPlan, QUEUE_SHARDS} from './queuePlan.js';

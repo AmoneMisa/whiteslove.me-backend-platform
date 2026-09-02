@@ -13,7 +13,7 @@ import { geocodeListingsPersistent } from './geocode-persistent.js';
 import { rejectOutOfAreaCoordinates } from './coordinate-validation.js';
 import { reconcileAuthoritativeOlxSegment } from './crawl-reconciliation.js';
 import { olxSegmentDealType } from './olx-segment.js';
-import { deactivateMissingCustomSourceListings } from './custom-source-repository.js';
+import { deactivateMissingCustomSourceListings } from './infrastructure/database/customSourceRepository.js';
 import { scheduleListingsVision } from './vision-enrichment.js';
 
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');

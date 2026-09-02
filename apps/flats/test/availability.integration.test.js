@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {closeDb, pool, upsertListings} from '../src/db.js';
-import {assertDatabaseReady} from '../src/db-ready.js';
+import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
 import {
   recordListingAvailability,
   verifyListingAvailability,

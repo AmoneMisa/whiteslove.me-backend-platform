@@ -3,7 +3,7 @@ import {randomUUID} from 'node:crypto';
 import test from 'node:test';
 
 import {closeDb, pool} from '../src/db.js';
-import {assertDatabaseReady} from '../src/db-ready.js';
+import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 
