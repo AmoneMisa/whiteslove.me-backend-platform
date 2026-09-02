@@ -1,6 +1,6 @@
 import {canonicalCityName, COUNTRIES, COUNTRY_CODES} from './countries.js';
 import {cityLocations} from './locations.js';
-import {getAvailableListingLocations} from './db.js';
+import {getAvailableListingLocations} from './infrastructure/database/listingRepository.js';
 import {getRates} from './fx.js';
 import {mapZonesFor} from './district-zones.js';
 import {geographyDisplayName} from '@whiteslove/parsing-lexicon/geography-display';

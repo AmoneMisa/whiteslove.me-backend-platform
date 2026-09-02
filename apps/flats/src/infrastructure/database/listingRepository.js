@@ -1,6 +1,6 @@
-import {closePool, pool} from './infrastructure/database/pool.js';
-export {pool} from './infrastructure/database/pool.js';
-import {mapListingToRow} from './infrastructure/database/listingMapper.js';
+import {closePool, pool} from './pool.js';
+export {pool} from './pool.js';
+import {mapListingToRow} from './listingMapper.js';
 
 
 const UPSERT_SQL = `

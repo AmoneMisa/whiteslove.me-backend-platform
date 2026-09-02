@@ -4,7 +4,7 @@
 // missing those two exports fails at call time with a clear message instead
 // of a hard SyntaxError at module load that would take down the whole process.
 import * as geoCatalog from '@whiteslove/geo-catalog';
-import { pool } from './db.js';
+import {pool} from './infrastructure/database/pool.js';
 
 const { resolveLexiconGeoEntity } = geoCatalog;
 

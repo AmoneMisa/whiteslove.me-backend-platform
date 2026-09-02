@@ -1,4 +1,4 @@
-import {pool} from './db.js';
+import {pool} from './infrastructure/database/pool.js';
 import {verifyListingAvailability} from './availability.js';
 import {
   ACTIVE_AVAILABILITY_TTL_MS,

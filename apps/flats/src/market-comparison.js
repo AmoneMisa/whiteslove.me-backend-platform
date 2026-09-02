@@ -1,4 +1,4 @@
-import { pool } from './db.js';
+import {pool} from './infrastructure/database/pool.js';
 import { toUsd } from './fx.js';
 
 const MARKET_MAX_AGE_DAYS = 14;

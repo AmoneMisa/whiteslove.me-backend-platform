@@ -6,7 +6,7 @@ import { fetchChannel } from './scrapers/telegram.js';
 import { scrapeCustomUrl } from './scrapers/custom.js';
 import { telegramHousingChannels } from './telegram-housing-sources.js';
 import { throttle } from './ratelimit.js';
-import { upsertListings } from './db.js';
+import { upsertListings } from './infrastructure/database/listingRepository.js';
 import { indexListings } from './infrastructure/search/elasticsearch.js';
 import { executeQueueTaskOnce } from './infrastructure/queue/queueTaskDedup.js';
 import { geocodeListingsPersistent } from './geocode-persistent.js';

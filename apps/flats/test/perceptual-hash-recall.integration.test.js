@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import {closeDb, pool} from '../src/db.js';
+import {closeDb, pool} from '../src/infrastructure/database/listingRepository.js';
 import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
 import {hammingDistanceHex} from '../src/photo-antifake.js';
 

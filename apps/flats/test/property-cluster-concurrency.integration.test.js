@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import test from 'node:test';
 
-import {closeDb, pool} from '../src/db.js';
+import {closeDb, pool} from '../src/infrastructure/database/listingRepository.js';
 import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';

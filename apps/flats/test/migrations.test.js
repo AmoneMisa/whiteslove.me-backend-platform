@@ -101,7 +101,7 @@ test('runtime entrypoints validate every migration file instead of creating sche
 
 test('migrated runtime modules never mutate database schema', async () => {
   const files = [
-    '../src/db.js',
+    '../src/infrastructure/database/listingRepository.js',
     '../src/postgres-search.js',
     '../src/availability.js',
     '../src/availability-sweep.js',

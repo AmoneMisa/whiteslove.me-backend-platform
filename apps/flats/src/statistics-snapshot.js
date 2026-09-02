@@ -1,5 +1,5 @@
 import {COUNTRY_CODES} from './countries.js';
-import {pool} from './db.js';
+import {pool} from './infrastructure/database/pool.js';
 import {getRates} from './fx.js';
 
 const SNAPSHOT_MAX_AGE_DAYS = 14;

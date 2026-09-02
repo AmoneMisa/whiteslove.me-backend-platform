@@ -6,7 +6,7 @@ import {
 import {fetchOlxOffer} from './scrapers/olx.js';
 import {validateCustomSource} from './custom-source-queue.js';
 import {checkRate} from './request-rate-limit.js';
-import {pool} from './db.js';
+import {pool} from './infrastructure/database/pool.js';
 import {
   mergeStoredFreshListing,
   preparePublicListing,

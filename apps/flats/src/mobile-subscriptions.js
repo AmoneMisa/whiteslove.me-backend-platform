@@ -1,7 +1,7 @@
 import {createHash, randomUUID} from 'node:crypto';
 import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
 import {COUNTRY_CODES} from './countries.js';
-import {pool} from './db.js';
+import {pool} from './infrastructure/database/pool.js';
 import {getRates} from './fx.js';
 import {parseListingFilters} from './listing-routes.js';
 import {mobilePushConfigured, sendMobilePush} from './mobile-fcm.js';

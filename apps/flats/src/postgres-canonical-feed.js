@@ -1,4 +1,4 @@
-import {pool} from './db.js';
+import {pool} from './infrastructure/database/pool.js';
 import {buildMemberWhere, canUseFastFeedPath} from './infrastructure/search/postgres-search-fast-core.js';
 
 const CURSOR_VERSION = 1;

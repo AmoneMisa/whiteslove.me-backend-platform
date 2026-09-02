@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import * as geoCatalog from '@whiteslove/geo-catalog';
-import { pool } from '../src/db.js';
+import { pool } from '../src/infrastructure/database/listingRepository.js';
 import { nearestAddressToMetro, nearestMetroToAddress, loadLearnedAddressesNear } from '../src/learned-geo-proximity.js';
 
 // nearestAddressToMetro/nearestMetroToAddress ship in @whiteslove/geo-catalog

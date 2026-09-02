@@ -1,5 +1,5 @@
 import {createHash, randomUUID} from 'node:crypto';
-import {pool} from './db.js';
+import {pool} from './infrastructure/database/pool.js';
 import {enqueueTasks} from './infrastructure/queue/pgQueue.js';
 
 const CACHE_BUCKET_MS = Math.max(

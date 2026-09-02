@@ -3,7 +3,7 @@ import {readFile} from 'node:fs/promises';
 import test from 'node:test';
 
 import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
-import {pool} from '../src/db.js';
+import {pool} from '../src/infrastructure/database/listingRepository.js';
 import {computeStatisticsSnapshot} from '../src/statistics-snapshot.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';

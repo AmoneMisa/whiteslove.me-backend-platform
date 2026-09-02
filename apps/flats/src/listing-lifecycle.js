@@ -1,4 +1,4 @@
-import {pool} from './db.js';
+import {pool} from './infrastructure/database/pool.js';
 import {deleteListingDocuments} from './infrastructure/search/elasticsearch.js';
 
 const LISTING_MAX_AGE_DAYS = 14;

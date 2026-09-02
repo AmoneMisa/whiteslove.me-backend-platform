@@ -1,4 +1,4 @@
-import {closeDb} from './db.js';
+import {closeDb} from './infrastructure/database/listingRepository.js';
 import {assertDatabaseReady} from './infrastructure/database/schemaReady.js';
 import {
   closeElasticsearch,

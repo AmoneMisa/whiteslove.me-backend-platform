@@ -1,5 +1,5 @@
 import { buildGeoLookupKey, getGeoEntityByLookupKey } from '@whiteslove/geo-catalog';
-import { pool } from './db.js';
+import {pool} from './infrastructure/database/pool.js';
 
 const TYPE_BY_SOURCE = Object.freeze({
   address: 'address',

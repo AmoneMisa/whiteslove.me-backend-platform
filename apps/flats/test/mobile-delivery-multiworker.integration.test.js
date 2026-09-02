@@ -4,7 +4,7 @@ import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import test from 'node:test';
 
-import {pool} from '../src/db.js';
+import {pool} from '../src/infrastructure/database/listingRepository.js';
 import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
 
 const enabled = Boolean(process.env.TEST_POSTGRES_URL);

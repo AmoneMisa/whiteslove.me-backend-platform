@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { pool } from './db.js';
+import {pool} from './infrastructure/database/pool.js';
 
 const MAX_IMAGE_BYTES = Math.max(256_000, Number(process.env.ANTIFAKE_MAX_IMAGE_BYTES) || 8 * 1024 * 1024);
 const FETCH_TIMEOUT_MS = Math.max(2000, Number(process.env.ANTIFAKE_IMAGE_TIMEOUT_MS) || 8000);

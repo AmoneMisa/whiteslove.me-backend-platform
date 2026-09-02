@@ -1,4 +1,4 @@
-import { pool } from './db.js';
+import {pool} from './infrastructure/database/pool.js';
 import { buildSearchContext } from './postgres-search.js';
 
 const MAP_MAX_POINTS = Math.max(60, Math.min(Number(process.env.MAP_FEED_MAX_POINTS) || 3000, 10000));
