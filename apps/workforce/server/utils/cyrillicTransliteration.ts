@@ -8,22 +8,19 @@
 //
 // Shared by the job and candidate indices so both sides transliterate
 // identically — otherwise a query would match one index but not the other.
+//
+// The letter -> Latin table itself comes from parsing-lexicon's
+// CYRILLIC_SEARCH_MAP (the same table foldCyrillicForSearch uses at query
+// time), so index-time and query-time folding can't drift apart.
 
-const CYRILLIC_TO_LATIN: Record<string, string> = {
-    // Digraphs first; single letters after.
-    ё: 'yo', ж: 'zh', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'sch', ю: 'yu', я: 'ya',
-    // Uzbek / Ukrainian specifics.
-    ў: 'o', қ: 'q', ғ: 'g', ҳ: 'h', є: 'ye', ї: 'yi', і: 'i', ґ: 'g',
-    а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', з: 'z', и: 'i', й: 'y',
-    к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't',
-    у: 'u', ф: 'f', х: 'h', ъ: '', ы: 'i', ь: '', э: 'e',
-}
+import { CYRILLIC_SEARCH_MAP } from '@whiteslove/parsing-lexicon/normalization'
 
 // Elasticsearch mapping char filters take "from => to" rules and are
-// case-sensitive, so each letter is emitted in both cases.
+// case-sensitive, so each letter is emitted in both cases. Letters that fold
+// to '' (ъ, ь) emit an empty-target rule, which ES treats as deletion.
 export function transliterationMappings(): string[] {
     const out: string[] = []
-    for (const [cyrillic, latin] of Object.entries(CYRILLIC_TO_LATIN)) {
+    for (const [cyrillic, latin] of Object.entries(CYRILLIC_SEARCH_MAP)) {
         out.push(`${cyrillic} => ${latin}`)
         out.push(`${cyrillic.toUpperCase()} => ${latin}`)
     }

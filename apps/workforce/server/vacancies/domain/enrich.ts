@@ -16,7 +16,7 @@ import {
   detectApplicationLanguage as detectSharedApplicationLanguage,
   detectHiringEducation,
 } from '@whiteslove/parsing-lexicon/hiring-vacancy-fields'
-import { classifySuspicion } from '../../utils/suspicious'
+import { classifySuspicion } from '@whiteslove/parsing-lexicon/hiring-safety'
 import type {
   EmployerType,
   EmploymentKind,

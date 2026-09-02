@@ -1,3 +1,5 @@
+import { UZ_CITY_CATALOG, KZ_CITY_CATALOG } from '@whiteslove/parsing-lexicon/central-asia'
+
 export type SearchPlace = {
   country: 'UZ' | 'KZ' | 'UA' | 'RO'
   location: string
@@ -33,17 +35,26 @@ export const UKRAINE_OBLASTS: SearchPlace[] = [
   ['Chernihiv Oblast', 'Чернігівська область'],
 ].map(([location, label]) => ({ country: 'UA' as const, location, label, region: label }))
 
+// UZ/KZ canonical names + Russian labels come from parsing-lexicon's city
+// catalog so this list can't drift from the shared geography data. RO has no
+// lexicon coverage yet, so it stays a local static list.
+function majorCitiesFor(country: 'UZ' | 'KZ', catalog: readonly { canonical: string; aliases: Record<string, readonly string[]> }[], names: readonly string[]): SearchPlace[] {
+  return names.map((location) => {
+    const entry = catalog.find((city) => city.canonical === location)
+    const label = entry?.aliases.ru?.[0] ?? location
+    return { country, location, label, city: location }
+  })
+}
+
 const MAJOR_CITIES: SearchPlace[] = [
-  ...[
-    ['Tashkent', 'Ташкент'], ['Samarkand', 'Самарканд'], ['Bukhara', 'Бухара'],
-    ['Namangan', 'Наманган'], ['Andijan', 'Андижан'], ['Fergana', 'Фергана'],
-    ['Qarshi', 'Карши'], ['Nukus', 'Нукус'], ['Jizzakh', 'Джизак'], ['Urgench', 'Ургенч'],
-  ].map(([location, label]) => ({ country: 'UZ' as const, location, label, city: location })),
-  ...[
-    ['Almaty', 'Алматы'], ['Astana', 'Астана'], ['Shymkent', 'Шымкент'],
-    ['Karaganda', 'Караганда'], ['Aktobe', 'Актобе'], ['Atyrau', 'Атырау'],
-    ['Pavlodar', 'Павлодар'], ['Kostanay', 'Костанай'], ['Aktau', 'Актау'], ['Oskemen', 'Өскемен'],
-  ].map(([location, label]) => ({ country: 'KZ' as const, location, label, city: location })),
+  ...majorCitiesFor('UZ', UZ_CITY_CATALOG, [
+    'Tashkent', 'Samarkand', 'Bukhara', 'Namangan', 'Andijan', 'Fergana',
+    'Qarshi', 'Nukus', 'Jizzakh', 'Urgench',
+  ]),
+  ...majorCitiesFor('KZ', KZ_CITY_CATALOG, [
+    'Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau',
+    'Pavlodar', 'Kostanay', 'Aktau', 'Oskemen',
+  ]),
   ...[
     ['Bucharest', 'București'], ['Cluj-Napoca', 'Cluj-Napoca'], ['Timișoara', 'Timișoara'],
     ['Iași', 'Iași'], ['Brașov', 'Brașov'], ['Constanța', 'Constanța'],
