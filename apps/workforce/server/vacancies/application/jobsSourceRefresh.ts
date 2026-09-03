@@ -106,6 +106,7 @@ import {
   fetchUsaVisaSponsorTarget,
   isUsaVisaSponsorTarget,
 } from '../../utils/sources/usaVisaSponsorSource'
+import { scheduleVacancyAi } from './vacancyAiEnricher'
 
 const STORE_KEY = 'jobs:store:v4'
 const STORE_TTL_SECONDS = 15 * 86_400
@@ -301,7 +302,41 @@ async function mergeFetchedSource(source: JobSource, jobs: Job[]) {
     console.error(`[jobs:queue:${source}] PostgreSQL sync failed:`, (error as Error).message)
   }
 
+  // The model answers asynchronously, well after this merge returns, so an
+  // enriched job is written back through the same store instead of being
+  // folded into `kept` here.
+  scheduleVacancyAi(kept, persistAiEnrichedJob)
+
   return { source, fetched: jobs.length, stored: kept.length }
+}
+
+/** Writes one AI-enriched vacancy back into the store, search index and DB. */
+async function persistAiEnrichedJob(job: StoredJob) {
+  const operation = mergeLock.then(
+    () => storeAiEnrichedJob(job),
+    () => storeAiEnrichedJob(job),
+  )
+  mergeLock = operation.catch(() => {})
+  await operation
+}
+
+async function storeAiEnrichedJob(job: StoredJob) {
+  try {
+    const store = useStateStore()
+    const raw = await store.get(STORE_KEY)
+    const stored = raw ? JSON.parse(raw) as StoredJob[] : []
+    const key = dedupKey(job)
+    const index = stored.findIndex((item) => dedupKey(item) === key)
+    if (index < 0) return
+
+    stored[index] = { ...job, lastSeen: stored[index]!.lastSeen }
+    await store.set(STORE_KEY, JSON.stringify(stored), 'EX', STORE_TTL_SECONDS)
+
+    await syncJobsSearchIndex(stored)
+    await syncJobsDb(stored)
+  } catch (error) {
+    console.error('[jobs:ai] enrichment persistence failed:', (error as Error).message)
+  }
 }
 
 const inFlight = new Map<string, Promise<unknown>>()

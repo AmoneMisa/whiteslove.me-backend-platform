@@ -17,6 +17,7 @@ import { reconcileAuthoritativeOlxSegment } from '../sources/crawl-reconciliatio
 import { olxSegmentDealType } from '../geo/olx-segment.js';
 import { deactivateMissingCustomSourceListings } from '../infrastructure/database/customSourceRepository.js';
 import { scheduleListingsVision } from '../listing/vision-enrichment.js';
+import { scheduleListingsAi } from '../listing/ai-enrichment.js';
 
 const OLX_FETCHER_URL = String(process.env.OLX_FETCHER_URL || '').replace(/\/$/, '');
 const OLX_FETCHER_URLS = [
@@ -267,8 +268,34 @@ async function persist(listings, task) {
   }
 
   scheduleListingsVision(listings);
+  if (config) scheduleListingsAi(listings, config, (merged) => persistAiMerged(merged, config, task));
 
   return { saved, indexed };
+}
+
+/**
+ * Stores one listing enriched by the text model. Geocoding has already run by
+ * the time an answer arrives, so a district/kvartal the model recovered is only
+ * useful if the listing is placed again — and only when it still has no point,
+ * so a resolved coordinate is never re-derived from weaker evidence.
+ */
+async function persistAiMerged(merged, config, task) {
+  try {
+    const filledGeography = (merged?.ai?.derivedFields || []).some(
+      (field) => field === 'district' || field === 'kvartal',
+    );
+    const unplaced = merged?.lat == null || merged?.lng == null;
+    if (filledGeography && unplaced) {
+      await geocodeListingsPersistent([merged], config);
+    }
+
+    await upsertListings([merged]);
+    await indexListings([merged]);
+  } catch (error) {
+    console.warn(
+      `[queue:${task?.type}] AI enrichment persistence failed: ${error?.message ?? error}`,
+    );
+  }
 }
 
 function nextOlxTask(task, pageResult, page) {
