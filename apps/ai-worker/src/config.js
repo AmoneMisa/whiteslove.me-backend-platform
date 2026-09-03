@@ -63,6 +63,11 @@ export const config = Object.freeze({
   cloudflareApiToken: env('CLOUDFLARE_API_TOKEN', env('CLOUDFLARE_AUTH_TOKEN')),
   cloudflareVisionModel: env('CLOUDFLARE_VISION_MODEL', '@cf/meta/llama-3.2-11b-vision-instruct'),
   geminiApiKey: env('GEMINI_API_KEY'),
+  // Overridable so a deployment whose egress IP is blocked by Gemini's
+  // region restriction ("User location is not supported for the API use")
+  // can point this at a same-protocol reverse-proxy relay running on a
+  // server Google does serve, without any other code change.
+  geminiBaseUrl: env('GEMINI_BASE_URL', 'https://generativelanguage.googleapis.com/v1beta/openai').replace(/\/$/, ''),
   geminiVisionModel: env('GEMINI_VISION_MODEL', 'gemini-3.6-flash'),
   geminiTextModel: env('GEMINI_TEXT_MODEL', env('GEMINI_VISION_MODEL', 'gemini-3.6-flash')),
   nvidiaApiKey: env('NVIDIA_API_KEY'),

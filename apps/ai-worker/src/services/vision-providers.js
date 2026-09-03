@@ -91,7 +91,7 @@ async function groq(images) {
 
 async function gemini(images) {
   return openAiCompatibleVision('gemini', {
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    baseUrl: config.geminiBaseUrl,
     apiKey: config.geminiApiKey,
     model: config.geminiVisionModel,
   }, images);

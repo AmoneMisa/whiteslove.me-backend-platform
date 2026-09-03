@@ -60,7 +60,7 @@ async function groq(request) {
 
 async function gemini(request) {
   return openAiCompatibleText('gemini', {
-    baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai',
+    baseUrl: config.geminiBaseUrl,
     apiKey: config.geminiApiKey,
     model: config.geminiTextModel,
   }, request);
