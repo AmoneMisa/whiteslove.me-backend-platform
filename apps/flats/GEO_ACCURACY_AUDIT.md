@@ -2,7 +2,7 @@
 
 Date: 2026-09-03
 
-Scope: `apps/flats` forward geocoding, canonical geo-catalog fallback, source-coordinate validation, reverse geocoding, and address provenance.
+Scope: `apps/flats` forward geocoding, canonical geo-catalog fallback, source-coordinate validation, reverse geocoding, address provenance, and dependency-level spatial semantics.
 
 This document records the precision rules and the concrete checks performed for the geocoding hardening branch. The goal is not to manufacture a plausible point for every listing. The goal is to prefer the strongest defensible spatial evidence, preserve uncertainty, and reject or downgrade contradictory evidence.
 
@@ -12,9 +12,9 @@ The resolver should use the strongest available evidence in this order:
 
 1. explicit source address with a concrete street + house, after the geocoder proves country, city, street and house (and corpus/building when supplied);
 2. canonical residential complex with a verified geo-catalog point;
-3. directly stated street when no building-level address is available;
-4. specific primary POI / landmark when it is the best remaining property-location signal;
-5. primary metro station;
+3. specific primary POI / landmark with a verified canonical point;
+4. primary metro station with a verified canonical point;
+5. directly stated street when no stronger point-like anchor is available; a street result remains approximate without a house;
 6. constrained multi-anchor spatial inference from two or more quantified nearby references;
 7. microdistrict / mahalla / local area / suburb / settlement;
 8. nearby/reference ЖК, POI or metro as an explicitly approximate fallback;
@@ -23,6 +23,8 @@ The resolver should use the strongest available evidence in this order:
 A city centre is viewport/search metadata and is never an apartment point.
 
 `near X`, `до X`, `рядом с X`, `N минут от X` and equivalent context must preserve `X` as useful evidence but must not promote it to the property itself.
+
+The point-like canonical order intentionally puts a verified POI/metro ahead of a bare street centroid. A named object with a known center normally constrains the property more tightly than an arbitrarily chosen point on a street. A street + house remains stronger than all of these and is handled by rule 1.
 
 ## Precision and provenance contract
 
@@ -121,7 +123,7 @@ The resolver therefore cannot convert `ЖК Assalom Sohil` into a fake apartment
 
 A source address field remains authoritative when it is genuinely an address. The same value previously extracted from listing prose keeps `parsed` provenance rather than being upgraded to `source` on a later pass.
 
-A weak legacy field that only parses through permissive bare-address mode and contains listing prose such as `продаж`, `квартира`, or `ЖК` is not trusted over a strong explicit address in the actual listing text.
+A weak legacy field that only parses through permissive bare-address mode and contains listing prose such as `продаж`, `квартира`, or `ЖК` is not trusted over a strong explicit address in the actual listing text. If no valid replacement exists, the malformed legacy address is dropped rather than sent to the geocoder.
 
 A street + house appearing under a lexical `nearby` role remains a nearby geo reference and is not upgraded into the property's building address.
 
@@ -149,6 +151,30 @@ The current catalog entry resolves `Infinity` separately from `Assalom Sohil`. G
 
 For the motivating listing, Infinity is contextually nearby, so even a perfectly accurate Infinity coordinate must not become the apartment point.
 
+The catalog hierarchy audit also checks spatial parent metadata. Both complexes belong under the Yashnabad parent instead of the generic Tashkent parent; correcting a parent must not silently move the already verified representative center or upgrade its precision.
+
+## Pass 7 — lexical boundary checks that affect geocoding
+
+Geocoding quality depends on the parser not manufacturing broader anchors from substrings. Numbered residential/local-area tokens are therefore checked before the backend sees them.
+
+Example:
+
+- `Qorasuv dahasi` may resolve to umbrella `Qorasuv`;
+- `Qorasuv-6` must **not** additionally leak the plain umbrella `Qorasuv` match merely because the alias regex can stop at the hyphen.
+
+The generic guard is limited to an unnumbered `local_area` candidate followed immediately by a numbered child suffix. True numbered canonical areas such as `C-7` or `Ibn Sino-2` remain valid entities.
+
+This matters downstream because a false umbrella match can create a broad catalog anchor that appears internally consistent while actually pointing to the wrong part of a numbered housing area.
+
+## Pass 8 — failure-mode / CI review
+
+The audit treats CI failures as evidence to inspect, not something to suppress by weakening assertions.
+
+During this pass two unrelated baseline/dependency failures were identified:
+
+- parsing-lexicon master exposed the `Qorasuv-6` umbrella-prefix regression above; it needs the matcher boundary fix before the current package line is considered green;
+- geo-catalog's Tashkent parent regression itself passes, while its branch CI is currently blocked by a stale Ukraine city-count assertion (`90` expected vs `91` current entities). That count failure is unrelated to the Tashkent coordinate/parent change and should be corrected separately rather than hidden inside the geo patch.
+
 ## Regression coverage
 
 The branch includes or relies on regression tests for:
@@ -159,6 +185,7 @@ The branch includes or relies on regression tests for:
 - parsed-address provenance;
 - nearby street/house suppression;
 - malformed legacy address vs strong listing-prose address;
+- malformed legacy address being discarded when no valid replacement exists;
 - wrong house number;
 - same house number on another street;
 - same address in another city;
@@ -172,7 +199,8 @@ The branch includes or relies on regression tests for:
 - approximate complex reverse geocoding not inventing a house number;
 - broad source marker not inventing road/house precision;
 - cross-city reverse-geocode conflict;
-- source coordinate replaced by independently verified exact address while retaining discrepancy diagnostics.
+- source coordinate replaced by independently verified exact address while retaining discrepancy diagnostics;
+- umbrella local-area aliases not swallowing numbered child blocks.
 
 ## Remaining irreducible uncertainty
 
@@ -188,6 +216,7 @@ Before merge, all of the following must be true:
 
 - current branch `npm test` is green in GitHub Actions;
 - no new geocoding regression test is failing;
-- parsing-lexicon contextual role support required by the Tashkent example is available in the backend dependency lock;
+- parsing-lexicon contextual role and numbered-block boundary support required by the Tashkent examples is available in the backend dependency lock;
 - package/catalog coordinates used as canonical anchors are from an approved published or otherwise intentionally pinned dependency version;
+- geo-catalog validation is green, including any independent baseline-count repair needed by current master;
 - the PR remains unmerged until explicit user approval.
