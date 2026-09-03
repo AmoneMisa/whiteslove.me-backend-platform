@@ -14,7 +14,7 @@ import { annotateNearbyTransport } from './transport-nearby.js';
 
 const ADDRESS_SOURCES = new Set(['address']);
 const STREET_SOURCES = new Set(['street']);
-const ENTITY_EXACT_SOURCES = new Set(['residentialComplex', 'metro']);
+const ENTITY_EXACT_SOURCES = new Set(['residentialComplex', 'poi', 'metro']);
 const LEARNABLE_SOURCES = new Set([...ADDRESS_SOURCES, ...STREET_SOURCES, ...ENTITY_EXACT_SOURCES]);
 const EARTH_RADIUS_M = 6_371_000;
 const EXACT_LOOKUP_BUDGET = Math.max(
@@ -107,9 +107,6 @@ async function tryExactCandidate(listing, country, candidate, budget) {
 }
 
 async function refineSourceCoordinateFromExactAddress(listing, country, candidates, budget) {
-  // A generic marketplace pin has no documented precision in our normalized
-  // source model. Once street + house resolve to a strictly validated building,
-  // that exact address is stronger evidence and should define the map point.
   if (!listing?.street || !listing?.houseNumber) return false;
 
   const original = { lat: Number(listing.lat), lng: Number(listing.lng) };
@@ -130,19 +127,9 @@ async function refineSourceCoordinateFromExactAddress(listing, country, candidat
   return false;
 }
 
-/**
- * Persistent geocoding orchestration.
- *
- * Exact source addresses remain strongest. Canonical package anchors are tried
- * before external guesses; contextual "near" entities are deliberately deferred
- * until primary address/ЖК/street/local-area evidence has failed.
- */
 export async function geocodeListingsPersistent(listings, country) {
   if (!Array.isArray(listings) || !country) return listings;
 
-  // Preserve whether the upstream source itself supplied an address. The
-  // structured parser may later synthesize `address` from a bare detected street;
-  // that street-level value must not outrank a known residential-complex point.
   const sourceAddressProvided = new WeakSet(
     listings.filter((listing) => typeof listing?.address === 'string' && listing.address.trim()),
   );
@@ -163,8 +150,6 @@ export async function geocodeListingsPersistent(listings, country) {
     let placed = false;
     let exactDeferred = false;
 
-    // 1. A source-supplied address, or a parsed address with a concrete house,
-    // always wins. A parser-synthesized street-only `address` is deferred below.
     for (const candidate of candidates.filter((item) =>
       ADDRESS_SOURCES.has(item.source)
         && (sourceAddressProvided.has(listing) || item.precision === 'building'),
@@ -178,14 +163,11 @@ export async function geocodeListingsPersistent(listings, country) {
     }
     if (placed) continue;
 
-    // 2. Stable canonical ЖК/metro anchors are safer than free-text HTTP guesses.
     if (applyGeoCatalogExactAnchor(listing, country)) {
       packageResolved.add(listing);
       continue;
     }
 
-    // 3. A directly stated street is useful, but remains approximate without a
-    // house. This also catches parser-synthesized street-only `address` values.
     for (const candidate of candidates.filter((item) =>
       STREET_SOURCES.has(item.source)
         || (ADDRESS_SOURCES.has(item.source) && !sourceAddressProvided.has(listing) && item.precision !== 'building'),
@@ -199,8 +181,6 @@ export async function geocodeListingsPersistent(listings, country) {
     }
     if (placed) continue;
 
-    // 4. Missing canonical ЖК/metro anchors may fall back to learned DB/Nominatim,
-    // but never when the lexicon marked the mention as a nearby reference.
     for (const candidate of candidates.filter((item) =>
       ENTITY_EXACT_SOURCES.has(item.source) && item.role !== 'nearby',
     )) {
@@ -213,17 +193,11 @@ export async function geocodeListingsPersistent(listings, country) {
     }
     if (placed) continue;
 
-    // 5. Canonical microdistrict/mahalla/local-area anchors beat unbounded
-    // landmarks. If a stronger HTTP lookup was only deferred by this wrapper's
-    // budget, leave the row unresolved so geocode.js can still try that exact
-    // candidate with its own budget instead of pre-empting it with a broad point.
     if (!exactDeferred && applyGeoCatalogBroadAnchor(listing, country)) {
       packageResolved.add(listing);
       continue;
     }
 
-    // 6. If no primary geometry exists, a known nearby ЖК/POI/metro is still a
-    // useful approximate anchor. Do not preempt a two-distance spatial solution.
     const constrainedReferences = candidates.filter((item) =>
       item.role === 'nearby' && item.distanceM != null,
     );
@@ -233,20 +207,9 @@ export async function geocodeListingsPersistent(listings, country) {
     }
   }
 
-  // Existing pipeline handles unresolved HTTP, multi-anchor spatial solving,
-  // reverse geocoding and POI annotations. Package-resolved rows are skipped by
-  // its coordinate guard but still receive final annotations.
   await geocodeListings(listings, country);
-
-  // Canonical transport topology belongs to geo-catalog. This enrichment is
-  // intentionally after reverse/POI annotation so every precise coordinate —
-  // whether sourced, addressed, street-resolved or POI-solved — gets the same
-  // complete nearby metro/public-transport arrays.
   await annotateNearbyTransport(listings, country);
 
-  // Exact results produced by the legacy pipeline are promoted to PostgreSQL.
-  // Package-resolved rows are deliberately excluded so the staging table never
-  // duplicates coordinates that geo-catalog already owns.
   for (const listing of listings) {
     if (!listing || packageResolved.has(listing) || !hasCoordinates(listing)) continue;
     if (!LEARNABLE_SOURCES.has(listing.locationSource)) continue;
