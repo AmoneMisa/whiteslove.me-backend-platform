@@ -5,6 +5,7 @@ const TYPE_BY_SOURCE = Object.freeze({
   address: 'address',
   street: 'street',
   residentialComplex: 'residential_complex',
+  poi: 'poi',
   metro: 'metro',
   microdistrict: 'microdistrict',
   localArea: 'local_area',
@@ -14,12 +15,11 @@ const TYPE_BY_SOURCE = Object.freeze({
   district: 'district',
 });
 
-// These are uncertainty envelopes for approximate entity centroids, not measured
-// GPS error. Exact addresses deliberately have no invented meter value.
 const DEFAULT_ACCURACY_M = Object.freeze({
   address: null,
   street: 180,
   residential_complex: 300,
+  poi: 700,
   metro: 250,
   microdistrict: 600,
   local_area: 800,
@@ -76,8 +76,6 @@ export function learnedGeoDescriptor(listing, country, candidate) {
     canonical: canonicalForSource(listing, source, candidate),
   };
 
-  // Do not promote an unstructured free-form address. Address learning is only
-  // stable when the parser has a street and house number.
   if (type === 'address' && (!base.street || !base.houseNumber)) return null;
   if (type !== 'address' && !base.canonical) return null;
 
@@ -123,9 +121,6 @@ export async function findLearnedGeo(descriptor) {
   const row = result.rows[0];
   if (!row) return null;
 
-  // Older rows were learned from Nominatim's first search hit without proving
-  // the requested house number/street. Never let those rows short-circuit the
-  // stricter resolver for an exact address; a new validated lookup will repair it.
   if (descriptor.type === 'address' && !trustedExactAddressProviderType(row.provider_type)) {
     return null;
   }
