@@ -166,6 +166,13 @@ async function refineSourceCoordinateFromExactAddress(listing, country, candidat
 export async function geocodeListingsPersistent(listings, country) {
   if (!Array.isArray(listings) || !country) return listings;
 
+  // Preserve whether the upstream source itself supplied an address. The
+  // structured parser may later synthesize `address` from a bare detected street;
+  // that street-level value must not outrank a known residential-complex point.
+  const sourceAddressProvided = new WeakSet(
+    listings.filter((listing) => typeof listing?.address === 'string' && listing.address.trim()),
+  );
+
   applyStructuredAddressFieldsBatch(listings);
   const packageResolved = new WeakSet();
   const budget = { value: EXACT_LOOKUP_BUDGET };
@@ -182,8 +189,12 @@ export async function geocodeListingsPersistent(listings, country) {
     let placed = false;
     let exactDeferred = false;
 
-    // 1. A concrete parsed address always wins.
-    for (const candidate of candidates.filter((item) => ADDRESS_SOURCES.has(item.source))) {
+    // 1. A source-supplied address, or a parsed address with a concrete house,
+    // always wins. A parser-synthesized street-only `address` is deferred below.
+    for (const candidate of candidates.filter((item) =>
+      ADDRESS_SOURCES.has(item.source)
+        && (sourceAddressProvided.has(listing) || item.precision === 'building'),
+    )) {
       const result = await tryExactCandidate(listing, country, candidate, budget);
       exactDeferred ||= result.deferred;
       if (result.placed) {
@@ -199,8 +210,12 @@ export async function geocodeListingsPersistent(listings, country) {
       continue;
     }
 
-    // 3. A directly stated street is useful, but remains approximate without a house.
-    for (const candidate of candidates.filter((item) => STREET_SOURCES.has(item.source))) {
+    // 3. A directly stated street is useful, but remains approximate without a
+    // house. This also catches parser-synthesized street-only `address` values.
+    for (const candidate of candidates.filter((item) =>
+      STREET_SOURCES.has(item.source)
+        || (ADDRESS_SOURCES.has(item.source) && !sourceAddressProvided.has(listing) && item.precision !== 'building'),
+    )) {
       const result = await tryExactCandidate(listing, country, candidate, budget);
       exactDeferred ||= result.deferred;
       if (result.placed) {
