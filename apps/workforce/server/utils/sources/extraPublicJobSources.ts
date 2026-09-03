@@ -134,7 +134,14 @@ function flagmaSalary(
     currencyFallback: 'country',
     periodFallback: 'country',
   })
-  if (!parsed || (parsed.min == null && parsed.max == null)) {
+  // The row is found by scanning the whole page for the *first* itemprop=value
+  // node, which is also how schema.org marks up unrelated PropertyValue facts
+  // (schedule, experience, etc.). A row that only reads as salary because
+  // "Оплата труда"-style wording happened to sit in its 400/600-char window,
+  // with no currency actually named next to the number, is that false match
+  // (e.g. "9:00" from a work-hours line) rather than real pay — require the
+  // currency to be explicit in the row itself, not a country-level guess.
+  if (!parsed || (parsed.min == null && parsed.max == null) || parsed.currencySource !== 'explicit') {
     return {
       salaryMin: summary.salaryMin,
       salaryMax: summary.salaryMax,

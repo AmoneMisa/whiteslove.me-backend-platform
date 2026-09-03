@@ -378,9 +378,15 @@ export function enrichJob(job: Job): Job {
     ...job,
     title,
     description: description || undefined,
-    salaryMin: job.salaryMin ?? extractedSalary.salaryMin,
-    salaryMax: job.salaryMax ?? extractedSalary.salaryMax,
-    salaryCurrency: job.salaryCurrency ?? extractedSalary.salaryCurrency,
+    // The shared parser reads the full free-text description; a source's own
+    // narrow scrape (e.g. a single microdata row) is only trusted as a
+    // fallback when the description gives us nothing usable, since the
+    // source-specific scrape has repeatedly proven less reliable (ranges
+    // split across markup rows collapse to one number, unrelated page
+    // numbers get picked up as salary).
+    salaryMin: extractedSalary.salaryMin ?? job.salaryMin,
+    salaryMax: extractedSalary.salaryMax ?? job.salaryMax,
+    salaryCurrency: extractedSalary.salaryCurrency ?? job.salaryCurrency,
   }
   const text = `${title} \n ${job.tags.join(' ')} \n ${description}`
   const hiringContext = sharedHiringContext(text, title)
@@ -394,7 +400,7 @@ export function enrichJob(job: Job): Job {
   const experienceMinYears = experience.min
   const country = detectCountry(clean)
   const salaryPeriod = hasSalary
-    ? job.salaryPeriod ?? extractedSalary.salaryPeriod ?? detectSalaryPeriod(clean, text)
+    ? extractedSalary.salaryPeriod ?? job.salaryPeriod ?? detectSalaryPeriod(clean, text)
     : undefined
   // Hard-blocked industry + "this posting never says what you'd do" warning.
   const suspicion = classifySuspicion({

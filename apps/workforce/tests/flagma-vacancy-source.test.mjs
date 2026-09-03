@@ -110,6 +110,23 @@ test('Flagma detail parser leaves the summary salary alone when the page prints 
   assert.equal(job.salaryCurrency, 'USD')
 })
 
+test('Flagma detail parser ignores an unrelated itemprop=value row with no explicit currency', () => {
+  // No baseSalary microdata on this page (negotiable pay) — the first
+  // itemprop=value node belongs to an unrelated PropertyValue (work hours),
+  // and "Оплата труда" wording elsewhere in the same block must not turn
+  // "9:00" into a fabricated salary via the country currency fallback.
+  const noisyHtml = detailHtml
+    .replace(
+      '<span itemprop="value" content="7500000">7 500 000</span>',
+      '<span>Оплата труда: сдельная. График: <span itemprop="value" content="9">9:00</span> до 18:00.</span>',
+    )
+    .replace('<span itemprop="currency" content="UZS">сум</span>', '')
+  const job = parseFlagmaVacancyDetail(noisyHtml, { ...summary, salaryMin: undefined, salaryMax: undefined })
+  assert.ok(job)
+  assert.equal(job.salaryMin, undefined)
+  assert.equal(job.salaryMax, undefined)
+})
+
 test('Flagma detail parser rejects a captcha or generic shell', () => {
   assert.equal(parseFlagmaVacancyDetail('<html><title>Flagma</title><div>reCAPTCHA</div></html>', summary), null)
 })
