@@ -230,12 +230,6 @@ function pointFromResult(result, expectation = {}) {
   };
 }
 
-/**
- * Select a Nominatim result conservatively. Exact house lookups must prove the
- * requested country/city/house/street/corpus; named entity fallbacks must prove
- * both the requested locality and entity name. A plausible first result is
- * deliberately not enough.
- */
 export function selectNominatimPoint(data, expectation = {}, countryCode = null) {
   if (!Array.isArray(data)) return null;
   const expectedCountry = String(countryCode || '').trim().toUpperCase();
@@ -281,6 +275,21 @@ export function selectNominatimPoint(data, expectation = {}, countryCode = null)
   return accepted[0]?.point || null;
 }
 
+export function selectNominatimBbox(data, countryCode = null, expectedCity = null) {
+  if (!Array.isArray(data)) return null;
+  const expectedCountry = String(countryCode || '').trim().toUpperCase();
+
+  for (const result of data) {
+    if (expectedCountry && resultCountryCode(result) !== expectedCountry) continue;
+    if (expectedCity && !cityMatches(result, expectedCity, expectedCountry)) continue;
+    const raw = result?.boundingbox;
+    const numbers = (raw || []).map(Number);
+    if (numbers.length !== 4 || !numbers.every(Number.isFinite)) continue;
+    return [numbers[0], numbers[2], numbers[1], numbers[3]];
+  }
+  return null;
+}
+
 export async function fetchNominatimPoint(query, countryCode, expectation = {}) {
   await throttle();
   const effectiveExpectation = expectationForQuery(query, expectation);
@@ -315,26 +324,30 @@ export async function geocodeQuery(query, countryCode, expectation = {}) {
   return cached === undefined ? fetchNominatimPoint(query, countryCode, expectation) : cached;
 }
 
-export async function geocodeBbox(query) {
+export async function geocodeBbox(query, countryCode = null, expectedCity = null) {
   if (!query) return null;
-  const key = `geo:bbox:v1:${query.toLowerCase().trim()}`;
+  const country = String(countryCode || '').toLowerCase();
+  const city = foldCyrillic(expectedCity || '');
+  const key = `geo:bbox:v2:${country || '-'}:${encodeURIComponent(city || '-')}:${query.toLowerCase().trim()}`;
   const cached = await cacheGet(key);
   if (cached) return cached.bbox;
 
   await throttle();
   try {
-    const params = new URLSearchParams({ q: query, format: 'json', limit: '1' });
+    const params = new URLSearchParams({
+      q: query,
+      format: 'jsonv2',
+      limit: '5',
+      addressdetails: '1',
+    });
+    if (countryCode) params.set('countrycodes', String(countryCode).toLowerCase());
     const response = await fetch(`${NOMINATIM_URL}?${params}`, {
-      headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'en' },
+      headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'en,ru,uk,uz,kk,ro' },
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`nominatim ${response.status}`);
     const data = await response.json();
-    const raw = Array.isArray(data) ? data[0]?.boundingbox : null;
-    const numbers = (raw || []).map(Number);
-    const bbox = numbers.length === 4 && numbers.every(Number.isFinite)
-      ? [numbers[0], numbers[2], numbers[1], numbers[3]]
-      : null;
+    const bbox = selectNominatimBbox(data, countryCode, expectedCity);
     await cacheSet(key, { bbox }, bbox ? HIT_TTL_MS : MISS_TTL_MS);
     return bbox;
   } catch {
