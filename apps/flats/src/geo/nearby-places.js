@@ -20,8 +20,13 @@ const KIND_RADIUS_M = {
   park: 1200,
   historic: 2000,
   cinema: 2000,
-  transport: 600,
+  busStop: 600,
+  railStation: 1500,
 };
+
+// Modes surfaced only through the nearbyTransport fallback (below), never as
+// generic POI rows: transit stops read oddly next to a pharmacy or a school.
+const TRANSPORT_FALLBACK_KINDS = Object.freeze({ busStop: 'bus', railStation: 'rail' });
 
 const DEFAULT_RADIUS_M = 1000;
 const LEGACY_PER_KIND = 3;
@@ -135,7 +140,9 @@ export function annotateListing(listing, index) {
     }
   }
 
-  const poiKinds = [...index.keys()].filter((kind) => kind !== 'metro' && kind !== 'transport');
+  const poiKinds = [...index.keys()].filter(
+    (kind) => kind !== 'metro' && !(kind in TRANSPORT_FALLBACK_KINDS),
+  );
   const { grouped, flat } = placesNear(point, index, { kinds: poiKinds });
 
   if (flat.length) {
@@ -164,6 +171,56 @@ export function annotateListings(listings, rows) {
   let annotated = 0;
   for (const listing of listings || []) {
     if (annotateListing(listing, index)) annotated += 1;
+  }
+  return annotated;
+}
+
+function parseOsmId(externalId) {
+  if (!externalId) return null;
+  const [type, idPart] = String(externalId).split('/');
+  const id = Number(idPart);
+  if (!type || !Number.isFinite(id)) return null;
+  return { type, id };
+}
+
+/**
+ * Fills `nearbyTransport` from Overpass-sourced bus/rail stops, but only when
+ * nothing richer got there first. The geo-catalog transport module (mode-aware,
+ * carries route data) is Tashkent-only today; everywhere else this is the only
+ * transit-stop source a listing has, so it fills the same field the frontend
+ * already reads rather than adding a parallel one.
+ */
+export function annotateTransportFallback(listing, index) {
+  if (!Number.isFinite(listing?.lat) || !Number.isFinite(listing?.lng)) return false;
+  if (Array.isArray(listing.nearbyTransport) && listing.nearbyTransport.length) return false;
+  const point = { lat: listing.lat, lng: listing.lng };
+
+  const hits = Object.entries(TRANSPORT_FALLBACK_KINDS).flatMap(([kind, mode]) =>
+    nearestOfKind(point, index, kind).map((hit) => ({
+      id: hit.externalId || `${kind}:${hit.name}`,
+      name: hit.name,
+      mode,
+      distanceM: hit.distanceM,
+      routeRefs: [],
+      geoEntityId: null,
+      osm: parseOsmId(hit.externalId),
+      source: hit.source || 'overpass',
+    })),
+  );
+  if (!hits.length) return false;
+
+  listing.nearbyTransport = hits.sort((a, b) => a.distanceM - b.distanceM);
+  listing.transportSource = listing.transportSource || 'overpass';
+  return true;
+}
+
+/** Batch form of annotateTransportFallback from one loaded place list. */
+export function annotateTransportFallbackList(listings, rows) {
+  const index = indexPlaces(rows);
+  if (!index.size) return 0;
+  let annotated = 0;
+  for (const listing of listings || []) {
+    if (annotateTransportFallback(listing, index)) annotated += 1;
   }
   return annotated;
 }

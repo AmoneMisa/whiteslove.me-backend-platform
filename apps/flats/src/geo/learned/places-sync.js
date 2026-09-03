@@ -71,7 +71,10 @@ const KIND_RULES = [
   { kind: 'park', match: (t) => ['park', 'garden'].includes(t.leisure) },
   { kind: 'historic', match: (t) => Boolean(t.historic) || ['museum', 'attraction'].includes(t.tourism) },
   { kind: 'cinema', match: (t) => ['cinema', 'theatre'].includes(t.amenity) },
-  { kind: 'transport', match: (t) => t.highway === 'bus_stop' || t.railway === 'station' || t.public_transport === 'station' },
+  // Split by mode (rather than one generic 'transport' bucket) so a fallback
+  // consumer can label a stop 'bus' vs 'rail' without re-deriving it from tags.
+  { kind: 'busStop', match: (t) => t.highway === 'bus_stop' },
+  { kind: 'railStation', match: (t) => t.railway === 'station' || t.public_transport === 'station' },
 ];
 
 export function placeCities() {

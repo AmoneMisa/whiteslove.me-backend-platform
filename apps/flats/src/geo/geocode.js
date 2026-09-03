@@ -13,7 +13,7 @@
 import { canonicalCityName } from './countries.js'
 import { assignNearestMetro } from './metro-nearest.js'
 import { loadCityPlaces } from '../infrastructure/database/placesRepository.js'
-import { annotateListings } from './nearby-places.js'
+import { annotateListings, annotateTransportFallbackList } from './nearby-places.js'
 import { applyReverseGeo } from './reverse-geo.js'
 import {
   cachedNominatimPoint,
@@ -504,4 +504,34 @@ async function annotateFromPlaces(listings, country) {
 
   if (annotated) console.log(`[places] annotated ${annotated} listings from the places table`)
   return annotated > 0
+}
+
+/**
+ * Fills nearbyTransport for listings the geo-catalog transport module didn't
+ * already annotate (everywhere outside Tashkent today), from the same
+ * Overpass-sourced places table used for other nearby POIs. Call this after
+ * annotateNearbyTransport so its result wins where both exist.
+ */
+export async function annotateTransportFallbackFromPlaces(listings, country) {
+  const cities = new Set(
+    listings
+      .filter((listing) => Number.isFinite(listing.lat) && Number.isFinite(listing.lng))
+      .map((listing) => listing.city || country?.cities?.[0] || ''),
+  )
+  let annotated = 0
+
+  for (const city of cities) {
+    if (!city) continue
+    try {
+      const rows = await loadCityPlaces(country?.code, city)
+      if (!rows.length) continue
+      const batch = listings.filter((listing) => (listing.city || country?.cities?.[0]) === city)
+      annotated += annotateTransportFallbackList(batch, rows)
+    } catch (error) {
+      console.warn(`[places] transport fallback lookup for ${city} failed:`, error?.message || error)
+    }
+  }
+
+  if (annotated) console.log(`[places] transport fallback annotated ${annotated} listings`)
+  return annotated
 }

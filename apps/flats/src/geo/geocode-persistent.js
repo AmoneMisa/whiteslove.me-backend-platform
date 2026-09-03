@@ -1,4 +1,10 @@
-import { geocodeCandidates, geocodeListings, geocodeQuery, resolveAccuracyM } from './geocode.js';
+import {
+  annotateTransportFallbackFromPlaces,
+  geocodeCandidates,
+  geocodeListings,
+  geocodeQuery,
+  resolveAccuracyM,
+} from './geocode.js';
 import {
   applyGeoCatalogBroadAnchor,
   applyGeoCatalogExactAnchor,
@@ -221,6 +227,7 @@ export async function geocodeListingsPersistent(listings, country) {
 
   await geocodeListings(listings, country);
   await annotateNearbyTransport(listings, country);
+  await annotateTransportFallbackFromPlaces(listings, country);
 
   for (const listing of listings) {
     if (!listing || packageResolved.has(listing) || !hasCoordinates(listing)) continue;
