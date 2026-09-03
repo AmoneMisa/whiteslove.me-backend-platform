@@ -290,8 +290,6 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
       case 'oldest': orderBy = 'l.created_at ASC NULLS LAST, l.id ASC'; break;
       case 'priceAsc': orderBy = `${priceUsdExpr} ASC NULLS LAST, l.id ASC`; break;
       case 'priceDesc': orderBy = `${priceUsdExpr} DESC NULLS LAST, l.id DESC`; break;
-      case 'titleAsc': orderBy = 'LOWER(l.title) ASC NULLS LAST, l.id ASC'; break;
-      case 'titleDesc': orderBy = 'LOWER(l.title) DESC NULLS LAST, l.id DESC'; break;
       case 'newest': default: sort = 'newest'; orderBy = 'l.created_at DESC NULLS LAST, l.id DESC'; break;
     }
   }
@@ -306,29 +304,80 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   const baseParams = [...context.params];
   const dedupeEnabled = !filters.listingId;
 
-  const filteredSql = `
+  // Every consumer of the filtered set needs a different slice of it, and the
+  // widest column by far is the listing payload. Project per consumer instead
+  // of ranking one wide row set: only the page actually transports l.data, so
+  // the statistics and count passes never carry (or detoast) it.
+  const dedupeKeySql = dedupeEnabled ? 'l.dedupe_key' : `CONCAT_WS(':', LOWER(l.source), UPPER(l.country), l.source_id)`;
+
+  const filteredSqlFor = (projection) => `
     SELECT
-      l.id, l.source, l.country, l.source_id, l.created_at, l.first_seen_at, l.price, l.currency, l.title,
-      l.deal_type, l.by_agency, l.city, l.district, l.metro, l.data, l.room_only,
-      ${context.priceUsdExpr} AS price_usd,
-      ${context.rankSelect},
-      ${dedupeEnabled ? 'l.dedupe_key' : `CONCAT_WS(':', LOWER(l.source), UPPER(l.country), l.source_id)`} AS dedupe_key
+      ${projection},
+      ${dedupeKeySql} AS dedupe_key
     ${context.from}
     WHERE ${baseWhere}
   `;
 
-  const rankedSql = `
+  const rankedSqlFor = (projection) => `
     SELECT filtered.*, ROW_NUMBER() OVER (
       PARTITION BY filtered.dedupe_key ORDER BY filtered.created_at DESC NULLS LAST, filtered.id DESC
     ) AS dedupe_rank
-    FROM (${filteredSql}) filtered
+    FROM (${filteredSqlFor(projection)}) filtered
   `;
 
-  const countSql = `SELECT COUNT(*)::int AS count FROM (${rankedSql}) l WHERE l.dedupe_rank = 1`;
+  const rankedSql = rankedSqlFor(`
+      l.id, l.source, l.country, l.source_id, l.created_at, l.first_seen_at, l.price, l.currency, l.title,
+      l.deal_type, l.by_agency, l.city, l.district, l.metro, l.data, l.room_only,
+      ${context.priceUsdExpr} AS price_usd,
+      ${context.rankSelect}`);
+
+  const countRankedSql = rankedSqlFor('l.id, l.created_at');
+
+  const statsRankedSql = rankedSqlFor(`
+      l.id, l.country, l.created_at, l.first_seen_at, l.deal_type, l.by_agency,
+      l.city, l.district, l.metro, l.room_only,
+      ${context.priceUsdExpr} AS price_usd,
+      NULLIF(BTRIM(l.data->>'microdistrict'), '') AS microdistrict,
+      COALESCE(
+        l.data @> '{"commission":true}'::jsonb
+        OR (jsonb_typeof(l.data->'commissionPercent') = 'number' AND (l.data->>'commissionPercent')::numeric > 0),
+        FALSE
+      ) AS has_commission,
+      COALESCE(
+        l.data @> '{"commission":false}'::jsonb
+        OR (jsonb_typeof(l.data->'commissionPercent') = 'number' AND (l.data->>'commissionPercent')::numeric = 0),
+        FALSE
+      ) AS no_commission,
+      COALESCE(
+        l.data->>'duplicatePhotoRisk' IN ('high', 'very_high')
+        OR l.data->'antiFake' @> '{"suspectedClone":true}'::jsonb
+        OR l.data->'antiFake' @> '{"conflictingClone":true}'::jsonb,
+        FALSE
+      ) AS suspected_fake`);
+
+  const countSql = `SELECT COUNT(*)::int AS count FROM (${countRankedSql}) l WHERE l.dedupe_rank = 1`;
 
   const statsSql = `
-    WITH ranked AS MATERIALIZED (${rankedSql}),
+    WITH ranked AS MATERIALIZED (${statsRankedSql}),
     visible AS MATERIALIZED (SELECT * FROM ranked WHERE dedupe_rank = 1),
+    -- One aggregate pass for every scalar the response needs, rather than a
+    -- separate subquery scan of the materialized CTE per counter.
+    totals AS (
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE by_agency = FALSE)::int AS owners,
+        COUNT(*) FILTER (WHERE by_agency = TRUE)::int AS agencies,
+        COUNT(*) FILTER (WHERE has_commission)::int AS commission,
+        COUNT(*) FILTER (WHERE no_commission)::int AS no_commission,
+        COUNT(*) FILTER (WHERE suspected_fake)::int AS suspected_fake
+      FROM visible
+    ),
+    raw_totals AS (
+      SELECT
+        COUNT(*)::int AS raw_total,
+        COUNT(*) FILTER (WHERE dedupe_rank > 1)::int AS duplicates_rejected
+      FROM ranked
+    ),
     classified AS MATERIALIZED (
       SELECT visible.*,
         CASE
@@ -387,7 +436,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
         ('country', NULLIF(BTRIM(v.country), '')),
         ('city', NULLIF(BTRIM(v.city), '')),
         ('district', NULLIF(BTRIM(v.district), '')),
-        ('microdistrict', NULLIF(BTRIM(v.data->>'microdistrict'), '')),
+        ('microdistrict', v.microdistrict),
         ('metro', NULLIF(BTRIM(v.metro), ''))
       ) AS geo(dimension, label)
       WHERE geo.label IS NOT NULL
@@ -416,8 +465,8 @@ export async function searchPostgresListings({ filters, countries, rates = null,
       FROM visible WHERE COALESCE(first_seen_at, created_at) IS NOT NULL GROUP BY 1 ORDER BY 1
     )
     SELECT
-      (SELECT COUNT(*)::int FROM visible) AS total,
-      (SELECT COUNT(*)::int FROM ranked) AS raw_total,
+      (SELECT total FROM totals) AS total,
+      (SELECT raw_total FROM raw_totals) AS raw_total,
       COALESCE((SELECT JSONB_AGG(JSONB_BUILD_OBJECT(
         'key', key, 'count', count, 'priceCount', price_count,
         'medianUsd', median_usd, 'averageUsd', average_usd, 'minUsd', min_usd, 'maxUsd', max_usd
@@ -426,19 +475,16 @@ export async function searchPostgresListings({ filters, countries, rates = null,
       COALESCE((SELECT JSONB_OBJECT_AGG(deal_key, samples) FROM price_band_json), '{}'::jsonb) AS price_band_samples_by_deal,
       COALESCE((SELECT JSONB_OBJECT_AGG(dimension, items) FROM geo_json WHERE deal_key IS NULL), '{}'::jsonb) AS geographies,
       COALESCE((SELECT JSONB_OBJECT_AGG(deal_key, dimensions) FROM geo_by_deal_json), '{}'::jsonb) AS geographies_by_deal,
-      JSONB_BUILD_OBJECT(
-        'owners', (SELECT COUNT(*)::int FROM visible WHERE by_agency = FALSE),
-        'agencies', (SELECT COUNT(*)::int FROM visible WHERE by_agency = TRUE),
-        'commission', (SELECT COUNT(*)::int FROM visible WHERE data @> '{"commission":true}'::jsonb OR (jsonb_typeof(data->'commissionPercent') = 'number' AND (data->>'commissionPercent')::numeric > 0)),
-        'noCommission', (SELECT COUNT(*)::int FROM visible WHERE data @> '{"commission":false}'::jsonb OR (jsonb_typeof(data->'commissionPercent') = 'number' AND (data->>'commissionPercent')::numeric = 0))
-      ) AS ownership,
+      (SELECT JSONB_BUILD_OBJECT(
+        'owners', owners,
+        'agencies', agencies,
+        'commission', commission,
+        'noCommission', no_commission
+      ) FROM totals) AS ownership,
       COALESCE((SELECT JSONB_AGG(JSONB_BUILD_OBJECT('date', day, 'count', count) ORDER BY day) FROM activity_rows), '[]'::jsonb) AS activity,
       JSONB_BUILD_OBJECT(
-        'duplicatesRejected', (SELECT COUNT(*)::int FROM ranked WHERE dedupe_rank > 1),
-        'suspectedFake', (SELECT COUNT(*)::int FROM visible WHERE
-          data->>'duplicatePhotoRisk' IN ('high', 'very_high')
-          OR data->'antiFake' @> '{"suspectedClone":true}'::jsonb
-          OR data->'antiFake' @> '{"conflictingClone":true}'::jsonb)
+        'duplicatesRejected', (SELECT duplicates_rejected FROM raw_totals),
+        'suspectedFake', (SELECT suspected_fake FROM totals)
       ) AS quality
   `;
 

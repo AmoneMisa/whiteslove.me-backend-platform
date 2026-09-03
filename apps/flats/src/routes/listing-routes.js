@@ -13,13 +13,15 @@ const LISTING_MAX_AGE_DAYS = 14;
 const LISTING_PAGE_SIZE = 20;
 const LISTING_MAX_PAGE_SIZE = 60;
 const VALID_SOURCES = ['olx', 'telegram', 'facebook', 'threads'];
+// Title ordering is deliberately absent: it is the only sort the public-feed
+// read model cannot serve, so it forced the request onto the general search
+// path and a full sort of the result set. Clients that still send it fall back
+// to the default order rather than getting an error.
 const VALID_SORTS = [
   'newest',
   'oldest',
   'priceAsc',
   'priceDesc',
-  'titleAsc',
-  'titleDesc',
 ];
 
 export function parseListingFilters(q) {

@@ -32,15 +32,6 @@ function comparePrice(a, b, rates, ascending) {
   return primary || compareDate(a, b, false);
 }
 
-function compareTitle(a, b, descending) {
-  const primary = String(a.title || '').trim().localeCompare(
-    String(b.title || '').trim(),
-    ['ru', 'uk', 'en'],
-    { sensitivity: 'base', numeric: true },
-  );
-  return (descending ? -primary : primary) || compareDate(a, b, false);
-}
-
 export function sortListings(listings, sort, rates = null) {
   if (!Array.isArray(listings)) return listings;
 
@@ -53,12 +44,6 @@ export function sortListings(listings, sort, rates = null) {
       break;
     case 'priceDesc':
       listings.sort((a, b) => comparePrice(a, b, rates, false));
-      break;
-    case 'titleAsc':
-      listings.sort((a, b) => compareTitle(a, b, false));
-      break;
-    case 'titleDesc':
-      listings.sort((a, b) => compareTitle(a, b, true));
       break;
     case 'newest':
     default:

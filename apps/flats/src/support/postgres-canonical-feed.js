@@ -123,18 +123,21 @@ export async function searchCanonicalFeed({filters, countries, rates}) {
     finalOrderBy = 'page.created_at DESC NULLS LAST, page.db_id DESC';
   }
 
-  const includeWindowCount = !useCursor;
+  // listing_public_feed_members.is_canonical is the winner flag maintained by
+  // refresh_listing_public_feed_canonical() (migration 040), so the winner set
+  // is reachable as a partial index rather than as a join against
+  // listing_public_feed_canonical. That lets the ordered indexes from 040 serve
+  // this ORDER BY directly: a page reads LIMIT rows instead of sorting the
+  // whole filtered set.
   const pageSql = `
     WITH page AS MATERIALIZED (
       SELECT
         m.listing_id AS db_id,
         m.created_at,
         ${priceUsdExpr} AS price_usd
-        ${includeWindowCount ? ', COUNT(*) OVER()::int AS total_count' : ''}
-      FROM listing_public_feed_canonical AS canonical
-      JOIN listing_public_feed_members AS m
-        ON m.listing_id = canonical.listing_id
-      WHERE ${where}
+      FROM listing_public_feed_members AS m
+      WHERE m.is_canonical
+        AND ${where}
         ${pageWhere.length ? `AND ${pageWhere.join('\n        AND ')}` : ''}
       ORDER BY ${orderBy}
       LIMIT ${limitParam}
@@ -146,41 +149,36 @@ export async function searchCanonicalFeed({filters, countries, rates}) {
     ORDER BY ${finalOrderBy}
   `;
 
+  // A window count carried inside the page query would be planned below the
+  // Limit, so the whole result set would still be computed on every uncursored
+  // page and the ordered index could never terminate early. Run the count
+  // beside the page instead: it is an index-only scan of the same partial
+  // index, and cursor pages skip it entirely by carrying the total forward.
   const countSql = `
     SELECT COUNT(*)::int AS count
-    FROM listing_public_feed_canonical AS canonical
-    JOIN listing_public_feed_members AS m
-      ON m.listing_id = canonical.listing_id
-    WHERE ${where}
+    FROM listing_public_feed_members AS m
+    WHERE m.is_canonical
+      AND ${where}
   `;
 
   let pageTimed;
   let countTimed = null;
-  if (useCursor && !hasCursorCount) {
+  if (hasCursorCount) {
+    pageTimed = await timedQuery(pageSql, pageParams);
+  } else {
     [pageTimed, countTimed] = await Promise.all([
       timedQuery(pageSql, pageParams),
       timedQuery(countSql, baseParams),
     ]);
-  } else {
-    pageTimed = await timedQuery(pageSql, pageParams);
   }
 
   const pageRows = pageTimed.result.rows.filter((row) => row.db_id != null);
   const hasMore = pageRows.length > limit;
   const rows = pageRows.slice(0, limit);
 
-  let count;
-  if (hasCursorCount) {
-    count = cursorCount;
-  } else if (countTimed) {
-    count = Number(countTimed.result.rows[0]?.count) || 0;
-  } else if (pageTimed.result.rows.length) {
-    count = Number(pageTimed.result.rows[0]?.total_count) || 0;
-  } else {
-    // OFFSET beyond the final row has no window-count carrier.
-    countTimed = await timedQuery(countSql, baseParams);
-    count = Number(countTimed.result.rows[0]?.count) || 0;
-  }
+  const count = hasCursorCount
+    ? cursorCount
+    : (Number(countTimed?.result.rows[0]?.count) || 0);
 
   let nextCursor = null;
   if (hasMore && rows.length) {

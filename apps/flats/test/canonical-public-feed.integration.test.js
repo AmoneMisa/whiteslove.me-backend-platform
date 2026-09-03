@@ -93,13 +93,22 @@ test('structured canonical feed reads winners without request-time dedupe rankin
     new URL('../src/support/postgres-search-fast.js', import.meta.url),
     'utf8',
   );
+  const indexSql = await migration('040_canonical_feed_ordered_indexes.sql');
 
   assert.match(migrationSql, /CREATE TABLE IF NOT EXISTS listing_public_feed_canonical/);
   assert.match(migrationSql, /pg_advisory_xact_lock/);
   assert.match(migrationSql, /AFTER INSERT OR DELETE OR UPDATE OF dedupe_key, created_at/);
-  assert.match(feedSql, /JOIN listing_public_feed_members AS m[\s\S]*canonical\.listing_id/);
+  // 040 denormalizes the winner onto the member row so the feed's ORDER BY can
+  // be served by an ordered partial index instead of a join plus a sort.
+  assert.match(indexSql, /ADD COLUMN IF NOT EXISTS is_canonical/);
+  assert.match(indexSql, /SET is_canonical = \(m\.listing_id = v_listing_id\)/);
+  assert.match(indexSql, /created_at DESC NULLS LAST[\s\S]*WHERE is_canonical/);
+  assert.match(feedSql, /FROM listing_public_feed_members AS m\s+WHERE m\.is_canonical/);
   assert.doesNotMatch(feedSql, /ROW_NUMBER\s*\(/);
   assert.doesNotMatch(feedSql, /DISTINCT ON\s*\(/);
+  // A window count inside the page query is planned below the Limit, which
+  // would defeat the ordered index on every uncursored page.
+  assert.doesNotMatch(feedSql, /COUNT\(\*\) OVER\(\)/);
   assert.match(feedSql, /priceAsc/);
   assert.match(feedSql, /priceDesc/);
   assert.match(routerSql, /canUseCanonicalFeedPath/);

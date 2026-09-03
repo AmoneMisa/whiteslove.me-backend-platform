@@ -31,14 +31,12 @@ test('fast searches use one database request and exact lookups follow the unique
   assert.doesNotMatch(source, /from '\.\/postgres-search\.js'/u);
   assert.match(source, /l\.source = \$1[\s\S]*l\.country = \$2[\s\S]*l\.source_id = \$3/u);
   assert.match(source, /searchPath: 'postgres-listing-id'/u);
-  assert.match(source, /const cursorCount = Number\(cursor\?\.c\)/u);
-  assert.match(source, /const hasCursorCount = useCursor && Number\.isSafeInteger\(cursorCount\) && cursorCount >= 0/u);
-  assert.match(source, /const fetchLimit = limit \+ 1/u);
-  assert.match(source, /const pageSql = hasCursorCount[\s\S]*SELECT p\.db_id, p\.created_at, l\.data[\s\S]*SELECT totals\.count/u);
-  assert.match(source, /FROM \(SELECT COUNT\(\*\)::int AS count FROM deduped\) totals/u);
-  assert.match(source, /const hasMore = pageRows\.length > limit/u);
-  assert.match(source, /const rows = pageRows\.slice\(0, limit\)/u);
-  assert.match(source, /encodeCursor\(\{v: CURSOR_VERSION, sort, t: time, id: String\(last\.db_id\), c: count\}\)/u);
-  assert.doesNotMatch(source, /if \(rows\.length === limit\)/u);
+  assert.match(source, /LIMIT 1/u);
   assert.doesNotMatch(source, /Promise\.all/u);
+  // Feed paging lives in postgres-canonical-feed.js. This module keeps only the
+  // exact single-listing lookup plus the shared filter contract, so no dedupe
+  // ranking, cursor decoding or page assembly should reappear here.
+  assert.doesNotMatch(source, /DISTINCT ON/u);
+  assert.doesNotMatch(source, /decodeCursor/u);
+  assert.doesNotMatch(source, /searchDefaultFeed/u);
 });

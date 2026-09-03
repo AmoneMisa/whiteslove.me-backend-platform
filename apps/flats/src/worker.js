@@ -16,6 +16,7 @@ import {refreshPlaces} from './scheduling/scheduler.js';
 import {startSocialHousingScheduler} from './sources/social-housing-scheduler.js';
 import {verifyDueListingAvailability} from './availability/availability-sweep.js';
 import {deactivateExpiredListings} from './listing/listing-lifecycle.js';
+import {refreshStatisticsSnapshot} from './support/statistics-snapshot.js';
 
 const REFRESH_SECONDS = Math.max(60, Number(process.env.QUEUE_REFRESH_SECONDS) || 1800);
 const POLL_MS = Math.max(200, Number(process.env.QUEUE_POLL_SECONDS || 1) * 1000);
@@ -35,11 +36,16 @@ const LIFECYCLE_SWEEP_MS = Math.max(
   60_000,
   Number(process.env.LISTING_LIFECYCLE_SWEEP_SECONDS || 600) * 1000,
 );
+const STATISTICS_REFRESH_MS = Math.max(
+  60_000,
+  Number(process.env.STATISTICS_REFRESH_SECONDS || 600) * 1000,
+);
 
 let stopping = false;
 let dispatching = false;
 let availabilityRunning = false;
 let lifecycleRunning = false;
+let statisticsRunning = false;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -147,6 +153,23 @@ async function executeClaim(task, label) {
   }
 }
 
+// The public statistics snapshot is a whole-corpus aggregation. Recomputing it
+// on the request path made whichever user arrived after the cache expired wait
+// for it, once per API replica. The worker owns the refresh instead; API
+// processes only read the stored row.
+async function statisticsTick() {
+  if (statisticsRunning || stopping) return;
+  statisticsRunning = true;
+  try {
+    const snapshot = await refreshStatisticsSnapshot();
+    console.log(`[flat:worker] statistics snapshot refreshed total=${snapshot.statistics?.total ?? 0}`);
+  } catch (error) {
+    console.warn('[flat:worker] statistics refresh failed:', error?.message ?? error);
+  } finally {
+    statisticsRunning = false;
+  }
+}
+
 async function workerLoop(role, shard = 0) {
   const label = role === 'telegram'
     ? 'telegram'
@@ -195,6 +218,7 @@ async function main() {
   });
   void availabilityTick();
   void lifecycleTick();
+  void statisticsTick();
 
   await dispatchTick();
 
@@ -213,11 +237,13 @@ async function main() {
   );
   const availabilityTimer = setInterval(() => void availabilityTick(), AVAILABILITY_SWEEP_MS);
   const lifecycleTimer = setInterval(() => void lifecycleTick(), LIFECYCLE_SWEEP_MS);
+  const statisticsTimer = setInterval(() => void statisticsTick(), STATISTICS_REFRESH_MS);
   dispatchTimer.unref?.();
   pruneTimer.unref?.();
   placesTimer.unref?.();
   availabilityTimer.unref?.();
   lifecycleTimer.unref?.();
+  statisticsTimer.unref?.();
 
   try {
     await Promise.all([
@@ -231,6 +257,7 @@ async function main() {
     clearInterval(placesTimer);
     clearInterval(availabilityTimer);
     clearInterval(lifecycleTimer);
+    clearInterval(statisticsTimer);
     await Promise.allSettled([closeElasticsearch(), closeDb()]);
   }
 }

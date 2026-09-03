@@ -4,7 +4,12 @@ import test from 'node:test';
 
 import {assertDatabaseReady} from '../src/infrastructure/database/schemaReady.js';
 import {pool} from '../src/infrastructure/database/listingRepository.js';
-import {computeStatisticsSnapshot} from '../src/support/statistics-snapshot.js';
+import {
+  clearStatisticsSnapshotCache,
+  computeStatisticsSnapshot,
+  getFullStatisticsSnapshot,
+  refreshStatisticsSnapshot,
+} from '../src/support/statistics-snapshot.js';
 
 const enabled = process.env.TEST_POSTGRES_SEARCH === '1';
 const SOURCE = 'statistics-snapshot-test';
@@ -79,9 +84,56 @@ test('full statistics snapshot reads canonical winners and preserves aggregate s
 
 test('statistics snapshot avoids request-time dedupe ranking', async () => {
   const source = await readFile(new URL('../src/support/statistics-snapshot.js', import.meta.url), 'utf8');
-  assert.match(source, /listing_public_feed_canonical/);
-  assert.match(source, /JOIN listing_public_feed_members AS m/);
+  assert.match(source, /FROM listing_public_feed_members AS m/);
+  // Winner selection is the persisted is_canonical flag (migration 040), not a
+  // request-time join or ranking.
+  assert.match(source, /WHERE m\.is_canonical/);
   assert.doesNotMatch(source, /PARTITION BY[^\n]*dedupe/i);
-  assert.match(source, /SNAPSHOT_TTL_MS/);
+  // The snapshot projects the fields it needs out of the payload instead of
+  // materializing every listing's JSONB.
+  assert.doesNotMatch(source, /^\s*l\.data,?$/m);
+  assert.match(source, /AS suspected_fake/);
+  // Scalars come from one aggregate pass, not a scan per counter.
+  assert.match(source, /COUNT\(\*\) FILTER \(WHERE by_agency = FALSE\)/);
+  assert.doesNotMatch(source, /SELECT COUNT\(\*\)::int FROM visible WHERE/);
+  assert.match(source, /SNAPSHOT_MEMO_MS/);
   assert.match(source, /inFlightSnapshot/);
+});
+
+test('serving statistics reads the stored snapshot instead of recomputing it', async () => {
+  const source = await readFile(new URL('../src/support/statistics-snapshot.js', import.meta.url), 'utf8');
+  const worker = await readFile(new URL('../src/worker.js', import.meta.url), 'utf8');
+  const migrationSql = await readFile(
+    new URL('../migrations/041_statistics_snapshot_store.sql', import.meta.url),
+    'utf8',
+  );
+
+  assert.match(migrationSql, /CREATE TABLE IF NOT EXISTS listing_statistics_snapshots/);
+  assert.match(source, /export async function refreshStatisticsSnapshot/);
+  assert.match(source, /FROM listing_statistics_snapshots/);
+  assert.match(source, /INSERT INTO listing_statistics_snapshots/);
+  // A slow replica must never overwrite a newer snapshot.
+  assert.match(source, /WHERE EXCLUDED\.generated_at > listing_statistics_snapshots\.generated_at/);
+  // Clients that already hold the current generation get an empty 304.
+  assert.match(source, /res\.set\('ETag', etag\)/);
+  assert.match(source, /if-none-match/);
+  // The refresh is the worker's job, on a timer, not a request's job.
+  assert.match(worker, /async function statisticsTick/);
+  assert.match(worker, /setInterval\(\(\) => void statisticsTick\(\), STATISTICS_REFRESH_MS\)/);
+});
+
+test('stored snapshot is served without recomputing', {skip: !enabled}, async () => {
+  await assertDatabaseReady();
+
+  const refreshed = await refreshStatisticsSnapshot();
+  assert.ok(refreshed.generatedAt);
+
+  // Drop the in-process memo so the next read has to come from the table.
+  clearStatisticsSnapshotCache();
+  const served = await getFullStatisticsSnapshot();
+
+  assert.equal(served.generatedAt, refreshed.generatedAt, 'a fresh stored snapshot must be reused as-is');
+  assert.equal(served.maxAgeDays, refreshed.maxAgeDays);
+  assert.equal(served.statistics.total, refreshed.statistics.total);
+  assert.equal(served.statistics.currency, 'USD');
 });

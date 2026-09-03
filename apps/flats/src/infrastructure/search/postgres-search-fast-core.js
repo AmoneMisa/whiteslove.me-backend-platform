@@ -1,26 +1,14 @@
 import {pool} from '../database/pool.js';
-// The general implementation remains the fallback for statistics, maps,
-// custom-source queries, free-text search and non-feed sort modes. Ordinary
-// structured UI filters are handled against listing_public_feed_members below.
+// This module owns two things: the exact single-listing lookup below, and the
+// filter contract (canUseFastFeedPath / buildMemberWhere) that the canonical
+// feed in ../../support/postgres-canonical-feed.js reads listing_public_feed_members
+// through. Everything else -- statistics, maps, custom-source queries,
+// free-text search and non-feed sort modes -- falls through to the general
+// implementation.
 import {searchPostgresListings as searchPostgresListingsGeneral} from './postgres-search-core.js';
 
 const MAX_AGE_DAYS = 14;
-const CURSOR_VERSION = 1;
 const EARTH_RADIUS_M = 6_371_000;
-
-function encodeCursor(value) {
-  return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
-}
-
-function decodeCursor(value) {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
-    return parsed?.v === CURSOR_VERSION ? parsed : null;
-  } catch {
-    return null;
-  }
-}
 
 function hasValue(value) {
   return value !== null && value !== undefined && value !== '';
@@ -344,123 +332,9 @@ async function searchExactListing({filters, countries}) {
   };
 }
 
-async function searchDefaultFeed({filters, countries, rates}) {
-  const startedAt = performance.now();
-  const {params: baseParams, where} = buildMemberWhere({
-    filters,
-    countries,
-    maxAgeDays: filters.maxAgeDays,
-    rates,
-  });
-
-  const pageParams = [...baseParams];
-  const addPage = (value) => {
-    pageParams.push(value);
-    return `$${pageParams.length}`;
-  };
-
-  const sort = filters.sort || 'newest';
-  const cursor = decodeCursor(filters.cursor);
-  const pageWhere = [];
-  let useCursor = false;
-
-  if (cursor && cursor.sort === sort && cursor.id != null) {
-    const idParam = addPage(String(cursor.id));
-    if (cursor.t) {
-      const timeParam = addPage(cursor.t);
-      if (sort === 'newest') {
-        pageWhere.push(`(d.created_at < ${timeParam}::timestamptz OR (d.created_at = ${timeParam}::timestamptz AND d.db_id < ${idParam}::bigint) OR d.created_at IS NULL)`);
-      } else {
-        pageWhere.push(`(d.created_at > ${timeParam}::timestamptz OR (d.created_at = ${timeParam}::timestamptz AND d.db_id > ${idParam}::bigint) OR d.created_at IS NULL)`);
-      }
-    } else if (sort === 'newest') {
-      pageWhere.push(`d.created_at IS NULL AND d.db_id < ${idParam}::bigint`);
-    } else {
-      pageWhere.push(`d.created_at IS NULL AND d.db_id > ${idParam}::bigint`);
-    }
-    useCursor = true;
-  }
-  const cursorCount = Number(cursor?.c);
-  const hasCursorCount = useCursor && Number.isSafeInteger(cursorCount) && cursorCount >= 0;
-
-  const limit = Math.max(1, Math.min(Number(filters.limit) || 40, 60));
-  const fetchLimit = limit + 1;
-  const limitParam = addPage(fetchLimit);
-  const offset = useCursor ? 0 : Math.max(0, Number(filters.offset) || 0);
-  const offsetParam = addPage(offset);
-  const orderBy = sort === 'oldest'
-    ? 'd.created_at ASC NULLS LAST, d.db_id ASC'
-    : 'd.created_at DESC NULLS LAST, d.db_id DESC';
-
-  const baseSql = `
-    WITH deduped AS MATERIALIZED (
-      SELECT DISTINCT ON (m.dedupe_key)
-        m.listing_id AS db_id,
-        m.created_at
-      FROM listing_public_feed_members m
-      WHERE ${where}
-      ORDER BY m.dedupe_key, m.created_at DESC NULLS LAST, m.listing_id DESC
-    ),
-    page AS MATERIALIZED (
-      SELECT d.db_id, d.created_at
-      FROM deduped d
-      ${pageWhere.length ? `WHERE ${pageWhere.join('\n        AND ')}` : ''}
-      ORDER BY ${orderBy}
-      LIMIT ${limitParam}
-      OFFSET ${offsetParam}
-    )
-  `;
-  const pageSql = hasCursorCount
-    ? `${baseSql}
-      SELECT p.db_id, p.created_at, l.data
-      FROM page p
-      LEFT JOIN listings l ON l.id = p.db_id
-      ORDER BY ${orderBy.replaceAll('d.', 'p.')}
-    `
-    : `${baseSql}
-      SELECT totals.count, p.db_id, p.created_at, l.data
-      FROM (SELECT COUNT(*)::int AS count FROM deduped) totals
-      LEFT JOIN page p ON TRUE
-      LEFT JOIN listings l ON l.id = p.db_id
-      ORDER BY ${orderBy.replaceAll('d.', 'p.')}
-    `;
-
-  const pageTimed = await timedQuery(pageSql, pageParams);
-
-  const pageRows = pageTimed.result.rows.filter((row) => row.db_id != null);
-  const hasMore = pageRows.length > limit;
-  const rows = pageRows.slice(0, limit);
-  const listings = rows.map((row) => row.data || {});
-  const count = hasCursorCount
-    ? cursorCount
-    : (Number(pageTimed.result.rows[0]?.count) || 0);
-
-  let nextCursor = null;
-  if (hasMore) {
-    const last = rows[rows.length - 1];
-    const time = last.created_at instanceof Date
-      ? last.created_at.toISOString()
-      : (last.created_at ? new Date(last.created_at).toISOString() : null);
-    nextCursor = encodeCursor({v: CURSOR_VERSION, sort, t: time, id: String(last.db_id), c: count});
-  }
-
-  return {
-    count,
-    listings,
-    nextCursor,
-    countMs: 0,
-    pageMs: pageTimed.ms,
-    queryMs: Math.round((performance.now() - startedAt) * 10) / 10,
-    searchPath: 'postgres-feed-members',
-  };
-}
-
 export async function searchPostgresListings(args) {
   if (canUseFastListingPath(args.filters, args.countries, args.searchMatches)) {
     return searchExactListing(args);
-  }
-  if (canUseFastFeedPath(args.filters, args.searchMatches)) {
-    return searchDefaultFeed(args);
   }
   return searchPostgresListingsGeneral(args);
 }

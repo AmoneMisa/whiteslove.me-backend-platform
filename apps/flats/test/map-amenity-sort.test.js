@@ -80,7 +80,7 @@ test('coordinate bbox guard rejects an offshore/out-of-city point', () => {
   assert.equal(coordinateInsideBbox(46.20, 31.05, odesaLike, 0.02), false);
 });
 
-test('sorting covers dates, common-currency price and alphabetic directions', () => {
+test('sorting covers dates and common-currency price', () => {
   const rows = [
     { id: 'b', title: 'Бета', price: 4150, currency: 'UAH', createdAt: '2026-08-20T00:00:00Z' },
     { id: 'a', title: 'Альфа', price: 200, currency: 'USD', createdAt: '2026-08-21T00:00:00Z' },
@@ -92,6 +92,9 @@ test('sorting covers dates, common-currency price and alphabetic directions', ()
   assert.deepEqual(sortListings([...rows], 'oldest', rates).map((x) => x.id), ['z', 'b', 'a']);
   assert.deepEqual(sortListings([...rows], 'priceAsc', rates).map((x) => x.id), ['b', 'a', 'z']);
   assert.deepEqual(sortListings([...rows], 'priceDesc', rates).map((x) => x.id), ['a', 'b', 'z']);
-  assert.deepEqual(sortListings([...rows], 'titleAsc', rates).map((x) => x.id), ['a', 'b', 'z']);
-  assert.deepEqual(sortListings([...rows], 'titleDesc', rates).map((x) => x.id), ['z', 'b', 'a']);
+  // Title ordering was removed. A retired (or otherwise unknown) sort name must
+  // degrade to the default order rather than throwing at an older client.
+  const newest = sortListings([...rows], 'newest', rates).map((x) => x.id);
+  assert.deepEqual(sortListings([...rows], 'titleAsc', rates).map((x) => x.id), newest);
+  assert.deepEqual(sortListings([...rows], 'titleDesc', rates).map((x) => x.id), newest);
 });

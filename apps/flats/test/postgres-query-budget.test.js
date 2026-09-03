@@ -11,6 +11,12 @@ test('map feed uses one narrow PostgreSQL query instead of listing-page fanout',
   assert.match(source, /COUNT\(\*\)::int AS total_count/u);
   assert.match(source, /COUNT\(\*\) FILTER/u);
   assert.match(source, /LIMIT \$\{limitParam\}/u);
+  // The marker photo is a jsonb walk over the payload. It belongs after the
+  // LIMIT, so it runs for the transported points rather than for every row in
+  // the filtered set.
+  assert.match(source, /LEFT JOIN listings AS payload ON payload\.id = points\.db_id/u);
+  assert.match(source, /NULLIF\(BTRIM\(payload\.data->>'photo'\), ''\)/u);
+  assert.doesNotMatch(source, /l\.data->>'photo'/u);
   assert.doesNotMatch(source, /searchPostgresListings/u);
   assert.doesNotMatch(source, /attachMarketComparisons/u);
   assert.doesNotMatch(source, /do \{/u);
@@ -30,4 +36,18 @@ test('cursor pages carry total and use limit plus one instead of repeated exact 
   assert.match(source, /encodeCursor\(\{ v: CURSOR_VERSION, sort: context\.sort, t: time, id: String\(last\.db_id\), c: count \}\)/u);
   assert.match(wrapper, /prepareCursorForScope/u);
   assert.match(wrapper, /attachScopeToCursor/u);
+});
+
+test('title ordering no longer reaches SQL or its index', async () => {
+  const search = await readFile(new URL('../src/infrastructure/search/postgres-search-core.js', import.meta.url), 'utf8');
+  const routes = await readFile(new URL('../src/routes/listing-routes.js', import.meta.url), 'utf8');
+  const migrationSql = await readFile(new URL('../migrations/042_drop_title_sort_index.sql', import.meta.url), 'utf8');
+
+  // Title was the only sort the public-feed read model could not serve, so it
+  // fell through to the general path and sorted the whole matching set.
+  assert.doesNotMatch(routes, /'titleAsc'|'titleDesc'/u);
+  assert.doesNotMatch(search, /LOWER\(l\.title\)/u);
+  // An unknown sort must still resolve to the default order for older clients.
+  assert.match(search, /case 'newest': default:/u);
+  assert.match(migrationSql, /DROP INDEX IF EXISTS listings_feed_title_idx/u);
 });

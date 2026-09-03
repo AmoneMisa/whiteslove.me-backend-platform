@@ -158,6 +158,7 @@ test('property identity stays on the persisted indexed read path', async () => {
   const sql = await migration('020_property_identity_unification.sql');
   const search = await readFile(new URL('../src/infrastructure/search/postgres-search-core.js', import.meta.url), 'utf8');
   const fastSearch = await readFile(new URL('../src/infrastructure/search/postgres-search-fast-core.js', import.meta.url), 'utf8');
+  const canonicalFeed = await readFile(new URL('../src/support/postgres-canonical-feed.js', import.meta.url), 'utf8');
 
   assert.match(sql, /propertyClusterId/);
   assert.match(sql, /THEN 'cluster:' \|\| property_cluster_id/);
@@ -165,7 +166,10 @@ test('property identity stays on the persisted indexed read path', async () => {
   assert.match(sql, /cross:content:/);
   assert.doesNotMatch(sql, /cross:photos:/);
   assert.match(search, /PARTITION BY filtered\.dedupe_key/);
-  assert.match(fastSearch, /DISTINCT ON \(m\.dedupe_key\)/);
+  // The feed resolves a dedupe group to its winner at write time, so the read
+  // path selects the persisted winner instead of ranking by dedupe_key.
+  assert.match(canonicalFeed, /m\.is_canonical/);
+  assert.doesNotMatch(canonicalFeed, /listing_property_clusters/);
   assert.doesNotMatch(search, /listing_property_clusters/);
   assert.doesNotMatch(fastSearch, /listing_property_clusters/);
 });

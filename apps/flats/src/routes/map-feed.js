@@ -89,20 +89,6 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
         l.lat AS lat_value,
         l.lng AS lng_value,
         l.room_only,
-        COALESCE(
-          NULLIF(BTRIM(l.data->>'photo'), ''),
-          CASE
-            WHEN jsonb_typeof(l.data->'photos'->0) = 'string'
-              THEN NULLIF(BTRIM(l.data->'photos'->>0), '')
-            WHEN jsonb_typeof(l.data->'photos'->0) = 'object'
-              THEN COALESCE(
-                NULLIF(BTRIM(l.data->'photos'->0->>'link'), ''),
-                NULLIF(BTRIM(l.data->'photos'->0->>'url'), ''),
-                NULLIF(BTRIM(l.data->'photos'->0->>'src'), '')
-              )
-            ELSE NULL
-          END
-        ) AS photo,
         ${dedupeKey} AS dedupe_key
       ${context.from}
       WHERE ${where}
@@ -121,7 +107,27 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
         )::int AS point_count
       FROM visible
     )
-    SELECT points.*, totals.total_count, totals.point_count
+    SELECT
+      points.*,
+      totals.total_count,
+      totals.point_count,
+      -- Resolved after the LIMIT: the marker payload only ever needs a photo
+      -- for the points actually transported, while the filtered set behind it
+      -- can be the whole country.
+      COALESCE(
+        NULLIF(BTRIM(payload.data->>'photo'), ''),
+        CASE
+          WHEN jsonb_typeof(payload.data->'photos'->0) = 'string'
+            THEN NULLIF(BTRIM(payload.data->'photos'->>0), '')
+          WHEN jsonb_typeof(payload.data->'photos'->0) = 'object'
+            THEN COALESCE(
+              NULLIF(BTRIM(payload.data->'photos'->0->>'link'), ''),
+              NULLIF(BTRIM(payload.data->'photos'->0->>'url'), ''),
+              NULLIF(BTRIM(payload.data->'photos'->0->>'src'), '')
+            )
+          ELSE NULL
+        END
+      ) AS photo
     FROM totals
     LEFT JOIN LATERAL (
       SELECT visible.*
@@ -131,6 +137,7 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
       ORDER BY visible.created_at DESC NULLS LAST, visible.db_id DESC
       LIMIT ${limitParam}
     ) AS points ON TRUE
+    LEFT JOIN listings AS payload ON payload.id = points.db_id
   `;
 
   const { rows } = await pool.query(sql, params);

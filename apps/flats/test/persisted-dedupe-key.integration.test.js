@@ -140,7 +140,8 @@ test('listing reads use persisted dedupe keys while stats preserve exact visibil
 
   assert.match(search, /dedupeEnabled \? 'l\.dedupe_key'/);
   assert.match(search, /PARTITION BY filtered\.dedupe_key/);
-  assert.match(search, /SELECT COUNT\(\*\)::int FROM visible/);
+  assert.match(search, /COUNT\(\*\)::int AS total/);
+  assert.match(search, /\(SELECT total FROM totals\) AS total/);
   assert.match(search, /duplicatesRejected/);
   assert.doesNotMatch(search, /function listingDedupeSql/);
   assert.doesNotMatch(search, /function olxPhotoSql/);
