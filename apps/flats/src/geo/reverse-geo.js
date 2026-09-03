@@ -96,10 +96,13 @@ function canUseReverseHouseNumber(listing) {
 }
 
 function rejectGeneratedCoordinate(listing, reason) {
-  // Never erase a marketplace/source pin or a verified package anchor because a
-  // third-party reverse service disagrees. External forward-geocode guesses are
-  // safe to reject and retry later with broader/canonical evidence.
-  if (listing.locationProvider !== 'nominatim') return false;
+  // Marketplace/source coordinates and canonical geo-catalog anchors have
+  // stronger provenance than a reverse service and are never erased here.
+  // Everything else (Nominatim, learned Nominatim results, legacy HTTP/cache
+  // placement, spatial inference) is generated evidence and may be rejected.
+  if (listing.locationProvider === 'geoCatalog') return false;
+  if (['coordinates', 'coordinates-validated'].includes(listing.locationSource)) return false;
+
   listing.locationRejected = reason;
   listing.lat = null;
   listing.lng = null;
