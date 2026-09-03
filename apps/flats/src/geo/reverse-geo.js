@@ -1,16 +1,12 @@
-// Administrative location from coordinates.
+// Administrative location and best-effort address from coordinates.
 //
 // The text resolver only knows what a post spells out, so listings routinely
-// arrive with a price, a photo and no idea which district they are in. Once a
-// listing has coordinates, Nominatim's reverse endpoint answers the whole
-// hierarchy — mahalla, district, city, country — in one cached call.
-//
-// District values feed a filter dropdown, so they are only accepted when the
-// project dictionary recognises them; a raw OSM string would create a filter
-// option nothing else in the system uses. Microdistrict is display-only and may
-// keep the OSM name.
+// arrive with useful geo anchors but no postal address. Reverse geocoding fills
+// the hierarchy and may provide a display address, while preserving provenance
+// so an inferred nearby road/house is never confused with a source-stated one.
 
 import { cacheGet, cacheSet } from '../support/cache.js';
+import { canonicalCityName } from './countries.js';
 import { matchDictionaryEntities } from './location-dictionary-resolver.js';
 
 const REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse';
@@ -20,8 +16,9 @@ const MISS_TTL_MS = 24 * 60 * 60 * 1000;
 const MIN_INTERVAL_MS = 1100;
 const LOOKUPS_PER_RUN = Number(process.env.REVERSE_GEOCODE_BUDGET) || 40;
 // ~11 m: two listings in one building share an answer, and the cache actually
-// gets hits instead of a fresh key per jittered coordinate.
+// gets hits instead of a fresh key per nearby coordinate.
 const KEY_PRECISION = 4;
+const ROAD_SAFE_PRECISIONS = new Set(['building', 'street', 'complex', 'station', 'reference']);
 
 let lastCallAt = 0;
 
@@ -41,6 +38,14 @@ function cleanPlace(value) {
     .replace(/\s*(?:махалл[яи]|mahalla|MFY|мфй|район[а-яё]*|tumani|district|shahri|city)\s*$/iu, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+function normalizedPlace(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
 async function fetchReverse(lat, lng) {
@@ -77,23 +82,102 @@ export async function reverseGeocode(lat, lng) {
   }
 }
 
+function normalizeSourceCoordinateConfidence(listing) {
+  // Raw marketplace pins do not carry a documented accuracy radius in our
+  // normalized source model. Treat the generic `coordinates` marker as an
+  // approximate point until an exact address independently corroborates it.
+  // Explicit semantic precision from a stronger upstream path is preserved.
+  if (listing.locationSource !== 'coordinates') return;
+  if (listing.locationPrecision && listing.locationPrecision !== 'coordinates') return;
+  listing.locationPrecision = 'broad';
+  listing.locationApproximate = true;
+  listing.locationAccuracyM = Number.isFinite(Number(listing.locationAccuracyM))
+    ? Number(listing.locationAccuracyM)
+    : null;
+}
+
+function canUseReverseHouseNumber(listing) {
+  // A reverse service returns the nearest building number to any point. Only a
+  // building-level point backed by the listing's own exact address may expose a
+  // house number. A marketplace pin, ЖК centroid, metro, POI or neighbourhood
+  // point must never manufacture an apartment's building number.
+  if (listing.locationApproximate !== false) return false;
+  if (listing.locationPrecision !== 'building') return false;
+  if (listing.locationSource !== 'address' && listing.locationSource !== 'coordinates-validated') return false;
+  return Boolean(listing.houseNumber || listing.addressPrecision === 'building');
+}
+
+function canUseReverseRoad(listing) {
+  // A road is useful for a specific building/street/ЖК/station/reference anchor,
+  // but it is arbitrary at a district/neighbourhood centroid or an unverified
+  // marketplace pin. Those broader points are used only for admin enrichment.
+  return ROAD_SAFE_PRECISIONS.has(String(listing.locationPrecision || ''));
+}
+
+function rejectGeneratedCoordinate(listing, reason) {
+  // Marketplace/source coordinates and canonical geo-catalog anchors have
+  // stronger provenance than a reverse service and are never erased here.
+  // Everything else (Nominatim, learned Nominatim results, legacy HTTP/cache
+  // placement, spatial inference) is generated evidence and may be rejected.
+  if (listing.locationProvider === 'geoCatalog') return false;
+  if (['coordinates', 'coordinates-validated'].includes(listing.locationSource)) return false;
+
+  listing.locationRejected = reason;
+  listing.lat = null;
+  listing.lng = null;
+  listing.locationSource = null;
+  listing.locationAccuracyM = null;
+  listing.locationPrecision = null;
+  listing.locationApproximate = true;
+  listing.locationCanonical = null;
+  listing.locationRole = null;
+  return true;
+}
+
+function knownCityMismatch(listing, country, address, matched) {
+  const countryCode = String(country?.code || '').toUpperCase();
+  const expected = canonicalCityName(countryCode, listing?.city || '');
+  const reverse = canonicalCityName(
+    countryCode,
+    address?.city || address?.town || matched?.city || '',
+  );
+  if (!expected || !reverse || normalizedPlace(expected) === normalizedPlace(reverse)) return null;
+
+  // A listing can legitimately be stored under a metro/search city while its
+  // physical point is in a neighbouring suburb (e.g. Odesa/Fontanka). Reject a
+  // generated point only when reverse geocoding identifies another known target
+  // city of the same country. This catches gross Tashkent→Samarkand-style errors
+  // without discarding valid metropolitan-edge coordinates.
+  const knownCities = new Set([
+    ...(country?.crawlCities || []),
+    ...(country?.cities || []),
+  ].map((city) => normalizedPlace(canonicalCityName(countryCode, city))).filter(Boolean));
+
+  return knownCities.has(normalizedPlace(expected)) && knownCities.has(normalizedPlace(reverse))
+    ? { expected, reverse }
+    : null;
+}
+
+function needsReverse(listing) {
+  if (!Number.isFinite(listing?.lat) || !Number.isFinite(listing?.lng)) return false;
+  if (listing.locationSource === 'city' || listing.locationPrecision === 'city') return false;
+  return !listing.district
+    || !listing.microdistrict
+    || !listing.city
+    || !listing.country
+    || !listing.address;
+}
+
 /**
- * Fills country/city/district/microdistrict for listings that already have
- * coordinates. Forward placement and city fallbacks are owned by the geocoding
- * orchestration / geo-catalog, never by the parsing lexicon.
+ * Fills country/city/district/microdistrict and, when safe, an explicitly
+ * inferred road/address for listings that already have coordinates.
  */
 export async function applyReverseGeo(listings, country, limit = LOOKUPS_PER_RUN) {
   if (!Array.isArray(listings)) return 0;
   const countryCode = String(country?.code || '').toUpperCase();
 
-  const candidates = listings.filter(
-    (listing) =>
-      Number.isFinite(listing.lat) &&
-      Number.isFinite(listing.lng) &&
-      // A city-centre placement describes the city, nothing finer.
-      (listing.locationAccuracyM ?? Number.POSITIVE_INFINITY) <= 2000 &&
-      (!listing.district || !listing.microdistrict || !listing.city || !listing.country),
-  );
+  for (const listing of listings) normalizeSourceCoordinateConfidence(listing);
+  const candidates = listings.filter(needsReverse);
 
   let spent = 0;
   let filled = 0;
@@ -105,13 +189,14 @@ export async function applyReverseGeo(listings, country, limit = LOOKUPS_PER_RUN
     const address = await reverseGeocode(listing.lat, listing.lng);
     if (!address) continue;
 
-    // A coordinate that reverse-geocodes to a different country than the
-    // crawl's own context is almost certainly a bad/mismatched forward-geocode
-    // result upstream (e.g. a district name ambiguously matched abroad), not a
-    // legitimate cross-border listing. Trusting it produced nonsense like a
-    // Tashkent listing's address showing an Afghan mountain pass's road name.
+    // A generated point that reverse-geocodes to the wrong country is discarded
+    // instead of being shown with false precision. Source/catalog coordinates are
+    // preserved but never enriched from the conflicting reverse result.
     if (countryCode && address.country_code && String(address.country_code).toUpperCase() !== countryCode) {
       console.warn(`[geocode] reverse geo country mismatch for listing ${listing.id}: expected ${countryCode}, got ${String(address.country_code).toUpperCase()} at ${listing.lat},${listing.lng}`);
+      if (!rejectGeneratedCoordinate(listing, 'country-mismatch')) {
+        listing.locationValidationWarning = 'country-mismatch';
+      }
       continue;
     }
 
@@ -128,6 +213,14 @@ export async function applyReverseGeo(listings, country, limit = LOOKUPS_PER_RUN
       .join(', ');
 
     const matched = matchDictionaryEntities(parts, countryCode, listing.city || undefined);
+    const cityMismatch = knownCityMismatch(listing, country, address, matched);
+    if (cityMismatch) {
+      console.warn(`[geocode] reverse geo city mismatch for listing ${listing.id}: expected ${cityMismatch.expected}, got ${cityMismatch.reverse} at ${listing.lat},${listing.lng}`);
+      if (!rejectGeneratedCoordinate(listing, 'city-mismatch')) {
+        listing.locationValidationWarning = 'city-mismatch';
+      }
+      continue;
+    }
 
     let changed = false;
     if (!listing.country && address.country_code) {
@@ -150,9 +243,16 @@ export async function applyReverseGeo(listings, country, limit = LOOKUPS_PER_RUN
         changed = true;
       }
     }
-    if (!listing.address && address.road) {
-      listing.address = [address.road, address.house_number].filter(Boolean).join(' ');
+    if (!listing.address && address.road && canUseReverseRoad(listing)) {
+      const houseNumber = canUseReverseHouseNumber(listing) ? address.house_number : null;
+      listing.address = [address.road, houseNumber].filter(Boolean).join(' ');
+      listing.addressSource = 'reverseGeocode';
+      listing.addressApproximate = !houseNumber;
+      listing.addressPrecision = houseNumber ? 'building' : 'street';
       changed = true;
+    } else if (listing.address) {
+      listing.addressSource ??= 'source';
+      listing.addressApproximate ??= listing.addressPrecision !== 'building';
     }
 
     if (changed) {
@@ -161,6 +261,6 @@ export async function applyReverseGeo(listings, country, limit = LOOKUPS_PER_RUN
     }
   }
 
-  if (filled) console.log(`[geocode] admin location from coordinates: ${filled}/${candidates.length}`);
+  if (filled) console.log(`[geocode] admin/address from coordinates: ${filled}/${candidates.length}`);
   return filled;
 }

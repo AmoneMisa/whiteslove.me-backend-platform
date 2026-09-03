@@ -47,6 +47,22 @@ test('explicit listing prose overrides a weak malformed legacy address', () => {
   assert.equal(listing.houseNumber, '7');
   assert.equal(listing.building, null);
   assert.equal(listing.address, 'Лабораторний провулок 7');
+  assert.equal(listing.addressSource, 'parsed');
+});
+
+test('weak malformed legacy address is dropped when no real replacement exists', () => {
+  const listing = {
+    address: '7 Продаж видової квартири в ЖК',
+    title: 'Видова квартира',
+    description: 'Площа 63 м2. Телефон +380 50 123 45 67.',
+  };
+
+  applyStructuredAddressFields(listing);
+
+  assert.equal(listing.address, null);
+  assert.equal(listing.houseNumber, null);
+  assert.equal(listing.addressSource, null);
+  assert.equal(listing.addressApproximate, true);
 });
 
 test('unrelated prices and phones do not become house numbers', () => {

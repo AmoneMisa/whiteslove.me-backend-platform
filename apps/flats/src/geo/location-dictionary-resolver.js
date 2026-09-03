@@ -137,7 +137,12 @@ function applyCentralAsiaLocations(result, central) {
   if (central.city) result.city ||= central.city;
 
   for (const item of central.matches || []) {
-    result.locationEntities.push({ type: item.type, name: item.name, parent: item.parent || null });
+    result.locationEntities.push({
+      type: item.type,
+      name: item.name,
+      parent: item.parent || null,
+      role: item.role || 'mentioned',
+    });
 
     if (item.type === 'district' && !result.district) result.district = item.name;
     else if (item.type === 'microdistrict' && !result.microdistrict) result.microdistrict = item.name;

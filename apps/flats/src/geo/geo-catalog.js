@@ -14,6 +14,7 @@ const CITY_CANONICALIZERS = Object.freeze({
 const SOURCE_BY_TYPE = Object.freeze({
   residential_complex: 'residentialComplex',
   metro: 'metro',
+  poi: 'poi',
   microdistrict: 'microdistrict',
   mahalla: 'localArea',
   local_area: 'localArea',
@@ -23,9 +24,23 @@ const SOURCE_BY_TYPE = Object.freeze({
   city: 'city',
 });
 
+const PRECISION_BY_TYPE = Object.freeze({
+  residential_complex: 'complex',
+  metro: 'station',
+  poi: 'reference',
+  microdistrict: 'neighborhood',
+  mahalla: 'neighborhood',
+  local_area: 'neighborhood',
+  suburb: 'locality',
+  settlement: 'locality',
+  district: 'district',
+  city: 'city',
+});
+
 const DEFAULT_ACCURACY_M = Object.freeze({
   residential_complex: 300,
-  metro: 250,
+  metro: 500,
+  poi: 700,
   microdistrict: 600,
   mahalla: 700,
   local_area: 800,
@@ -35,12 +50,30 @@ const DEFAULT_ACCURACY_M = Object.freeze({
   city: 8000,
 });
 
+const EXACT_TYPE_PRIORITY = Object.freeze({
+  residential_complex: 10,
+  poi: 20,
+  metro: 30,
+});
+
 const BROAD_TYPE_PRIORITY = Object.freeze({
   microdistrict: 10,
   mahalla: 20,
   local_area: 30,
   suburb: 40,
   settlement: 40,
+  district: 90,
+});
+
+const NEARBY_TYPE_PRIORITY = Object.freeze({
+  residential_complex: 10,
+  poi: 20,
+  metro: 30,
+  microdistrict: 40,
+  mahalla: 50,
+  local_area: 60,
+  suburb: 70,
+  settlement: 70,
   district: 90,
 });
 
@@ -73,9 +106,7 @@ function entityType(value) {
 function resolve(countryCode, city, type, canonical) {
   const normalizedType = entityType(type);
   const name = text(canonical);
-  // Streets/addresses remain external-geocoder responsibilities. POIs are not
-  // used as direct placement anchors because listing text usually means “near”.
-  if (!name || normalizedType === 'street' || normalizedType === 'poi') return null;
+  if (!name || normalizedType === 'street') return null;
   return resolveLexiconGeoEntity({
     country: countryCode,
     city: normalizedType === 'city' ? undefined : city,
@@ -84,12 +115,37 @@ function resolve(countryCode, city, type, canonical) {
   });
 }
 
-function apply(listing, entity) {
+function normalizedRole(value) {
+  return value === 'primary' || value === 'nearby' ? value : 'mentioned';
+}
+
+function roleFor(listing, type, canonical) {
+  const normalizedType = entityType(type);
+  const name = text(canonical)?.toLocaleLowerCase();
+  if (!name) return 'mentioned';
+  const match = (listing?.locationEntities || []).find((item) =>
+    entityType(item?.type) === normalizedType
+      && text(item?.name)?.toLocaleLowerCase() === name,
+  );
+  return normalizedRole(match?.role);
+}
+
+function apply(listing, entity, input = {}) {
   if (!entity?.center || !Number.isFinite(entity.center.lat) || !Number.isFinite(entity.center.lng)) return false;
+  const role = normalizedRole(input.role);
+  const intrinsicAccuracyM = entity.accuracyM ?? DEFAULT_ACCURACY_M[entity.type] ?? 1000;
+  const relationshipAccuracyM = role === 'nearby' ? 900 : 0;
+
   listing.lat = entity.center.lat;
   listing.lng = entity.center.lng;
-  listing.locationSource = SOURCE_BY_TYPE[entity.type] || 'geoCatalog';
-  listing.locationAccuracyM = entity.accuracyM ?? DEFAULT_ACCURACY_M[entity.type] ?? 1000;
+  listing.locationSource = role === 'nearby' ? 'nearby' : (SOURCE_BY_TYPE[entity.type] || 'geoCatalog');
+  listing.locationAccuracyM = Math.max(intrinsicAccuracyM, relationshipAccuracyM);
+  listing.locationPrecision = PRECISION_BY_TYPE[entity.type] || 'reference';
+  listing.locationApproximate = true;
+  listing.locationCanonical = input.canonical || entity.canonicalName || null;
+  listing.locationRole = role;
+  listing.locationProvider = 'geoCatalog';
+  listing.locationGeoEntityId = entity.id || null;
   return true;
 }
 
@@ -117,16 +173,30 @@ export function applyGeoCatalogExactAnchor(listing, country) {
   if (!countryCode || !city) return false;
 
   const inputs = [
-    { type: 'residential_complex', canonical: listing.residenceComplex },
-    { type: 'metro', canonical: listing.metro },
+    {
+      type: 'residential_complex',
+      canonical: listing.residenceComplex,
+      role: roleFor(listing, 'residential_complex', listing.residenceComplex),
+    },
     ...(Array.isArray(listing.locationEntities) ? listing.locationEntities : [])
-      .map((entity) => ({ type: entityType(entity?.type), canonical: entity?.name }))
-      .filter((input) => ['residential_complex', 'metro'].includes(input.type)),
-  ];
+      .map((entity) => ({
+        type: entityType(entity?.type),
+        canonical: entity?.name,
+        role: normalizedRole(entity?.role),
+      }))
+      .filter((input) => Object.hasOwn(EXACT_TYPE_PRIORITY, input.type)),
+    {
+      type: 'metro',
+      canonical: listing.metro,
+      role: roleFor(listing, 'metro', listing.metro),
+    },
+  ]
+    .filter((input) => input.role !== 'nearby')
+    .sort((a, b) => EXACT_TYPE_PRIORITY[a.type] - EXACT_TYPE_PRIORITY[b.type]);
 
   for (const input of uniqueInputs(inputs)) {
     const entity = resolve(countryCode, city, input.type, input.canonical);
-    if (entity && apply(listing, entity)) return true;
+    if (entity && apply(listing, entity, input)) return true;
   }
   return false;
 }
@@ -137,23 +207,70 @@ export function applyGeoCatalogBroadAnchor(listing, country) {
   if (!countryCode || !city) return false;
 
   const locationEntities = (Array.isArray(listing.locationEntities) ? listing.locationEntities : [])
-    .map((entity) => ({ type: entityType(entity?.type), canonical: entity?.name }))
-    .filter((input) => Object.hasOwn(BROAD_TYPE_PRIORITY, input.type))
+    .map((entity) => ({
+      type: entityType(entity?.type),
+      canonical: entity?.name,
+      role: normalizedRole(entity?.role),
+    }))
+    .filter((input) => Object.hasOwn(BROAD_TYPE_PRIORITY, input.type) && input.role !== 'nearby')
     .sort((a, b) => BROAD_TYPE_PRIORITY[a.type] - BROAD_TYPE_PRIORITY[b.type]);
 
   const inputs = [
-    { type: 'microdistrict', canonical: listing.microdistrict },
+    {
+      type: 'microdistrict',
+      canonical: listing.microdistrict,
+      role: roleFor(listing, 'microdistrict', listing.microdistrict),
+    },
     ...locationEntities,
-    { type: 'local_area', canonical: listing.area || listing.kvartal },
-    ...(listing.localAreas || []).map((canonical) => ({ type: 'local_area', canonical })),
-    ...(listing.suburbs || []).map((canonical) => ({ type: 'suburb', canonical })),
-    ...(listing.settlements || []).map((canonical) => ({ type: 'settlement', canonical })),
-    { type: 'district', canonical: listing.district },
-  ];
+    {
+      type: 'local_area',
+      canonical: listing.area || listing.kvartal,
+      role: roleFor(listing, 'local_area', listing.area || listing.kvartal),
+    },
+    ...(listing.localAreas || []).map((canonical) => ({
+      type: 'local_area', canonical, role: roleFor(listing, 'local_area', canonical),
+    })),
+    ...(listing.suburbs || []).map((canonical) => ({
+      type: 'suburb', canonical, role: roleFor(listing, 'suburb', canonical),
+    })),
+    ...(listing.settlements || []).map((canonical) => ({
+      type: 'settlement', canonical, role: roleFor(listing, 'settlement', canonical),
+    })),
+    {
+      type: 'district',
+      canonical: listing.district,
+      role: roleFor(listing, 'district', listing.district),
+    },
+  ].filter((input) => input.role !== 'nearby');
 
   for (const input of uniqueInputs(inputs)) {
     const entity = resolve(countryCode, city, input.type, input.canonical);
-    if (entity && apply(listing, entity)) return true;
+    if (entity && apply(listing, entity, input)) return true;
+  }
+  return false;
+}
+
+export function applyGeoCatalogNearbyAnchor(listing, country) {
+  if (!listing || hasCoordinates(listing)) return false;
+  const { countryCode, city } = canonicalContext(listing, country);
+  if (!countryCode || !city) return false;
+
+  const inputs = (Array.isArray(listing.locationEntities) ? listing.locationEntities : [])
+    .map((entity) => ({
+      type: entityType(entity?.type),
+      canonical: entity?.name,
+      role: normalizedRole(entity?.role),
+    }))
+    .filter((input) => input.role === 'nearby' && Object.hasOwn(NEARBY_TYPE_PRIORITY, input.type))
+    .sort((a, b) => NEARBY_TYPE_PRIORITY[a.type] - NEARBY_TYPE_PRIORITY[b.type]);
+
+  if (listing.landmark) {
+    inputs.push({ type: 'poi', canonical: listing.landmark, role: 'nearby' });
+  }
+
+  for (const input of uniqueInputs(inputs)) {
+    const entity = resolve(countryCode, city, input.type, input.canonical);
+    if (entity && apply(listing, entity, input)) return true;
   }
   return false;
 }
@@ -163,5 +280,5 @@ export function applyGeoCatalogCityFallback(listing, country) {
   const { countryCode, city } = canonicalContext(listing, country);
   if (!countryCode || !city) return false;
   const entity = resolve(countryCode, city, 'city', city);
-  return Boolean(entity && apply(listing, entity));
+  return Boolean(entity && apply(listing, entity, { type: 'city', canonical: city, role: 'mentioned' }));
 }
