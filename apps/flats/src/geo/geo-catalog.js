@@ -50,6 +50,12 @@ const DEFAULT_ACCURACY_M = Object.freeze({
   city: 8000,
 });
 
+const EXACT_TYPE_PRIORITY = Object.freeze({
+  residential_complex: 10,
+  poi: 20,
+  metro: 30,
+});
+
 const BROAD_TYPE_PRIORITY = Object.freeze({
   microdistrict: 10,
   mahalla: 20,
@@ -100,7 +106,6 @@ function entityType(value) {
 function resolve(countryCode, city, type, canonical) {
   const normalizedType = entityType(type);
   const name = text(canonical);
-  // Street/house resolution remains an external-geocoder responsibility.
   if (!name || normalizedType === 'street') return null;
   return resolveLexiconGeoEntity({
     country: countryCode,
@@ -136,7 +141,7 @@ function apply(listing, entity, input = {}) {
   listing.locationSource = role === 'nearby' ? 'nearby' : (SOURCE_BY_TYPE[entity.type] || 'geoCatalog');
   listing.locationAccuracyM = Math.max(intrinsicAccuracyM, relationshipAccuracyM);
   listing.locationPrecision = PRECISION_BY_TYPE[entity.type] || 'reference';
-  listing.locationApproximate = entity.type !== 'city' || role === 'nearby';
+  listing.locationApproximate = true;
   listing.locationCanonical = input.canonical || entity.canonicalName || null;
   listing.locationRole = role;
   listing.locationProvider = 'geoCatalog';
@@ -173,19 +178,21 @@ export function applyGeoCatalogExactAnchor(listing, country) {
       canonical: listing.residenceComplex,
       role: roleFor(listing, 'residential_complex', listing.residenceComplex),
     },
-    {
-      type: 'metro',
-      canonical: listing.metro,
-      role: roleFor(listing, 'metro', listing.metro),
-    },
     ...(Array.isArray(listing.locationEntities) ? listing.locationEntities : [])
       .map((entity) => ({
         type: entityType(entity?.type),
         canonical: entity?.name,
         role: normalizedRole(entity?.role),
       }))
-      .filter((input) => ['residential_complex', 'metro'].includes(input.type)),
-  ].filter((input) => input.role !== 'nearby');
+      .filter((input) => Object.hasOwn(EXACT_TYPE_PRIORITY, input.type)),
+    {
+      type: 'metro',
+      canonical: listing.metro,
+      role: roleFor(listing, 'metro', listing.metro),
+    },
+  ]
+    .filter((input) => input.role !== 'nearby')
+    .sort((a, b) => EXACT_TYPE_PRIORITY[a.type] - EXACT_TYPE_PRIORITY[b.type]);
 
   for (const input of uniqueInputs(inputs)) {
     const entity = resolve(countryCode, city, input.type, input.canonical);
@@ -243,11 +250,6 @@ export function applyGeoCatalogBroadAnchor(listing, country) {
   return false;
 }
 
-/**
- * Use a known package point as the last-resort spatial reference. The point is
- * deliberately tagged nearby/approximate because the apartment is not asserted
- * to be inside the referenced ЖК/POI/station itself.
- */
 export function applyGeoCatalogNearbyAnchor(listing, country) {
   if (!listing || hasCoordinates(listing)) return false;
   const { countryCode, city } = canonicalContext(listing, country);
