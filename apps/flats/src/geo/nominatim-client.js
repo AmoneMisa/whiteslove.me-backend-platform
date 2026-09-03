@@ -1,4 +1,5 @@
 import { cacheGet, cacheSet } from '../support/cache.js';
+import { canonicalCityName } from './countries.js';
 
 const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
 const USER_AGENT = 'flat-finder/1.0 (housing aggregator; contact: admin@whiteslove.me)';
@@ -59,12 +60,23 @@ function comparableForms(value) {
   return [...new Set([direct, folded].filter(Boolean))];
 }
 
+function phraseContains(haystack, needle) {
+  if (!haystack || !needle) return false;
+  if (haystack === needle) return true;
+  const compactHaystack = haystack.replace(/\s+/gu, '');
+  const compactNeedle = needle.replace(/\s+/gu, '');
+  if (compactHaystack === compactNeedle) return true;
+  const tokenCount = needle.split(' ').filter(Boolean).length;
+  if (needle.length < 6 && tokenCount < 2) return false;
+  return ` ${haystack} `.includes(` ${needle} `);
+}
+
 function textCompatible(expected, actual) {
   const expectedForms = comparableForms(expected);
   const actualForms = comparableForms(actual);
   if (!expectedForms.length || !actualForms.length) return false;
   return expectedForms.some((a) => actualForms.some((b) =>
-    a === b || (a.length >= 6 && b.length >= 6 && (a.includes(b) || b.includes(a))),
+    phraseContains(a, b) || phraseContains(b, a),
   ));
 }
 
@@ -91,7 +103,7 @@ function expectationCachePart(expectation = {}) {
 export function nominatimCacheKey(query, countryCode, expectation = {}) {
   const country = countryCode ? `${countryCode.toLowerCase()}:` : '';
   const normalizedQuery = String(query ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
-  return `geo:v4:${country}${expectationCachePart(expectation)}:${normalizedQuery}`;
+  return `geo:v5:${country}${expectationCachePart(expectation)}:${normalizedQuery}`;
 }
 
 export async function cachedNominatimPoint(query, countryCode, expectation = {}) {
@@ -131,7 +143,7 @@ function displayContains(result, value) {
   if (!value || !result?.display_name) return false;
   const expectedForms = comparableForms(value);
   const displayForms = comparableForms(result.display_name);
-  return expectedForms.some((a) => displayForms.some((b) => a.length >= 5 && b.includes(a)));
+  return expectedForms.some((a) => displayForms.some((b) => phraseContains(b, a)));
 }
 
 function streetMatches(result, expectedStreet) {
@@ -147,10 +159,15 @@ function entityMatches(result, expectedName) {
   return displayContains(result, expectedName);
 }
 
-function cityMatches(result, expectedCity) {
-  if (!expectedCity) return false;
-  return resultCityNames(result).some((value) => textCompatible(expectedCity, value))
-    || displayContains(result, expectedCity);
+function cityMatches(result, expectedCity, countryCode) {
+  if (!expectedCity) return true;
+  const expectedCanonical = canonicalCityName(countryCode, expectedCity) || expectedCity;
+  if (resultCityNames(result).some((value) => {
+    const actualCanonical = canonicalCityName(countryCode, value) || value;
+    return textCompatible(expectedCanonical, actualCanonical)
+      || textCompatible(expectedCity, value);
+  })) return true;
+  return displayContains(result, expectedCanonical) || displayContains(result, expectedCity);
 }
 
 function houseMatches(result, expectedHouse, expectedBuilding) {
@@ -201,8 +218,9 @@ function pointFromResult(result, expectation = {}) {
 
 /**
  * Select a Nominatim result conservatively. Exact house lookups must prove the
- * requested house/street/corpus; named entity fallbacks must prove the name.
- * A plausible first result is deliberately not enough.
+ * requested country/city/house/street/corpus; named entity fallbacks must prove
+ * both the requested locality and entity name. A plausible first result is
+ * deliberately not enough.
  */
 export function selectNominatimPoint(data, expectation = {}, countryCode = null) {
   if (!Array.isArray(data)) return null;
@@ -219,7 +237,10 @@ export function selectNominatimPoint(data, expectation = {}, countryCode = null)
     if (!point) continue;
 
     const resultCountry = resultCountryCode(result);
-    if (expectedCountry && resultCountry && resultCountry !== expectedCountry) continue;
+    // With addressdetails=1 Nominatim supplies country_code. When a country was
+    // requested, missing country evidence is not sufficient for a precise match.
+    if (expectedCountry && resultCountry !== expectedCountry) continue;
+    if (expectation.city && !cityMatches(result, expectation.city, expectedCountry)) continue;
 
     const provedHouse = expectedHouse && houseMatches(result, expectedHouse, expectedBuilding);
     if (kind === 'address' && expectedHouse) {
@@ -238,7 +259,7 @@ export function selectNominatimPoint(data, expectation = {}, countryCode = null)
     if (provedHouse) score += 100;
     if (expectedStreet && streetMatches(result, expectedStreet)) score += 40;
     if (expectedName && entityMatches(result, expectedName)) score += 40;
-    if (expectation.city && cityMatches(result, expectation.city)) score += 20;
+    if (expectation.city && cityMatches(result, expectation.city, expectedCountry)) score += 20;
     if (/^(?:house|building|apartments|residential)$/iu.test(String(result?.addresstype || result?.type || ''))) score += 10;
     score += Math.max(0, Math.min(1, Number(result?.importance) || 0));
     accepted.push({ point, score });
