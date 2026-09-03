@@ -398,12 +398,16 @@ services:
     build: { context: ./services/social-fetcher }
     image: ${SOCIAL_FETCHER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-social-fetcher:latest}
     restart: unless-stopped
+    env_file:
+      - path: ./.env
+        required: false
     environment:
       SOCIAL_MAX_ITEMS: ${SOCIAL_MAX_ITEMS:-100}
       SOCIAL_HTTP_TIMEOUT: ${SOCIAL_HTTP_TIMEOUT:-30}
       SOCIAL_BROWSER_TIMEOUT_MS: ${SOCIAL_BROWSER_TIMEOUT_MS:-45000}
       SOCIAL_BROWSER_CONCURRENCY: ${SOCIAL_BROWSER_CONCURRENCY:-1}
       SOCIAL_IMPERSONATE: ${SOCIAL_IMPERSONATE:-chrome124}
+      FACEBOOK_COOKIES: ${FACEBOOK_COOKIES:-}
     shm_size: ${SOCIAL_SHM_SIZE:-256mb}
     networks: [ platform ]
     healthcheck:

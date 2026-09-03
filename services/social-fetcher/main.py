@@ -13,6 +13,7 @@ from app import (
     _browser_context,
     _clean_text,
     _facebook_dom_items,
+    _facebook_playwright_cookies,
     _facebook_public_url,
     _facebook_restriction_reason,
     _facebook_target,
@@ -159,6 +160,9 @@ def crawl_facebook(payload):
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             context = _browser_context(browser)
+            cookies = _facebook_playwright_cookies()
+            if cookies:
+                context.add_cookies(cookies)
             page = context.new_page()
             page.set_default_timeout(BROWSER_TIMEOUT_MS)
             page.goto(url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT_MS)

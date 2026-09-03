@@ -1,3 +1,4 @@
+import json
 import math
 import os
 import re
@@ -28,6 +29,41 @@ IMPERSONATE = os.environ.get("SOCIAL_IMPERSONATE", "chrome124")
 _BROWSER_GATE = threading.BoundedSemaphore(
     max(1, int(os.environ.get("SOCIAL_BROWSER_CONCURRENCY", "1")))
 )
+
+
+def _parse_facebook_cookies(raw):
+    """Accepts a JSON object or a "name=value; name2=value2" cookie header string."""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+
+    try:
+        parsed = json.loads(text)
+    except (TypeError, ValueError):
+        parsed = None
+    if isinstance(parsed, dict):
+        cookies = {str(k): str(v) for k, v in parsed.items() if v is not None}
+        return cookies or None
+
+    cookies = {}
+    for part in text.split(";"):
+        name, sep, value = part.strip().partition("=")
+        name = name.strip()
+        if sep and name:
+            cookies[name] = value.strip()
+    return cookies or None
+
+
+FACEBOOK_COOKIES = _parse_facebook_cookies(os.environ.get("FACEBOOK_COOKIES"))
+
+
+def _facebook_playwright_cookies():
+    if not FACEBOOK_COOKIES:
+        return []
+    return [
+        {"name": name, "value": value, "domain": ".facebook.com", "path": "/"}
+        for name, value in FACEBOOK_COOKIES.items()
+    ]
 
 
 def _limit(value, default=50):
@@ -276,6 +312,9 @@ def _fetch_facebook_playwright(target_raw, target, limit):
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True)
             context = _browser_context(browser)
+            cookies = _facebook_playwright_cookies()
+            if cookies:
+                context.add_cookies(cookies)
             page = context.new_page()
             page.set_default_timeout(BROWSER_TIMEOUT_MS)
             page.goto(url, wait_until="domcontentloaded", timeout=BROWSER_TIMEOUT_MS)
@@ -326,6 +365,8 @@ def fetch_facebook(payload):
         "pages": pages,
         "options": {"allow_extra_requests": False},
     }
+    if FACEBOOK_COOKIES:
+        kwargs["cookies"] = dict(FACEBOOK_COOKIES)
 
     primary_error = None
     items = []
@@ -692,7 +733,7 @@ def health():
     return jsonify(
         ok=True,
         sources=["facebook", "threads", "linkedin"],
-        authMode="public-only",
+        authMode="facebook-cookie" if FACEBOOK_COOKIES else "public-only",
     )
 
 

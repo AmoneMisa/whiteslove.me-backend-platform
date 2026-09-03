@@ -3,7 +3,9 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from app import (
+    _facebook_playwright_cookies,
     _facebook_target,
+    _parse_facebook_cookies,
     _parse_linkedin_jobs_html,
     _threads_username,
     _validate_public_url,
@@ -29,6 +31,52 @@ class SocialFetcherTests(unittest.TestCase):
             _facebook_target('some.public.page'),
             {'kind': 'page', 'value': 'some.public.page'},
         )
+
+    def test_parse_facebook_cookies_header_string(self):
+        self.assertEqual(
+            _parse_facebook_cookies('c_user=100012345; xs=abc123; sb=xyz'),
+            {'c_user': '100012345', 'xs': 'abc123', 'sb': 'xyz'},
+        )
+
+    def test_parse_facebook_cookies_json(self):
+        self.assertEqual(
+            _parse_facebook_cookies('{"c_user": "100012345", "xs": "abc123"}'),
+            {'c_user': '100012345', 'xs': 'abc123'},
+        )
+
+    def test_parse_facebook_cookies_blank(self):
+        self.assertIsNone(_parse_facebook_cookies(''))
+        self.assertIsNone(_parse_facebook_cookies(None))
+
+    def test_facebook_playwright_cookies_shape(self):
+        with patch('app.FACEBOOK_COOKIES', {'c_user': '1', 'xs': '2'}):
+            cookies = _facebook_playwright_cookies()
+        self.assertEqual(
+            sorted(cookies, key=lambda c: c['name']),
+            [
+                {'name': 'c_user', 'value': '1', 'domain': '.facebook.com', 'path': '/'},
+                {'name': 'xs', 'value': '2', 'domain': '.facebook.com', 'path': '/'},
+            ],
+        )
+
+    def test_facebook_playwright_cookies_empty_without_config(self):
+        with patch('app.FACEBOOK_COOKIES', None):
+            self.assertEqual(_facebook_playwright_cookies(), [])
+
+    def test_fetch_facebook_passes_cookies_to_get_posts(self):
+        post = {
+            'post_id': 'post-1',
+            'text': 'Сдам квартиру, 1 комната, 300 USD',
+            'post_url': 'https://www.facebook.com/groups/123/posts/1/',
+        }
+        with (
+            patch('app.FACEBOOK_COOKIES', {'c_user': '1', 'xs': '2'}),
+            patch('app.get_posts', return_value=iter([post])) as get_posts_mock,
+        ):
+            fetch_facebook({'target': 'https://www.facebook.com/groups/123/', 'limit': 5})
+
+        _, kwargs = get_posts_mock.call_args
+        self.assertEqual(kwargs.get('cookies'), {'c_user': '1', 'xs': '2'})
 
     def test_facebook_keeps_existing_scraper_as_primary_path(self):
         post = {
