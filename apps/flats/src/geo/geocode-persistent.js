@@ -138,15 +138,14 @@ async function refineSourceCoordinateFromExactAddress(listing, country, candidat
 export async function geocodeListingsPersistent(listings, country) {
   if (!Array.isArray(listings) || !country) return listings;
 
+  applyStructuredAddressFieldsBatch(listings);
   const sourceAddressProvided = new WeakSet(
     listings.filter((listing) =>
       typeof listing?.address === 'string'
         && listing.address.trim()
-        && !reverseGeneratedAddress(listing),
+        && listing.addressSource === 'source',
     ),
   );
-
-  applyStructuredAddressFieldsBatch(listings);
   const packageResolved = new WeakSet();
   const budget = { value: EXACT_LOOKUP_BUDGET };
 
