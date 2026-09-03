@@ -6,6 +6,7 @@ import {
   applyGeoCatalogNearbyAnchor,
 } from '../src/geo/geo-catalog.js';
 import { geocodeCandidates } from '../src/geo/geocode.js';
+import { applyReverseGeo } from '../src/geo/reverse-geo.js';
 
 const UZ = {
   code: 'UZ',
@@ -74,4 +75,46 @@ test('geocode candidates preserve nearby role so a reference cannot masquerade a
   assert.equal(complex?.role, 'nearby');
   assert.equal(complex?.approximate, true);
   assert.equal(area?.role, 'primary');
+});
+
+test('reverse geocoding an approximate complex does not invent a house number', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      address: {
+        road: 'Fargona Yoli Street',
+        house_number: '99',
+        city: 'Tashkent',
+        country_code: 'uz',
+      },
+    }),
+  });
+
+  const listing = {
+    id: 'reverse-complex-address',
+    lat: 41.282995,
+    lng: 69.30842,
+    city: 'Tashkent',
+    country: 'UZ',
+    district: 'Mirobod',
+    microdistrict: 'Assalom Sohil',
+    locationSource: 'residentialComplex',
+    locationProvider: 'geoCatalog',
+    locationCanonical: 'Assalom Sohil',
+    locationPrecision: 'complex',
+    locationAccuracyM: 140,
+    locationApproximate: true,
+  };
+
+  try {
+    await applyReverseGeo([listing], UZ);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(listing.address, 'Fargona Yoli Street');
+  assert.equal(listing.addressSource, 'reverseGeocode');
+  assert.equal(listing.addressApproximate, true);
+  assert.equal(listing.addressPrecision, 'street');
 });
