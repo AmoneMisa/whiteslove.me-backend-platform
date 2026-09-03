@@ -16,6 +16,42 @@ const CITY_KEYS = Object.freeze([
   'city', 'town', 'municipality', 'village',
 ]);
 const BUILDING_KEYS = Object.freeze(['building', 'block', 'unit']);
+const EARTH_RADIUS_M = 6_371_000;
+const DEGREE_M = (Math.PI / 180) * EARTH_RADIUS_M;
+// Ground radius a correctly matched object of each semantic level should have.
+// A name alone does not say how big the matched thing is: `Chilonzor` is a
+// metro station, a district and a shop. Comparing the real OSM footprint with
+// the level the caller asked for keeps the right one on top.
+const LEVEL_EXTENT_M = Object.freeze({
+  building: 40,
+  street: 900,
+  complex: 350,
+  station: 300,
+  reference: 500,
+  neighborhood: 1200,
+  locality: 3500,
+  district: 7000,
+  city: 25000,
+});
+// place_rank fallback for results that carry no bounding box.
+const LEVEL_PLACE_RANK = Object.freeze({
+  building: 30,
+  street: 26,
+  complex: 25,
+  station: 25,
+  reference: 25,
+  neighborhood: 22,
+  locality: 19,
+  district: 17,
+  city: 16,
+});
+const POINT_LIKE_LEVELS = Object.freeze(new Set([
+  'building', 'street', 'complex', 'station', 'reference',
+]));
+// A point-like anchor whose footprint is this many times larger than its level
+// allows is a different object that merely shares the name.
+const MAX_LEVEL_EXTENT_RATIO = 25;
+const LEVEL_FIT_WEIGHT = 30;
 const CYRILLIC_FOLD = Object.freeze({
   а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
   и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
@@ -106,14 +142,15 @@ function expectationCachePart(expectation = {}) {
   const street = foldCyrillic(expectation.street);
   const name = foldCyrillic(expectation.name);
   const city = foldCyrillic(expectation.city);
-  return [kind, house, building, street, name, city].map((value) => encodeURIComponent(value || '-')).join(':');
+  const level = String(expectation.level || '').toLowerCase();
+  return [kind, house, building, street, name, city, level].map((value) => encodeURIComponent(value || '-')).join(':');
 }
 
 export function nominatimCacheKey(query, countryCode, expectation = {}) {
   const country = countryCode ? `${countryCode.toLowerCase()}:` : '';
   const normalizedQuery = String(query ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
   const effectiveExpectation = expectationForQuery(query, expectation);
-  return `geo:v5:${country}${expectationCachePart(effectiveExpectation)}:${normalizedQuery}`;
+  return `geo:v6:${country}${expectationCachePart(effectiveExpectation)}:${normalizedQuery}`;
 }
 
 export async function cachedNominatimPoint(query, countryCode, expectation = {}) {
@@ -143,6 +180,44 @@ function resultNames(result) {
 
 function resultCountryCode(result) {
   return String(result?.address?.country_code || '').trim().toUpperCase();
+}
+
+/**
+ * Ground radius of the matched OSM object, from its bounding box. This is the
+ * one honest statement the provider makes about how large the thing it found
+ * actually is, so it drives both selection and the reported accuracy radius.
+ */
+function resultExtentM(result) {
+  const box = (Array.isArray(result?.boundingbox) ? result.boundingbox : []).map(Number);
+  if (box.length !== 4 || !box.every(Number.isFinite)) return null;
+
+  const [south, north, west, east] = box;
+  const midLat = (((south + north) / 2) * Math.PI) / 180;
+  const heightM = Math.abs(north - south) * DEGREE_M;
+  const widthM = Math.abs(east - west) * DEGREE_M * Math.cos(midLat);
+  const extentM = Math.hypot(widthM, heightM) / 2;
+  return Number.isFinite(extentM) ? Math.round(extentM) : null;
+}
+
+/** How well the matched footprint fits the semantic level that was requested. */
+function levelFitScore(level, extentM, placeRank) {
+  const expectedExtentM = LEVEL_EXTENT_M[level];
+  if (!expectedExtentM) return 0;
+
+  if (extentM != null) {
+    const ratio = Math.max(extentM, 1) / expectedExtentM;
+    return LEVEL_FIT_WEIGHT / (1 + Math.abs(Math.log10(ratio)));
+  }
+
+  const expectedRank = LEVEL_PLACE_RANK[level];
+  if (expectedRank == null || placeRank == null) return 0;
+  return LEVEL_FIT_WEIGHT / (1 + Math.abs(placeRank - expectedRank) / 3);
+}
+
+function extentContradictsLevel(level, extentM) {
+  if (!POINT_LIKE_LEVELS.has(String(level || '')) || extentM == null) return false;
+  const expectedExtentM = LEVEL_EXTENT_M[level];
+  return Boolean(expectedExtentM) && extentM > expectedExtentM * MAX_LEVEL_EXTENT_RATIO;
 }
 
 function resultHouseNumber(result) {
@@ -221,6 +296,7 @@ function pointFromResult(result, expectation = {}) {
     lng,
     precision,
     accuracyM: null,
+    extentM: resultExtentM(result),
     provider: 'nominatim',
     providerId: result?.osm_type && result?.osm_id != null
       ? `${result.osm_type}:${result.osm_id}`
@@ -238,6 +314,7 @@ export function selectNominatimPoint(data, expectation = {}, countryCode = null)
   const expectedStreet = expectation.street || null;
   const expectedName = expectation.name || null;
   const kind = expectation.kind || 'any';
+  const level = expectation.level || null;
 
   const accepted = [];
   for (const result of data) {
@@ -261,12 +338,17 @@ export function selectNominatimPoint(data, expectation = {}, countryCode = null)
       continue;
     }
 
+    if (extentContradictsLevel(level, point.extentM)) continue;
+
     let score = 0;
     if (provedHouse) score += 100;
     if (expectedStreet && streetMatches(result, expectedStreet)) score += 40;
     if (expectedName && entityMatches(result, expectedName)) score += 40;
     if (expectation.city && cityMatches(result, expectation.city, expectedCountry)) score += 20;
     if (/^(?:house|building|apartments|residential)$/iu.test(String(result?.addresstype || result?.type || ''))) score += 10;
+    // Importance favours whatever is famous; the footprint fit favours whatever
+    // is the right size. Rank by fit first and keep importance as the tiebreak.
+    score += levelFitScore(level, point.extentM, point.placeRank);
     score += Math.max(0, Math.min(1, Number(result?.importance) || 0));
     accepted.push({ point, score });
   }
@@ -298,7 +380,7 @@ export async function fetchNominatimPoint(query, countryCode, expectation = {}) 
     const params = new URLSearchParams({
       q: query,
       format: 'jsonv2',
-      limit: '5',
+      limit: '10',
       addressdetails: '1',
       namedetails: '1',
     });

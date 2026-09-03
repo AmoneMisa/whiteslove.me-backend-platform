@@ -168,6 +168,17 @@ test('country mismatch is rejected even when house and street match', () => {
   assert.equal(point, null);
 });
 
+test('cache identity separates two semantic levels of the same name', () => {
+  const station = nominatimCacheKey('Chilonzor, Tashkent', 'UZ', {
+    kind: 'entity', name: 'Chilonzor', city: 'Tashkent', level: 'station',
+  });
+  const district = nominatimCacheKey('Chilonzor, Tashkent', 'UZ', {
+    kind: 'entity', name: 'Chilonzor', city: 'Tashkent', level: 'district',
+  });
+
+  assert.notEqual(station, district);
+});
+
 test('cache identity includes validation expectations and current selector version', () => {
   const a = nominatimCacheKey('Shota Rustaveli 17, Tashkent', 'UZ', {
     kind: 'address', houseNumber: '17', street: 'Shota Rustaveli', city: 'Tashkent',
@@ -177,7 +188,7 @@ test('cache identity includes validation expectations and current selector versi
   });
 
   assert.notEqual(a, b);
-  assert.match(a, /^geo:v5:uz:/);
+  assert.match(a, /^geo:v6:uz:/);
 });
 
 test('canonical corpus in the address query participates in the cache validation identity', () => {
@@ -208,5 +219,6 @@ test('exact address candidate has building precision without invented meter accu
     houseNumber: '17',
     street: 'Shota Rustaveli',
     city: 'Tashkent',
+    level: 'building',
   });
 });

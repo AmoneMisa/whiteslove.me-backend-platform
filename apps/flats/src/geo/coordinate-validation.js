@@ -9,10 +9,16 @@ export function coordinateInsideBbox(lat, lng, bbox, padding = DEFAULT_PADDING_D
   if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every(Number.isFinite)) return true;
 
   const [south, west, north, east] = bbox;
+  // The padding is stated in latitude degrees. A degree of longitude shrinks
+  // toward the poles, so at Tashkent's latitude an unconverted padding is ~25%
+  // tighter east-west than north-south and clips valid points off the city edge.
+  const midLat = (((south + north) / 2) * Math.PI) / 180;
+  const lngPadding = padding / Math.max(0.1, Math.cos(midLat));
+
   return Number(lat) >= south - padding
     && Number(lat) <= north + padding
-    && Number(lng) >= west - padding
-    && Number(lng) <= east + padding;
+    && Number(lng) >= west - lngPadding
+    && Number(lng) <= east + lngPadding;
 }
 
 async function bboxFor(country, area) {

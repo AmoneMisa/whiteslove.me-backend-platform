@@ -1,4 +1,4 @@
-import { geocodeCandidates, geocodeListings, geocodeQuery } from './geocode.js';
+import { geocodeCandidates, geocodeListings, geocodeQuery, resolveAccuracyM } from './geocode.js';
 import {
   applyGeoCatalogBroadAnchor,
   applyGeoCatalogExactAnchor,
@@ -54,10 +54,11 @@ function applyCandidate(listing, candidate, coords, source = candidate.source) {
   listing.lat = Number(coords.lat);
   listing.lng = Number(coords.lng);
   listing.locationSource = source;
-  listing.locationAccuracyM = finiteAccuracy(
-    coords.accuracyM,
-    finiteAccuracy(coords.locationAccuracyM, finiteAccuracy(candidate.accuracyM)),
+  listing.locationAccuracyM = resolveAccuracyM(
+    finiteAccuracy(coords.locationAccuracyM, candidate.accuracyM),
+    coords,
   );
+  listing.locationExtentM = finiteAccuracy(coords.extentM, finiteAccuracy(coords.locationExtentM));
   listing.locationPrecision = coords.precision || coords.locationPrecision || candidate.precision || null;
   listing.locationApproximate = candidate.approximate ?? source !== 'address';
   if (listing.locationPrecision === 'building' && source === 'address') {

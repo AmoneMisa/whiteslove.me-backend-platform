@@ -69,6 +69,37 @@ For named entities:
 
 The Nominatim cache identity includes the validation expectations and selector version so an old weakly validated result cannot bypass stricter rules after deployment.
 
+## Pass 1b — matched-footprint validation
+
+A name does not say how large the thing wearing it is. `Chilonzor` is a metro
+station, an administrative district and a supermarket; `Assalom Sohil` is a
+residential complex and, in some extracts, a surrounding area. Country/city/name
+validation accepts all of them, so the selector additionally compares the
+**footprint the provider actually returned** with the semantic level that was
+requested.
+
+Every candidate now carries its expected level (`building`, `street`, `complex`,
+`station`, `reference`, `neighborhood`, `locality`, `district`, `city`) into the
+geocoder expectation, and the expectation participates in the cache identity.
+
+Rules:
+
+- the ground radius of a result is derived from its bounding box;
+- among validated candidates, the one whose radius best fits the requested level
+  ranks highest — footprint fit is ranked ahead of Nominatim `importance`, which
+  otherwise favours whatever is famous rather than whatever is the right size;
+- a result with no bounding box falls back to `place_rank` fit, and a result with
+  neither ranks as before, on name/street/house evidence and importance alone;
+- a point-like request (`building`, `street`, `complex`, `station`, `reference`)
+  is rejected outright when the matched footprint is more than 25x its level,
+  because that is a different object sharing the name, not a loose match.
+
+The measured footprint is also reported (`locationExtentM`) and folded into the
+accuracy radius: a placed listing never advertises a radius tighter than the
+object that was actually matched. The semantic baseline still applies in the
+other direction, so a complex resolved to a single OSM node keeps its ~300 m
+complex-level radius instead of claiming node precision.
+
 ## Pass 2 — canonical anchors and contextual roles
 
 Canonical `@whiteslove/geo-catalog` coordinates are preferred over ambiguous free-text geocoder guesses when a matching canonical entity exists.
@@ -200,7 +231,14 @@ The branch includes or relies on regression tests for:
 - broad source marker not inventing road/house precision;
 - cross-city reverse-geocode conflict;
 - source coordinate replaced by independently verified exact address while retaining discrepancy diagnostics;
-- umbrella local-area aliases not swallowing numbered child blocks.
+- umbrella local-area aliases not swallowing numbered child blocks;
+- a district-sized polygon losing a residential-complex lookup to the complex;
+- a shop-sized match losing a district lookup to the district;
+- a point-like anchor rejected when its footprint is a whole region;
+- the matched footprint being reported so the accuracy radius stays honest;
+- a geometry-free result inventing no accuracy and keeping prior behaviour;
+- broad candidates carrying their semantic level into the geocoder expectation;
+- the semantic level separating two cache identities for the same name.
 
 ## Remaining irreducible uncertainty
 
@@ -208,7 +246,24 @@ No geocoder can recover an exact apartment entrance when the listing supplies on
 
 Travel-time phrases such as `5 мин на машине` are not converted to fake metre radii. They may be kept as semantic nearby evidence, but traffic-dependent travel time is not a reliable geometric distance.
 
+The out-of-area bbox guard states its padding in latitude degrees. A degree of
+longitude is shorter than a degree of latitude away from the equator, so the
+padding is converted at the bbox latitude; otherwise the tolerance is ~25%
+tighter east-west than north-south at Tashkent's latitude and clips valid points
+off the eastern and western city edges.
+
 Provider data can be stale or incomplete. Canonical geo-catalog points remain the runtime source of truth when independently verified; external provider IDs and reverse-geocoder output are evidence/provenance, not automatic replacements for stored canonical centers.
+
+## Known remaining gap
+
+Exact building lookups still go to Nominatim as a free-form `q` string. Nominatim
+also offers a structured search (separate `street`/`city`/`country` parameters)
+that parses house-level queries considerably more reliably, especially when a
+district name sits between the street and the city in the free-form string.
+Adopting it is the largest remaining accuracy win for precedence rule 1, but it
+either replaces free-form outright (unverified against live results) or costs a
+second request per address miss, which changes the per-listing lookup budget.
+It is therefore left as a separate, separately measured change.
 
 ## Merge gate
 

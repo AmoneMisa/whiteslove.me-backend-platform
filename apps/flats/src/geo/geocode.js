@@ -63,6 +63,20 @@ function finiteAccuracy(value, fallback = null) {
   return Number.isFinite(number) && number > 0 ? number : fallback
 }
 
+/**
+ * Accuracy radius for a placed listing. The candidate carries the semantic
+ * expectation (a complex anchor is worth ~300 m); `extentM` is the real size of
+ * the OSM object that was matched. Reporting the larger of the two keeps the
+ * radius honest when a name resolved to something bigger than expected, without
+ * ever inventing precision the semantics do not support.
+ */
+export function resolveAccuracyM(candidateAccuracyM, coords) {
+  const baseline = finiteAccuracy(coords?.accuracyM, finiteAccuracy(candidateAccuracyM))
+  const extentM = finiteAccuracy(coords?.extentM)
+  if (baseline == null) return extentM
+  return extentM == null ? baseline : Math.max(baseline, extentM)
+}
+
 function uniq(values) {
   return [...new Set(values.filter((value) => typeof value === 'string' && value.trim()).map((value) => value.trim()))]
 }
@@ -159,13 +173,15 @@ function poiCandidates(listing, city, countryName) {
   })
 }
 
-function listCandidates(listing, values, source, context, accuracyM, types = [], city = null) {
+function listCandidates(listing, values, source, context, accuracyM, types = [], city = null, precision = null) {
   return uniq(values || []).map((value) => ({
     q: [value, ...context].filter(Boolean).join(', '),
     source,
     role: locationRole(listing, types, value),
     name: value,
     accuracyM,
+    precision,
+    approximate: true,
     nominatim: { kind: 'entity', name: value, city },
   }))
 }
@@ -214,7 +230,13 @@ function dedupeCandidates(candidates) {
     if (seen.has(key)) return false
     seen.add(key)
     return true
-  })
+  }).map((candidate) => (
+    // The geocoder needs the expected semantic level to tell a metro station
+    // from the district that shares its name, and to size the accuracy radius.
+    candidate.nominatim && candidate.precision
+      ? { ...candidate, nominatim: { ...candidate.nominatim, level: candidate.precision } }
+      : candidate
+  ))
 }
 
 export function geocodeCandidates(listing, country) {
@@ -288,7 +310,7 @@ export function geocodeCandidates(listing, country) {
       approximate: true,
       nominatim: { kind: 'entity', name: area, city },
     },
-    ...listCandidates(listing, listing.localAreas, 'localArea', localContext, 800, ['local_area', 'mahalla'], city),
+    ...listCandidates(listing, listing.localAreas, 'localArea', localContext, 800, ['local_area', 'mahalla'], city, 'neighborhood'),
     listing.locality && {
       q: [listing.locality, city, countryName].filter(Boolean).join(', '),
       source: 'locality',
@@ -299,11 +321,11 @@ export function geocodeCandidates(listing, country) {
       approximate: true,
       nominatim: { kind: 'entity', name: listing.locality, city },
     },
-    ...listCandidates(listing, listing.developmentAreas, 'developmentArea', [city, countryName], 1200, 'development_area', city),
-    ...listCandidates(listing, listing.informalAreas, 'informalArea', [city, countryName], 1300, 'informal_area', city),
-    ...listCandidates(listing, listing.suburbs, 'suburb', [city, countryName], 1400, 'suburb', city),
-    ...listCandidates(listing, listing.settlements, 'settlement', [city, countryName], 1400, 'settlement', city),
-    ...listCandidates(listing, listing.searchClusters, 'searchCluster', [city, countryName], 1600, 'search_cluster', city),
+    ...listCandidates(listing, listing.developmentAreas, 'developmentArea', [city, countryName], 1200, 'development_area', city, 'neighborhood'),
+    ...listCandidates(listing, listing.informalAreas, 'informalArea', [city, countryName], 1300, 'informal_area', city, 'neighborhood'),
+    ...listCandidates(listing, listing.suburbs, 'suburb', [city, countryName], 1400, 'suburb', city, 'locality'),
+    ...listCandidates(listing, listing.settlements, 'settlement', [city, countryName], 1400, 'settlement', city, 'locality'),
+    ...listCandidates(listing, listing.searchClusters, 'searchCluster', [city, countryName], 1600, 'search_cluster', city, 'locality'),
     ...locationEntityCandidates(listing, city, countryName),
     listing.district && {
       q: [listing.district, city, countryName].filter(Boolean).join(', '),
@@ -354,7 +376,8 @@ export async function geocodeListings(listings, country) {
     listing.lat = Number(coords.lat)
     listing.lng = Number(coords.lng)
     listing.locationSource = candidate.source
-    listing.locationAccuracyM = finiteAccuracy(coords.accuracyM, finiteAccuracy(candidate.accuracyM))
+    listing.locationAccuracyM = resolveAccuracyM(candidate.accuracyM, coords)
+    listing.locationExtentM = finiteAccuracy(coords.extentM)
     listing.locationPrecision = coords.precision || candidate.precision || null
     listing.locationApproximate = candidate.approximate ?? candidate.source !== 'address'
     if (candidate.source === 'address' && listing.locationPrecision === 'building') {
