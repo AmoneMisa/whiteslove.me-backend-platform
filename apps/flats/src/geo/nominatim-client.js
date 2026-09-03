@@ -25,6 +25,7 @@ const CYRILLIC_FOLD = Object.freeze({
   ә: 'a', ң: 'ng', ө: 'o', ұ: 'u', ү: 'u', һ: 'h',
 });
 const STREET_NOISE_RE = /\b(?:street|st|strada|str|road|rd|avenue|ave|улица|ул|вулиця|вул|kocha|kochasi|кўча|көше)\b/giu;
+const QUERY_BUILDING_RE = /(?:корп(?:ус)?\.?|building|bldg\.?|bloc|corp|korpus)\s*([\p{L}\p{N}/-]{1,16})/iu;
 
 let lastCallAt = 0;
 
@@ -90,6 +91,14 @@ function normalizeHouseNumber(value) {
     .replace(/[^\p{L}\p{N}/-]+/gu, '');
 }
 
+function expectationForQuery(query, expectation = {}) {
+  if (expectation.building || expectation.kind !== 'address' || !expectation.houseNumber) return expectation;
+  const match = String(query || '').match(QUERY_BUILDING_RE);
+  return match?.[1]
+    ? { ...expectation, building: match[1] }
+    : expectation;
+}
+
 function expectationCachePart(expectation = {}) {
   const kind = String(expectation.kind || 'any').toLowerCase();
   const house = normalizeHouseNumber(expectation.houseNumber);
@@ -103,7 +112,8 @@ function expectationCachePart(expectation = {}) {
 export function nominatimCacheKey(query, countryCode, expectation = {}) {
   const country = countryCode ? `${countryCode.toLowerCase()}:` : '';
   const normalizedQuery = String(query ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
-  return `geo:v5:${country}${expectationCachePart(expectation)}:${normalizedQuery}`;
+  const effectiveExpectation = expectationForQuery(query, expectation);
+  return `geo:v5:${country}${expectationCachePart(effectiveExpectation)}:${normalizedQuery}`;
 }
 
 export async function cachedNominatimPoint(query, countryCode, expectation = {}) {
@@ -271,7 +281,8 @@ export function selectNominatimPoint(data, expectation = {}, countryCode = null)
 
 export async function fetchNominatimPoint(query, countryCode, expectation = {}) {
   await throttle();
-  const key = nominatimCacheKey(query, countryCode, expectation);
+  const effectiveExpectation = expectationForQuery(query, expectation);
+  const key = nominatimCacheKey(query, countryCode, effectiveExpectation);
   try {
     const params = new URLSearchParams({
       q: query,
@@ -287,7 +298,7 @@ export async function fetchNominatimPoint(query, countryCode, expectation = {}) 
     });
     if (!response.ok) throw new Error(`nominatim ${response.status}`);
     const data = await response.json();
-    const coords = selectNominatimPoint(data, expectation, countryCode);
+    const coords = selectNominatimPoint(data, effectiveExpectation, countryCode);
     await cacheSet(key, { coords }, coords ? HIT_TTL_MS : MISS_TTL_MS);
     return coords;
   } catch {
