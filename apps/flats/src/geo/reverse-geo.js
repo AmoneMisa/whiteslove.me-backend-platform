@@ -117,7 +117,7 @@ function knownCityMismatch(listing, country, address, matched) {
   const expected = canonicalCityName(countryCode, listing?.city || '');
   const reverse = canonicalCityName(
     countryCode,
-    matched?.city || address?.city || address?.town || '',
+    address?.city || address?.town || matched?.city || '',
   );
   if (!expected || !reverse || normalizedPlace(expected) === normalizedPlace(reverse)) return null;
 
