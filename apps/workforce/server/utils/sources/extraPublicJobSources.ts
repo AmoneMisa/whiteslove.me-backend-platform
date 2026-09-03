@@ -1,3 +1,4 @@
+import { parseHiringVacancySalary } from '@whiteslove/parsing-lexicon/hiring-salary-context'
 import { detectUsLocation } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
 import type { Job, SponsorshipConfidence } from '~~/shared/contracts/jobs'
 import { detectWorkModes } from '../hiring/hiringLexicon'
@@ -97,6 +98,58 @@ export function parseFlagmaVacancies(html: string, board: FlagmaJobBoardDescript
   return jobs
 }
 
+// The pay sits in one visible row ("7 500 000 - 12 000 000 сум"), while the
+// microdata beside it carries a single `value`. Reading that attribute alone
+// collapsed every range onto its first number and left the period unknown, so
+// the row goes to the shared vacancy salary parser, which owns ranges, periods
+// and the country fallbacks (UZ quotes monthly pay, RO too).
+const FLAGMA_SALARY_MICRODATA_RE = /<[^>]*\bitemprop=["'](?:value|minValue|maxValue|currency)["']/iu
+const FLAGMA_BLOCK_BOUNDARY_RE = /<\/?(?:div|p|li|tr|td|table|h[1-6]|section|br)\b[^>]*>/i
+
+function flagmaSalaryRow(html: string): string {
+  const at = html.search(FLAGMA_SALARY_MICRODATA_RE)
+  if (at < 0) return ''
+  // Keep to the row the microdata sits in: the amount can be printed before the
+  // marked-up span, the currency word after it, and neither crosses a block tag.
+  const before = html.slice(Math.max(0, at - 400), at).split(FLAGMA_BLOCK_BOUNDARY_RE).pop() || ''
+  const after = html.slice(at, at + 600).split(FLAGMA_BLOCK_BOUNDARY_RE)[0] || ''
+  return stripHtml(`${before}${after}`).replace(/\s+/g, ' ').trim()
+}
+
+/** Board country: the listing says it, else the national domain does. */
+function flagmaCountry(summary: Job, location: string): string | undefined {
+  return location.match(/,\s*([A-Za-z]{2})\s*$/)?.[1]?.toUpperCase()
+    || summary.country
+    || summary.url.match(/flagma\.([a-z]{2})\b/i)?.[1]?.toUpperCase()
+}
+
+function flagmaSalary(
+  html: string,
+  summary: Job,
+  location: string,
+): Pick<Job, 'salaryMin' | 'salaryMax' | 'salaryCurrency' | 'salaryPeriod'> {
+  const country = flagmaCountry(summary, location)
+  const parsed = parseHiringVacancySalary(flagmaSalaryRow(html), {
+    country,
+    currencyFallback: 'country',
+    periodFallback: 'country',
+  })
+  if (!parsed || (parsed.min == null && parsed.max == null)) {
+    return {
+      salaryMin: summary.salaryMin,
+      salaryMax: summary.salaryMax,
+      salaryCurrency: summary.salaryCurrency,
+      salaryPeriod: summary.salaryPeriod,
+    }
+  }
+  return {
+    salaryMin: parsed.min ?? parsed.max ?? undefined,
+    salaryMax: parsed.max ?? parsed.min ?? undefined,
+    salaryCurrency: parsed.currency?.toUpperCase() || summary.salaryCurrency,
+    salaryPeriod: (parsed.period as Job['salaryPeriod']) || summary.salaryPeriod,
+  }
+}
+
 export function parseFlagmaVacancyDetail(html: string, summary: Job): Job | null {
   const canonical = absoluteUrl(
     html.match(/<link\b[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)["'][^>]*>/iu)?.[1] || summary.url,
@@ -120,10 +173,7 @@ export function parseFlagmaVacancyDetail(html: string, summary: Job): Job | null
     html.match(/<span\b[^>]*class=["'][^"']*\bterr\b[^"']*["'][^>]*>([\s\S]*?)<\/span>/iu)?.[1] || '',
   ) || summary.location
   const datePosted = html.match(/["']datePosted["']\s*:\s*["']([^"']+)["']/iu)?.[1]
-  const salaryValue = Number(
-    html.match(/itemprop=["']value["'][^>]*content=["']([\d.]+)["']/iu)?.[1],
-  )
-  const salaryCurrency = html.match(/itemprop=["']currency["'][^>]*content=["']([^"']+)["']/iu)?.[1]
+  const salary = flagmaSalary(html, summary, location)
   const employmentType = html.match(/["']employmentType["']\s*:\s*["']([^"']+)["']/iu)?.[1]
   const semanticText = `${title}\n${location}\n${description}`
 
@@ -138,9 +188,7 @@ export function parseFlagmaVacancyDetail(html: string, summary: Job): Job | null
     postedAt: validDate(datePosted || summary.postedAt),
     employmentType: employmentType || summary.employmentType,
     description: description.slice(0, 4_000),
-    salaryMin: Number.isFinite(salaryValue) && salaryValue > 0 ? salaryValue : summary.salaryMin,
-    salaryMax: Number.isFinite(salaryValue) && salaryValue > 0 ? salaryValue : summary.salaryMax,
-    salaryCurrency: salaryCurrency?.toUpperCase() || summary.salaryCurrency,
+    ...salary,
   }
 }
 

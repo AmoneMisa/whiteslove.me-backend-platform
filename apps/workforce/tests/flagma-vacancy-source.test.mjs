@@ -77,9 +77,37 @@ test('Flagma detail parser reads authoritative vacancy fields without related ca
   assert.equal(job.salaryMin, 7500000)
   assert.equal(job.salaryMax, 7500000)
   assert.equal(job.salaryCurrency, 'UZS')
+  assert.equal(job.salaryPeriod, 'month')
   assert.equal(job.employmentType, 'REMOTE')
   assert.match(job.description || '', /Вести переписку с клиентами/)
   assert.doesNotMatch(job.description || '', /Номер вакансии|adsbygoogle/)
+})
+
+test('Flagma detail parser keeps a pay range instead of collapsing it onto the first number', () => {
+  const rangeHtml = detailHtml.replace(
+    '<span itemprop="value" content="7500000">7 500 000</span>',
+    '<span itemprop="value" content="7500000">7 500 000 &mdash; 12 000 000</span>',
+  )
+  const job = parseFlagmaVacancyDetail(rangeHtml, summary)
+  assert.ok(job)
+  assert.equal(job.salaryMin, 7500000)
+  assert.equal(job.salaryMax, 12000000)
+  assert.equal(job.salaryCurrency, 'UZS')
+  // UZ boards quote monthly pay; the shared parser's country fallback says so.
+  assert.equal(job.salaryPeriod, 'month')
+})
+
+test('Flagma detail parser leaves the summary salary alone when the page prints none', () => {
+  const job = parseFlagmaVacancyDetail(
+    detailHtml
+      .replace(/<span itemprop="value"[^]*?<\/span>/, '')
+      .replace(/<span itemprop="currency"[^]*?<\/span>/, ''),
+    { ...summary, salaryMin: 1, salaryMax: 2, salaryCurrency: 'USD' },
+  )
+  assert.ok(job)
+  assert.equal(job.salaryMin, 1)
+  assert.equal(job.salaryMax, 2)
+  assert.equal(job.salaryCurrency, 'USD')
 })
 
 test('Flagma detail parser rejects a captcha or generic shell', () => {
