@@ -80,8 +80,9 @@ function expectationCachePart(expectation = {}) {
   const kind = String(expectation.kind || 'any').toLowerCase();
   const house = normalizeHouseNumber(expectation.houseNumber);
   const street = foldCyrillic(expectation.street);
+  const name = foldCyrillic(expectation.name);
   const city = foldCyrillic(expectation.city);
-  return [kind, house, street, city].map((value) => encodeURIComponent(value || '-')).join(':');
+  return [kind, house, street, name, city].map((value) => encodeURIComponent(value || '-')).join(':');
 }
 
 export function nominatimCacheKey(query, countryCode, expectation = {}) {
@@ -108,6 +109,13 @@ function resultCityNames(result) {
   return addressValues(result, CITY_KEYS);
 }
 
+function resultNames(result) {
+  const namedetails = result?.namedetails && typeof result.namedetails === 'object'
+    ? Object.values(result.namedetails)
+    : [];
+  return [result?.name, ...namedetails].filter(Boolean);
+}
+
 function resultCountryCode(result) {
   return String(result?.address?.country_code || '').trim().toUpperCase();
 }
@@ -128,6 +136,12 @@ function streetMatches(result, expectedStreet) {
   const names = resultStreetNames(result);
   if (names.some((value) => textCompatible(expectedStreet, value))) return true;
   return displayContains(result, expectedStreet);
+}
+
+function entityMatches(result, expectedName) {
+  if (!expectedName) return true;
+  if (resultNames(result).some((value) => textCompatible(expectedName, value))) return true;
+  return displayContains(result, expectedName);
 }
 
 function cityMatches(result, expectedCity) {
@@ -164,13 +178,15 @@ function pointFromResult(result, expectation = {}) {
 
 /**
  * Select a Nominatim result conservatively. Exact house lookups must prove the
- * requested house number and street; accepting the first result is not enough.
+ * requested house number and street; named entity fallbacks must prove the name.
+ * A plausible first result is deliberately not enough.
  */
 export function selectNominatimPoint(data, expectation = {}, countryCode = null) {
   if (!Array.isArray(data)) return null;
   const expectedCountry = String(countryCode || '').trim().toUpperCase();
   const expectedHouse = normalizeHouseNumber(expectation.houseNumber);
   const expectedStreet = expectation.street || null;
+  const expectedName = expectation.name || null;
   const kind = expectation.kind || 'any';
 
   const accepted = [];
@@ -188,11 +204,14 @@ export function selectNominatimPoint(data, expectation = {}, countryCode = null)
     } else if ((kind === 'street' || (kind === 'address' && expectedStreet))
       && expectedStreet && !streetMatches(result, expectedStreet)) {
       continue;
+    } else if (kind === 'entity' && expectedName && !entityMatches(result, expectedName)) {
+      continue;
     }
 
     let score = 0;
     if (expectedHouse && house === expectedHouse) score += 100;
     if (expectedStreet && streetMatches(result, expectedStreet)) score += 40;
+    if (expectedName && entityMatches(result, expectedName)) score += 40;
     if (expectation.city && cityMatches(result, expectation.city)) score += 20;
     if (/^(?:house|building|apartments|residential)$/iu.test(String(result?.addresstype || result?.type || ''))) score += 10;
     score += Math.max(0, Math.min(1, Number(result?.importance) || 0));
