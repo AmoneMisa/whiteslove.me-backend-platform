@@ -21,16 +21,14 @@ async function bboxFor(country, area) {
 
   const key = `${country?.code || ''}:${String(area).toLowerCase()}`;
   if (!bboxPromises.has(key)) {
-    bboxPromises.set(key, geocodeBbox(query).catch(() => null));
+    bboxPromises.set(key, geocodeBbox(query, country?.code, area).catch(() => null));
   }
   return bboxPromises.get(key);
 }
 
 /**
  * OLX can expose deliberately rough or simply bad coordinates. Keep points
- * that are still inside a padded crawl-area bbox, but reject obvious outliers
- * (for example an Odesa apartment placed in the Black Sea). Rejected rows are
- * returned so the caller can selectively run the heavier address geocoder.
+ * that are still inside a padded crawl-area bbox, but reject obvious outliers.
  */
 export async function rejectOutOfAreaCoordinates(
   listings,
@@ -46,9 +44,6 @@ export async function rejectOutOfAreaCoordinates(
   const rejected = [];
 
   for (const listing of listings) {
-    // makeListing has a cheap synchronous Odesa guard for the legacy cache path.
-    // Keep those rows in this return set even though their bad coordinates have
-    // already been cleared, so the durable queue immediately repairs them too.
     if (listing?.sourceCoordinateRejected === true && (listing.lat == null || listing.lng == null)) {
       rejected.push(listing);
       continue;
@@ -67,10 +62,6 @@ export async function rejectOutOfAreaCoordinates(
     listing.sourceCoordinateRejected = true;
     listing.lat = null;
     listing.lng = null;
-
-    // The same source location block supplied the contradictory district. Once
-    // its map point is impossible, let repaired coordinates rebuild finer admin
-    // fields instead of preserving e.g. Arcadia + Kyivskyi district.
     listing.district = null;
     listing.microdistrict = null;
     listing.locationSource = 'source-coordinate-rejected';
