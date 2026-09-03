@@ -18,8 +18,8 @@
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.1",
-    "@whiteslove/geo-catalog": "^0.7.2",
-    "@whiteslove/parsing-lexicon": "^0.6.1",
+    "@whiteslove/geo-catalog": "^0.7.3",
+    "@whiteslove/parsing-lexicon": "^0.6.4",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "pg": "^8.23.0"
@@ -27,6 +27,6 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.9.1",
-    "globals": "^17.11.0"
+    "globals": "^17.12.0"
   }
 }
