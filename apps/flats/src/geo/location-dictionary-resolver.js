@@ -9,6 +9,7 @@ import {
   UA_REGION_ENTRIES as UA_REGIONS,
   UA_REGIONAL_LOCATION_EXTENSIONS,
   UA_SECONDARY_CITIES,
+  canonicalCountryCode,
   centralAsiaLocationCities,
   locationCities,
   matchCentralAsiaLocationEntities,
@@ -69,13 +70,15 @@ function metroContextAt(value, start, end) {
 }
 
 /**
- * A station named after its own city collides with every mention of the city.
- * Tashkent's `Toshkent` station is the standing example: the bare word
- * "Ташкент" is the city, and reading it as the station manufactures a
- * station-level anchor that outranks the district the post actually states.
+ * A station named after the country or its own city collides with every mention
+ * of that place. Tashkent has both: `Toshkent` collides with "Ташкент" and
+ * `Ozbekiston` with "Узбекистан", so a post that merely states where it is
+ * manufactures a station-level anchor that outranks the district it states.
  */
-function stationNamedAfterItsCity(countryCode, cityName, stationName) {
-  if (!cityName || !stationName) return false;
+function stationNamedAfterItsPlace(countryCode, cityName, stationName) {
+  if (!stationName) return false;
+  if (canonicalCountryCode(stationName) === String(countryCode || '').toUpperCase()) return true;
+  if (!cityName) return false;
   return canonicalCityName(countryCode, stationName) === canonicalCityName(countryCode, cityName);
 }
 
@@ -108,8 +111,8 @@ function matchMetro(text, entries, overlappingAreaName = null, cityName = null, 
     // place name means the area; mark metro only when the text says metro/station.
     if (overlappingAreaName && entry.name === overlappingAreaName && !contextual) continue;
 
-    // Same rule for a station that carries the city's own name.
-    if (!contextual && stationNamedAfterItsCity(countryCode, cityName, entry.name)) continue;
+    // Same rule for a station that carries the country's or the city's own name.
+    if (!contextual && stationNamedAfterItsPlace(countryCode, cityName, entry.name)) continue;
 
     // Numbered massifs/kvartals such as Chilonzor 12 / Yunusobod 19 are not subway mentions.
     const numberedArea = /^\s*[-№#]?\s*\d{1,3}(?=$|[\s,.;-])/u.test(after);
@@ -308,22 +311,100 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     applyOdesaMetropolitan(result, text);
   }
 
-  dropCityNamedMetro(result, text, countryCode, cities);
+  dropPlaceNamedMetro(result, text, countryCode, cities);
+  extendPrefixMatchedComplex(result, text, cities);
 
   return result;
 }
 
+
+// Words that appear after the first word of a catalogued complex name
+// ("Saroyi", "Residence", "City"). Derived from the catalog so new entries are
+// covered automatically. Structural words and bare place names are excluded:
+// "ЖК Orzu Novza" names a complex inside an area, not a longer complex.
+const COMPLEX_CONTINUATION_STOPWORDS = new Set([
+  'жк', 'dom', 'дом', 'mahalla', 'махалля', 'massivi', 'mavzesi', 'mfy', 'мфй',
+]);
+const PLACE_NAME_LIST_KEYS = Object.freeze([
+  'districts', 'microdistricts', 'mahallas', 'localAreas', 'suburbs', 'settlements', 'metro',
+]);
+const continuationCache = new Map();
+
+function complexContinuationTokens(cities, cityName) {
+  const key = cityName || '-';
+  const cached = continuationCache.get(key);
+  if (cached) return cached;
+
+  const placeNames = new Set([String(cityName || '').toLocaleLowerCase()]);
+  for (const listKey of PLACE_NAME_LIST_KEYS) {
+    for (const entry of cities?.[cityName]?.[listKey] || []) {
+      const name = String(entry?.name || '').trim().toLocaleLowerCase();
+      if (name && !name.includes(' ')) placeNames.add(name);
+    }
+  }
+
+  const tokens = new Set();
+  for (const entry of TASHKENT_RESIDENTIAL_COMPLEXES) {
+    for (const alias of entry.aliases || [entry.name]) {
+      for (const word of String(alias).trim().split(/[\s\-]+/u).slice(1)) {
+        const token = word.toLocaleLowerCase();
+        if (token.length < 3) continue;
+        if (COMPLEX_CONTINUATION_STOPWORDS.has(token) || placeNames.has(token)) continue;
+        tokens.add(token);
+      }
+    }
+  }
+
+  continuationCache.set(key, tokens);
+  return tokens;
+}
+
 /**
- * Drops a metro anchor that is really just the city's name. The lexicon's
- * Central Asia matcher resolves entities on its own and hands back
- * `metro: Toshkent` for any post that merely says "Ташкент", which then
- * outranks the stated district as a station-level anchor and files the listing
- * under a station nobody mentioned. A station is kept only when some occurrence
- * of the name carries explicit metro wording.
+ * A complex whose catalogued name is only a prefix of what the post actually
+ * writes ("Orzu" for "ORZU SAROYI") is a different development. Anchoring it
+ * would place the flat at the wrong complex with complex-level confidence,
+ * which is worse than not placing it at all. The name is extended to what the
+ * text says and the canonical entity is dropped, so the listing keeps the real
+ * complex name and falls back to weaker but honest geography.
  */
-function dropCityNamedMetro(result, text, countryCode, cities) {
-  if (!result.metro || !result.city) return;
-  if (!stationNamedAfterItsCity(countryCode, result.city, result.metro)) return;
+function extendPrefixMatchedComplex(result, text, cities) {
+  if (!result.residentialComplex || !result.city) return;
+
+  const entry = TASHKENT_RESIDENTIAL_COMPLEXES.find((item) => item.name === result.residentialComplex);
+  if (!entry?.re) return;
+
+  const value = String(text);
+  const match = value.match(entry.re);
+  if (!match) return;
+
+  // aliasesToRegex consumes one trailing boundary character, so step back onto
+  // it before looking for the separator and the next word.
+  const end = (match.index ?? 0) + match[0].length;
+  const next = value.slice(Math.max(0, end - 1)).match(/^[\s\-]+(\p{L}[\p{L}'’ʻʼ]*)/u);
+  if (!next) return;
+
+  const word = next[1];
+  if (!complexContinuationTokens(cities, result.city).has(word.toLocaleLowerCase())) return;
+
+  const suffix = word[0].toLocaleUpperCase() + word.slice(1).toLocaleLowerCase();
+  result.residentialComplex = `${entry.name} ${suffix}`;
+  result.locationEntities = result.locationEntities.filter(
+    (item) => item?.type !== 'residential_complex' || item?.name !== entry.name,
+  );
+}
+
+/**
+ * Drops a metro anchor that is really just the country's or the city's name.
+ * The lexicon's Central Asia matcher resolves entities on its own and hands
+ * back `metro: Toshkent` for any post that says "Ташкент" and
+ * `metro: Ozbekiston` for any post that says "Узбекистан", which then outrank
+ * the stated district as station-level anchors and file the listing under a
+ * station nobody mentioned. A station is kept only when some occurrence of the
+ * name carries explicit metro wording.
+ */
+function dropPlaceNamedMetro(result, text, countryCode, cities) {
+  if (!result.metro) return;
+  if (!stationNamedAfterItsPlace(countryCode, result.city, result.metro)) return;
 
   const entry = (cities?.[result.city]?.metro || []).find((item) => item.name === result.metro);
   if (entry && hasContextualMetroMention(text, entry.re)) return;
