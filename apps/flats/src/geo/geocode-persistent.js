@@ -21,10 +21,6 @@ const EXACT_LOOKUP_BUDGET = Math.max(
   0,
   Number(process.env.PERSISTENT_EXACT_GEOCODE_BUDGET ?? 30) || 0,
 );
-const SOURCE_COORD_EXACT_MAX_DISTANCE_M = Math.max(
-  0,
-  Number(process.env.SOURCE_COORD_EXACT_MAX_DISTANCE_M ?? 150) || 0,
-);
 
 function hasCoordinates(listing) {
   return listing?.lat != null
@@ -111,8 +107,9 @@ async function tryExactCandidate(listing, country, candidate, budget) {
 }
 
 async function refineSourceCoordinateFromExactAddress(listing, country, candidates, budget) {
-  // A street centroid is not sufficient evidence to move a marketplace pin. Only
-  // refine existing coordinates when parsing-lexicon resolved a concrete house.
+  // A generic marketplace pin has no documented precision in our normalized
+  // source model. Once street + house resolve to a strictly validated building,
+  // that exact address is stronger evidence and should define the map point.
   if (!listing?.street || !listing?.houseNumber) return false;
 
   const original = { lat: Number(listing.lat), lng: Number(listing.lng) };
@@ -124,22 +121,11 @@ async function refineSourceCoordinateFromExactAddress(listing, country, candidat
 
     const discrepancyM = distanceM(original, probe);
     if (!Number.isFinite(discrepancyM)) return false;
+
+    applyCandidate(listing, candidate, probe, probe.locationSource || candidate.source);
+    listing.sourceCoordinateRefined = true;
     listing.sourceCoordinateDistanceM = Math.round(discrepancyM);
-
-    if (discrepancyM > SOURCE_COORD_EXACT_MAX_DISTANCE_M) {
-      applyCandidate(listing, candidate, probe, probe.locationSource || candidate.source);
-      listing.sourceCoordinateRefined = true;
-      listing.sourceCoordinateDistanceM = Math.round(discrepancyM);
-      return true;
-    }
-
-    // The source point agrees with the exact address. Preserve the source point.
-    // Their separation is validation evidence, not a measurement of GPS error.
-    listing.locationSource ??= 'coordinates-validated';
-    listing.locationAccuracyM = finiteAccuracy(listing.locationAccuracyM);
-    listing.locationPrecision ??= 'coordinates';
-    listing.locationApproximate ??= false;
-    return false;
+    return true;
   }
   return false;
 }
