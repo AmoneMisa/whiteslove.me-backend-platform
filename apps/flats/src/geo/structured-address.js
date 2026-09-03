@@ -8,16 +8,47 @@ function text(value) {
   return out || null;
 }
 
+function normalized(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
+}
+
 function parsedCandidate(value, source) {
   return value?.street ? { value, source } : null;
 }
 
-function bestParsedAddress(sourceAddress, parsedText) {
-  // The source-provided address is authoritative whenever it can be parsed as
-  // an address. Prose extraction is a fallback, not a confidence contest: a
-  // high-confidence address-like phrase in the description must never replace
-  // an explicit source address with a different property location.
-  return parsedCandidate(sourceAddress, 'source')
+function sameAddressParts(a, b) {
+  if (!a?.street || !b?.street) return false;
+  return normalized(a.street) === normalized(b.street)
+    && normalized(a.houseNumber) === normalized(b.houseNumber)
+    && normalized(a.building) === normalized(b.building);
+}
+
+function streetRole(listing, street) {
+  const key = normalized(street);
+  if (!key) return 'mentioned';
+  const entity = (listing.locationEntities || []).find((item) =>
+    String(item?.type || '').toLocaleLowerCase() === 'street'
+      && normalized(item?.name) === key,
+  );
+  return entity?.role === 'nearby' || entity?.role === 'primary'
+    ? entity.role
+    : 'mentioned';
+}
+
+function sourceKind(listing, sourceAddress, parsedText) {
+  if (listing.addressSource) return listing.addressSource;
+  // makeListing can already contain an address extracted from the same prose.
+  // When both parsers resolve the same components, retain parsed provenance
+  // instead of accidentally upgrading it to a source-provided address.
+  if (sameAddressParts(sourceAddress, parsedText)) return 'parsed';
+  return sourceAddress?.street ? 'source' : null;
+}
+
+function bestParsedAddress(sourceAddress, parsedText, source) {
+  return parsedCandidate(sourceAddress, source || 'source')
     || parsedCandidate(parsedText, 'parsed')
     || null;
 }
@@ -27,6 +58,7 @@ export function applyStructuredAddressFields(listing) {
 
   const rawSourceAddress = text(listing.address);
   const knownStreet = text(listing.street);
+  const explicitHouseNumber = text(listing.houseNumber);
   const sourceAddress = rawSourceAddress
     ? parseHousingAddress(rawSourceAddress, { allowBare: true, knownStreet })
     : null;
@@ -34,11 +66,30 @@ export function applyStructuredAddressFields(listing) {
   const parsedText = prose
     ? parseHousingAddress(prose, { knownStreet })
     : null;
-  const best = bestParsedAddress(sourceAddress, parsedText);
+  const provenance = sourceKind(listing, sourceAddress, parsedText);
+  const best = bestParsedAddress(sourceAddress, parsedText, provenance);
   const bestParsed = best?.value || null;
 
+  // A prose-derived street/house under a contextual `nearby` street entity is a
+  // reference point, not the property's postal address. Keep the street entity
+  // available for geo-role scoring, but do not turn its house number into an
+  // exact apartment coordinate. Explicit upstream house fields still win.
+  if (best?.source === 'parsed'
+    && !explicitHouseNumber
+    && streetRole(listing, bestParsed?.street) === 'nearby') {
+    listing.street = knownStreet || bestParsed?.street || null;
+    listing.houseNumber = null;
+    listing.building = null;
+    listing.address = null;
+    listing.addressSource = 'parsedNearby';
+    listing.addressPrecision = null;
+    listing.addressApproximate = true;
+    if (bestParsed?.confidence != null) listing.addressConfidence = Number(bestParsed.confidence);
+    return listing;
+  }
+
   const street = knownStreet || bestParsed?.street || null;
-  const houseNumber = text(listing.houseNumber)
+  const houseNumber = explicitHouseNumber
     || bestParsed?.houseNumber
     || null;
   const building = text(listing.building)
@@ -56,9 +107,6 @@ export function applyStructuredAddressFields(listing) {
     || null;
 
   if (listing.address) {
-    // Keep textual provenance separate from coordinate provenance. A source field
-    // is still source data even when normalized; an address recovered from prose
-    // is parsed evidence. Street-only values remain explicitly approximate.
     listing.addressSource ??= best?.source || (rawSourceAddress ? 'source' : null);
     listing.addressPrecision ??= houseNumber ? 'building' : (street ? 'street' : null);
     listing.addressApproximate ??= !houseNumber;
