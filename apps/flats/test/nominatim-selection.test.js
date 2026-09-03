@@ -18,6 +18,7 @@ function result({
   lat = '41.30',
   lon = '69.24',
   house = null,
+  building = null,
   road = null,
   city = 'Tashkent',
   countryCode = 'uz',
@@ -28,16 +29,17 @@ function result({
     lat,
     lon,
     name,
-    display_name: [house, road, city, 'Uzbekistan'].filter(Boolean).join(', '),
+    display_name: [house, building, road, city, 'Uzbekistan'].filter(Boolean).join(', '),
     addresstype: type,
     type,
     osm_type: 'way',
     osm_id: 123,
     address: {
       ...(house ? { house_number: house } : {}),
+      ...(building ? { building } : {}),
       ...(road ? { road } : {}),
       ...(city ? { city } : {}),
-      country_code: countryCode,
+      ...(countryCode ? { country_code: countryCode } : {}),
     },
   };
 }
@@ -85,6 +87,48 @@ test('exact address rejects a same-number house on another street', () => {
   assert.equal(point, null);
 });
 
+test('exact address rejects the same house and street in another city', () => {
+  const point = selectNominatimPoint([
+    result({ house: '17', road: 'Shota Rustaveli', city: 'Samarkand' }),
+  ], {
+    kind: 'address',
+    houseNumber: '17',
+    street: 'Shota Rustaveli',
+    city: 'Tashkent',
+  }, 'UZ');
+
+  assert.equal(point, null);
+});
+
+test('exact address rejects a result without country evidence when country is required', () => {
+  const point = selectNominatimPoint([
+    result({ house: '17', road: 'Shota Rustaveli', countryCode: null }),
+  ], {
+    kind: 'address',
+    houseNumber: '17',
+    street: 'Shota Rustaveli',
+    city: 'Tashkent',
+  }, 'UZ');
+
+  assert.equal(point, null);
+});
+
+test('exact address requires the requested corpus/building', () => {
+  const point = selectNominatimPoint([
+    result({ house: '17', building: '1', road: 'Shota Rustaveli' }),
+    result({ house: '17', building: '2', road: 'Shota Rustaveli', lat: '41.302', lon: '69.242' }),
+  ], {
+    kind: 'address',
+    houseNumber: '17',
+    building: '2',
+    street: 'Shota Rustaveli',
+    city: 'Tashkent',
+  }, 'UZ');
+
+  assert.equal(point?.lat, 41.302);
+  assert.equal(point?.lng, 69.242);
+});
+
 test('named entity lookup rejects an unrelated first result', () => {
   const point = selectNominatimPoint([
     result({ name: 'Infinity', type: 'residential', road: 'Some Road' }),
@@ -97,6 +141,18 @@ test('named entity lookup rejects an unrelated first result', () => {
 
   assert.equal(point?.lat, 41.283);
   assert.equal(point?.lng, 69.308);
+});
+
+test('named entity matching does not accept a partial-word collision', () => {
+  const point = selectNominatimPoint([
+    result({ name: 'Infinityx', type: 'residential', road: 'Some Road' }),
+  ], {
+    kind: 'entity',
+    name: 'Infinity',
+    city: 'Tashkent',
+  }, 'UZ');
+
+  assert.equal(point, null);
 });
 
 test('country mismatch is rejected even when house and street match', () => {
@@ -112,7 +168,7 @@ test('country mismatch is rejected even when house and street match', () => {
   assert.equal(point, null);
 });
 
-test('cache identity includes validation expectations', () => {
+test('cache identity includes validation expectations and current selector version', () => {
   const a = nominatimCacheKey('Shota Rustaveli 17, Tashkent', 'UZ', {
     kind: 'address', houseNumber: '17', street: 'Shota Rustaveli', city: 'Tashkent',
   });
@@ -121,7 +177,18 @@ test('cache identity includes validation expectations', () => {
   });
 
   assert.notEqual(a, b);
-  assert.match(a, /^geo:v4:uz:/);
+  assert.match(a, /^geo:v5:uz:/);
+});
+
+test('canonical corpus in the address query participates in the cache validation identity', () => {
+  const inferred = nominatimCacheKey('Shota Rustaveli 17 корп. 2, Tashkent', 'UZ', {
+    kind: 'address', houseNumber: '17', street: 'Shota Rustaveli', city: 'Tashkent',
+  });
+  const explicit = nominatimCacheKey('Shota Rustaveli 17 корп. 2, Tashkent', 'UZ', {
+    kind: 'address', houseNumber: '17', building: '2', street: 'Shota Rustaveli', city: 'Tashkent',
+  });
+
+  assert.equal(inferred, explicit);
 });
 
 test('exact address candidate has building precision without invented meter accuracy', () => {
