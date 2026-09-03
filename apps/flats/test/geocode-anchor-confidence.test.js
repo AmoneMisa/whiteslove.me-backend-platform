@@ -11,7 +11,7 @@ import { applyReverseGeo } from '../src/geo/reverse-geo.js';
 const UZ = {
   code: 'UZ',
   name: 'Uzbekistan',
-  cities: ['Tashkent'],
+  cities: ['Tashkent', 'Samarkand'],
 };
 
 test('canonical Assalom Sohil resolves from geo-catalog with package accuracy/provenance', () => {
@@ -117,4 +117,43 @@ test('reverse geocoding an approximate complex does not invent a house number', 
   assert.equal(listing.addressSource, 'reverseGeocode');
   assert.equal(listing.addressApproximate, true);
   assert.equal(listing.addressPrecision, 'street');
+});
+
+test('reverse validation rejects a Nominatim point in another known city', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({
+    ok: true,
+    json: async () => ({
+      address: {
+        road: 'Registan Street',
+        city: 'Samarkand',
+        country_code: 'uz',
+      },
+    }),
+  });
+
+  const listing = {
+    id: 'cross-city-generated-point',
+    lat: 39.654321,
+    lng: 66.987654,
+    city: 'Tashkent',
+    country: 'UZ',
+    locationSource: 'street',
+    locationProvider: 'nominatim',
+    locationCanonical: 'Ambiguous Street',
+    locationPrecision: 'street',
+    locationAccuracyM: 300,
+    locationApproximate: true,
+  };
+
+  try {
+    await applyReverseGeo([listing], UZ);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(listing.lat, null);
+  assert.equal(listing.lng, null);
+  assert.equal(listing.locationRejected, 'city-mismatch');
+  assert.equal(listing.locationApproximate, true);
 });
