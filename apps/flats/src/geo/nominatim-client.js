@@ -14,6 +14,7 @@ const STREET_KEYS = Object.freeze([
 const CITY_KEYS = Object.freeze([
   'city', 'town', 'municipality', 'village', 'borough', 'city_district',
 ]);
+const BUILDING_KEYS = Object.freeze(['building', 'block', 'unit']);
 const CYRILLIC_FOLD = Object.freeze({
   а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
   и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
@@ -73,16 +74,18 @@ function normalizeHouseNumber(value) {
     .toLocaleLowerCase()
     .replace(/\s+/gu, '')
     .replace(/[№#]/gu, '')
+    .replace(/(?:корп(?:ус)?|корпус|building|bldg|bloc|corp)/gu, 'к')
     .replace(/[^\p{L}\p{N}/-]+/gu, '');
 }
 
 function expectationCachePart(expectation = {}) {
   const kind = String(expectation.kind || 'any').toLowerCase();
   const house = normalizeHouseNumber(expectation.houseNumber);
+  const building = normalizeHouseNumber(expectation.building);
   const street = foldCyrillic(expectation.street);
   const name = foldCyrillic(expectation.name);
   const city = foldCyrillic(expectation.city);
-  return [kind, house, street, name, city].map((value) => encodeURIComponent(value || '-')).join(':');
+  return [kind, house, building, street, name, city].map((value) => encodeURIComponent(value || '-')).join(':');
 }
 
 export function nominatimCacheKey(query, countryCode, expectation = {}) {
@@ -150,6 +153,26 @@ function cityMatches(result, expectedCity) {
     || displayContains(result, expectedCity);
 }
 
+function houseMatches(result, expectedHouse, expectedBuilding) {
+  const actualHouse = resultHouseNumber(result);
+  if (!expectedHouse || !actualHouse) return false;
+  if (!expectedBuilding) return actualHouse === expectedHouse;
+
+  const building = normalizeHouseNumber(expectedBuilding);
+  const compound = new Set([
+    `${expectedHouse}/${building}`,
+    `${expectedHouse}-${building}`,
+    `${expectedHouse}к${building}`,
+    `${expectedHouse}${building}`,
+  ]);
+  if (compound.has(actualHouse)) return true;
+  if (actualHouse !== expectedHouse) return false;
+
+  return addressValues(result, BUILDING_KEYS)
+    .map(normalizeHouseNumber)
+    .some((value) => value === building);
+}
+
 function pointFromResult(result, expectation = {}) {
   const lat = Number(result?.lat);
   const lng = Number(result?.lon);
@@ -178,13 +201,14 @@ function pointFromResult(result, expectation = {}) {
 
 /**
  * Select a Nominatim result conservatively. Exact house lookups must prove the
- * requested house number and street; named entity fallbacks must prove the name.
+ * requested house/street/corpus; named entity fallbacks must prove the name.
  * A plausible first result is deliberately not enough.
  */
 export function selectNominatimPoint(data, expectation = {}, countryCode = null) {
   if (!Array.isArray(data)) return null;
   const expectedCountry = String(countryCode || '').trim().toUpperCase();
   const expectedHouse = normalizeHouseNumber(expectation.houseNumber);
+  const expectedBuilding = normalizeHouseNumber(expectation.building);
   const expectedStreet = expectation.street || null;
   const expectedName = expectation.name || null;
   const kind = expectation.kind || 'any';
@@ -197,19 +221,21 @@ export function selectNominatimPoint(data, expectation = {}, countryCode = null)
     const resultCountry = resultCountryCode(result);
     if (expectedCountry && resultCountry && resultCountry !== expectedCountry) continue;
 
-    const house = resultHouseNumber(result);
+    const provedHouse = expectedHouse && houseMatches(result, expectedHouse, expectedBuilding);
     if (kind === 'address' && expectedHouse) {
-      if (!house || house !== expectedHouse) continue;
+      if (!provedHouse) continue;
       if (expectedStreet && !streetMatches(result, expectedStreet)) continue;
     } else if ((kind === 'street' || (kind === 'address' && expectedStreet))
       && expectedStreet && !streetMatches(result, expectedStreet)) {
       continue;
+    } else if (kind === 'address' && !expectedHouse && !expectedStreet) {
+      if (!resultHouseNumber(result) && !resultStreetNames(result).length) continue;
     } else if (kind === 'entity' && expectedName && !entityMatches(result, expectedName)) {
       continue;
     }
 
     let score = 0;
-    if (expectedHouse && house === expectedHouse) score += 100;
+    if (provedHouse) score += 100;
     if (expectedStreet && streetMatches(result, expectedStreet)) score += 40;
     if (expectedName && entityMatches(result, expectedName)) score += 40;
     if (expectation.city && cityMatches(result, expectation.city)) score += 20;
