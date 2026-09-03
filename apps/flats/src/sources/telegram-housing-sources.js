@@ -153,6 +153,8 @@ const EXTRA_TELEGRAM_HOUSING_CHANNELS = {
     },
     { name: 'nedvij_tashkent', city: 'Tashkent' },
     { name: 'iHometashkent', city: 'Tashkent' },
+    // Dedicated sale-listing feed (mixed owner/agent inventory).
+    { name: 'saletash', city: 'Tashkent', dealType: 'sale' },
     // Dedicated daily-rent feeds (Russian and Uzbek wording).
     { name: 'posutochnotashkent', city: 'Tashkent', dealType: 'shortRent' },
     { name: 'kunlik_kvartira_toshkent_arenda', city: 'Tashkent', dealType: 'shortRent' },
