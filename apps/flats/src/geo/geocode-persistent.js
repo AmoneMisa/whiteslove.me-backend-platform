@@ -46,22 +46,30 @@ function distanceM(a, b) {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
+function reverseGeneratedAddress(listing) {
+  return /^reverse/i.test(String(listing?.addressSource || ''));
+}
+
 function applyCandidate(listing, candidate, coords, source = candidate.source) {
   listing.lat = Number(coords.lat);
   listing.lng = Number(coords.lng);
   listing.locationSource = source;
-  listing.locationAccuracyM = finiteAccuracy(coords.accuracyM, finiteAccuracy(candidate.accuracyM));
-  listing.locationPrecision = coords.precision || candidate.precision || null;
+  listing.locationAccuracyM = finiteAccuracy(
+    coords.accuracyM,
+    finiteAccuracy(coords.locationAccuracyM, finiteAccuracy(candidate.accuracyM)),
+  );
+  listing.locationPrecision = coords.precision || coords.locationPrecision || candidate.precision || null;
   listing.locationApproximate = candidate.approximate ?? source !== 'address';
   if (listing.locationPrecision === 'building' && source === 'address') {
     listing.locationApproximate = false;
   }
-  listing.locationCanonical = candidate.name || null;
-  listing.locationRole = candidate.role || 'mentioned';
+  listing.locationCanonical = coords.locationCanonical || candidate.name || null;
+  listing.locationRole = coords.locationRole || candidate.role || 'mentioned';
   listing.locationProvider = coords.provider
+    || coords.locationProvider
     || (String(source || '').startsWith('learned') ? 'learned' : 'nominatim');
-  listing.locationProviderId = coords.providerId || null;
-  listing.locationProviderType = coords.providerType || null;
+  listing.locationProviderId = coords.providerId || coords.locationProviderId || null;
+  listing.locationProviderType = coords.providerType || coords.locationProviderType || null;
 }
 
 async function learnedLookup(descriptor) {
@@ -107,7 +115,7 @@ async function tryExactCandidate(listing, country, candidate, budget) {
 }
 
 async function refineSourceCoordinateFromExactAddress(listing, country, candidates, budget) {
-  if (!listing?.street || !listing?.houseNumber) return false;
+  if (!listing?.street || !listing?.houseNumber || reverseGeneratedAddress(listing)) return false;
 
   const original = { lat: Number(listing.lat), lng: Number(listing.lng) };
   const exactCandidates = candidates.filter((item) => item.source === 'address');
@@ -131,7 +139,11 @@ export async function geocodeListingsPersistent(listings, country) {
   if (!Array.isArray(listings) || !country) return listings;
 
   const sourceAddressProvided = new WeakSet(
-    listings.filter((listing) => typeof listing?.address === 'string' && listing.address.trim()),
+    listings.filter((listing) =>
+      typeof listing?.address === 'string'
+        && listing.address.trim()
+        && !reverseGeneratedAddress(listing),
+    ),
   );
 
   applyStructuredAddressFieldsBatch(listings);
