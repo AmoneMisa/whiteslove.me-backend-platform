@@ -21,6 +21,7 @@ import {
   tashkentMetroLabels,
 } from '@whiteslove/parsing-lexicon';
 import { matchTashkentHousingTransit } from '@whiteslove/parsing-lexicon/tashkent-housing-geography';
+import { canonicalCityName } from './countries.js';
 
 let mergedUkraine = null;
 
@@ -53,7 +54,44 @@ function normalizeMatchingText(text) {
     .replace(/([\p{L}]+?)щине(?=$|[^\p{L}\p{N}_])/giu, '$1щина');
 }
 
-function matchMetro(text, entries, overlappingAreaName = null) {
+const METRO_PRECEDES_RE = /(?:метро|metrou|metro|станц(?:ия|ии)?|station|stația|statia|метро станція|станція|ст\.?\s*м\.?|м\.)\s*[:\-–—]?\s*$/iu;
+const METRO_FOLLOWS_RE = /^\s*(?:метро|metrou|metro|station|stația|statia|станція|bekat|бекат)(?=$|[^\p{L}\p{N}_])/iu;
+
+// Station aliases such as "метро Ташкент" carry the keyword inside the match
+// itself, so the surrounding slices never see it.
+const METRO_WITHIN_RE = /(?:^|[^\p{L}\p{N}_])(?:метро|metrou|metro|станц|station|stația|statia|станція|bekat|бекат)/iu;
+
+/** Whether the text at or around [start, end) actually says "metro"/"station". */
+function metroContextAt(value, start, end) {
+  return METRO_WITHIN_RE.test(value.slice(start, end))
+    || METRO_PRECEDES_RE.test(value.slice(Math.max(0, start - 28), start))
+    || METRO_FOLLOWS_RE.test(value.slice(end, end + 64));
+}
+
+/**
+ * A station named after its own city collides with every mention of the city.
+ * Tashkent's `Toshkent` station is the standing example: the bare word
+ * "Ташкент" is the city, and reading it as the station manufactures a
+ * station-level anchor that outranks the district the post actually states.
+ */
+function stationNamedAfterItsCity(countryCode, cityName, stationName) {
+  if (!cityName || !stationName) return false;
+  return canonicalCityName(countryCode, stationName) === canonicalCityName(countryCode, cityName);
+}
+
+/** Whether any occurrence of `re` in the text carries explicit metro wording. */
+function hasContextualMetroMention(text, re) {
+  if (!re) return false;
+  const value = String(text);
+  const scanner = new RegExp(re.source, re.flags.includes('g') ? re.flags : `${re.flags}g`);
+  for (const match of value.matchAll(scanner)) {
+    const start = match.index ?? 0;
+    if (metroContextAt(value, start, start + match[0].length)) return true;
+  }
+  return false;
+}
+
+function matchMetro(text, entries, overlappingAreaName = null, cityName = null, countryCode = null) {
   const value = String(text);
   const matches = [];
 
@@ -63,15 +101,15 @@ function matchMetro(text, entries, overlappingAreaName = null) {
 
     const start = match.index ?? 0;
     const end = start + match[0].length;
-    const before = value.slice(Math.max(0, start - 28), start);
+    const contextual = metroContextAt(value, start, end);
     const after = value.slice(end, end + 64);
-    const contextual =
-      /(?:метро|metrou|metro|станц(?:ия|ии)?|station|stația|statia|метро станція|станція|ст\.?\s*м\.?|м\.)\s*[:\-–—]?\s*$/iu.test(before) ||
-      /^\s*(?:метро|metrou|metro|station|stația|statia|станція)(?=$|[^\p{L}\p{N}_])/iu.test(after);
 
     // Some names denote both a neighbourhood and a metro station. A bare
     // place name means the area; mark metro only when the text says metro/station.
     if (overlappingAreaName && entry.name === overlappingAreaName && !contextual) continue;
+
+    // Same rule for a station that carries the city's own name.
+    if (!contextual && stationNamedAfterItsCity(countryCode, cityName, entry.name)) continue;
 
     // Numbered massifs/kvartals such as Chilonzor 12 / Yunusobod 19 are not subway mentions.
     const numberedArea = /^\s*[-№#]?\s*\d{1,3}(?=$|[\s,.;-])/u.test(after);
@@ -243,7 +281,7 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
   for (const [cityName, data] of ordered) {
     const district = (data.districts || []).find((x) => x.re.test(text));
     const microdistrict = (data.microdistricts || []).find((x) => x.re.test(text));
-    const metro = matchMetro(text, data.metro, microdistrict?.name || null);
+    const metro = matchMetro(text, data.metro, microdistrict?.name || null, cityName, countryCode);
     const residentialComplex = countryCode === 'UZ' && cityName === 'Tashkent'
       ? matchTashkentResidentialComplex(text)
       : (data.residentialComplexes || []).find((x) => x.re.test(text));
@@ -270,7 +308,31 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     applyOdesaMetropolitan(result, text);
   }
 
+  dropCityNamedMetro(result, text, countryCode, cities);
+
   return result;
+}
+
+/**
+ * Drops a metro anchor that is really just the city's name. The lexicon's
+ * Central Asia matcher resolves entities on its own and hands back
+ * `metro: Toshkent` for any post that merely says "Ташкент", which then
+ * outranks the stated district as a station-level anchor and files the listing
+ * under a station nobody mentioned. A station is kept only when some occurrence
+ * of the name carries explicit metro wording.
+ */
+function dropCityNamedMetro(result, text, countryCode, cities) {
+  if (!result.metro || !result.city) return;
+  if (!stationNamedAfterItsCity(countryCode, result.city, result.metro)) return;
+
+  const entry = (cities?.[result.city]?.metro || []).find((item) => item.name === result.metro);
+  if (entry && hasContextualMetroMention(text, entry.re)) return;
+
+  const station = result.metro;
+  result.metro = null;
+  result.locationEntities = result.locationEntities.filter(
+    (item) => item?.type !== 'metro' || item?.name !== station,
+  );
 }
 
 export function canonicalDictionaryDistrict(name, countryCode) {
