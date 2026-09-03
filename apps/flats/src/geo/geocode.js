@@ -1,9 +1,9 @@
 // Best-effort geocoding for listings that arrive without GPS coordinates.
 //
 // Precision order (highest -> lowest):
-//   source coordinates -> exact address -> street -> residential complex -> metro
-//   -> spatial POI constraints -> nearby POI -> microdistrict/area/local place
-//   -> district -> city.
+//   source coordinates -> exact address -> primary residential complex -> street
+//   -> primary metro -> constrained spatial anchors -> primary local geography
+//   -> nearby/reference anchors -> district. City centres are never apartment points.
 //
 // Coordinates come from Nominatim (OpenStreetMap). Requests are throttled and
 // cached because geocoding runs during background refreshes, never on the
@@ -35,6 +35,11 @@ const POI_ALIASES = {
   Hospital: 'hospital|больниц\\p{L}*|shifoxon\\p{L}*',
   School: 'school|школ\\p{L}*|maktab\\p{L}*',
 }
+
+const BROAD_SOURCES = new Set([
+  'microdistrict', 'area', 'localArea', 'locality', 'developmentArea',
+  'informalArea', 'suburb', 'settlement', 'searchCluster', 'district',
+])
 
 export { geocodeBbox, geocodeQuery }
 
@@ -80,6 +85,25 @@ function detectedPoiNames(listing) {
   return names
 }
 
+function sameName(a, b) {
+  return String(a || '').trim().toLocaleLowerCase() === String(b || '').trim().toLocaleLowerCase()
+}
+
+function normalizeEntityType(type) {
+  if (type === 'residentialComplex') return 'residential_complex'
+  if (type === 'localArea') return 'local_area'
+  return type
+}
+
+function locationRole(listing, types, name) {
+  if (!name) return 'mentioned'
+  const accepted = new Set((Array.isArray(types) ? types : [types]).map(normalizeEntityType))
+  const match = (listing.locationEntities || []).find((entity) =>
+    accepted.has(normalizeEntityType(entity?.type)) && sameName(entity?.name, name),
+  )
+  return match?.role === 'nearby' || match?.role === 'primary' ? match.role : 'mentioned'
+}
+
 export function poiDistanceM(listing, name) {
   const text = listingText(listing)
   if (!text.trim() || !name) return null
@@ -118,18 +142,23 @@ function poiCandidates(listing, city, countryName) {
     return {
       q: [name, area, listing.district, city, countryName].filter(Boolean).join(', '),
       source: 'nearby',
+      role: 'nearby',
       name,
       distanceM,
       jit: 0,
-      accuracyM: distanceM || 500,
+      accuracyM: distanceM || 700,
+      precision: 'reference',
+      approximate: true,
     }
   })
 }
 
-function listCandidates(values, source, context, accuracyM, jit) {
+function listCandidates(listing, values, source, context, accuracyM, jit, types = []) {
   return uniq(values || []).map((value) => ({
     q: [value, ...context].filter(Boolean).join(', '),
     source,
+    role: locationRole(listing, types, value),
+    name: value,
     jit,
     accuracyM,
   }))
@@ -138,24 +167,32 @@ function listCandidates(values, source, context, accuracyM, jit) {
 function locationEntityCandidates(listing, city, countryName) {
   const entities = Array.isArray(listing.locationEntities) ? listing.locationEntities : []
   const supported = new Map([
-    ['mahalla', { source: 'localArea', accuracyM: 700, jit: 0.003 }],
-    ['local_area', { source: 'localArea', accuracyM: 800, jit: 0.003 }],
-    ['suburb', { source: 'suburb', accuracyM: 1400, jit: 0.005 }],
-    ['settlement', { source: 'settlement', accuracyM: 1400, jit: 0.005 }],
-    ['informal_area', { source: 'informalArea', accuracyM: 1300, jit: 0.005 }],
-    ['development_area', { source: 'developmentArea', accuracyM: 1200, jit: 0.004 }],
-    ['microdistrict', { source: 'microdistrict', accuracyM: 600, jit: 0.002 }],
-    ['street', { source: 'street', accuracyM: 180, jit: 0 }],
+    ['residential_complex', { source: 'residentialComplex', accuracyM: 300, jit: 0, precision: 'complex' }],
+    ['metro', { source: 'metro', accuracyM: 350, jit: 0, precision: 'station' }],
+    ['poi', { source: 'poi', accuracyM: 700, jit: 0, precision: 'reference' }],
+    ['mahalla', { source: 'localArea', accuracyM: 700, jit: 0.003, precision: 'neighborhood' }],
+    ['local_area', { source: 'localArea', accuracyM: 800, jit: 0.003, precision: 'neighborhood' }],
+    ['suburb', { source: 'suburb', accuracyM: 1400, jit: 0.005, precision: 'locality' }],
+    ['settlement', { source: 'settlement', accuracyM: 1400, jit: 0.005, precision: 'locality' }],
+    ['informal_area', { source: 'informalArea', accuracyM: 1300, jit: 0.005, precision: 'neighborhood' }],
+    ['development_area', { source: 'developmentArea', accuracyM: 1200, jit: 0.004, precision: 'neighborhood' }],
+    ['microdistrict', { source: 'microdistrict', accuracyM: 600, jit: 0.002, precision: 'neighborhood' }],
+    ['street', { source: 'street', accuracyM: 300, jit: 0, precision: 'street' }],
   ])
   const out = []
   for (const entity of entities) {
-    const config = supported.get(entity?.type)
+    const type = normalizeEntityType(entity?.type)
+    const config = supported.get(type)
     if (!config || !entity?.name) continue
     out.push({
       q: [entity.name, entity.parent, listing.district, city, countryName].filter(Boolean).join(', '),
       source: config.source,
+      role: entity.role === 'nearby' || entity.role === 'primary' ? entity.role : 'mentioned',
+      name: entity.name,
       jit: config.jit,
       accuracyM: config.accuracyM,
+      precision: config.precision,
+      approximate: config.source !== 'residentialComplex',
     })
   }
   return out
@@ -180,64 +217,100 @@ export function geocodeCandidates(listing, country) {
     listing.address && {
       q: [listing.address, listing.district, city, countryName].filter(Boolean).join(', '),
       source: 'address',
+      role: 'primary',
+      name: listing.address,
       jit: 0,
-      accuracyM: 40,
-    },
-    listing.street && {
-      q: [listing.street, listing.district, city, countryName].filter(Boolean).join(', '),
-      source: 'street',
-      jit: 0,
-      accuracyM: 180,
+      accuracyM: listing.houseNumber ? 40 : 180,
+      precision: listing.houseNumber ? 'building' : 'street',
+      approximate: !listing.houseNumber,
     },
     listing.residenceComplex && {
       q: [listing.residenceComplex, listing.district, city, countryName].filter(Boolean).join(', '),
       source: 'residentialComplex',
+      role: locationRole(listing, 'residential_complex', listing.residenceComplex),
+      name: listing.residenceComplex,
       jit: 0,
       accuracyM: 300,
+      precision: 'complex',
+      approximate: true,
+    },
+    listing.street && {
+      q: [listing.street, listing.district, city, countryName].filter(Boolean).join(', '),
+      source: 'street',
+      role: locationRole(listing, 'street', listing.street),
+      name: listing.street,
+      jit: 0,
+      accuracyM: 300,
+      precision: 'street',
+      approximate: true,
     },
     listing.metro && {
       q: [`${listing.metro} metro station`, city, countryName].filter(Boolean).join(', '),
       source: 'metro',
+      role: locationRole(listing, 'metro', listing.metro),
+      name: listing.metro,
       jit: 0,
-      accuracyM: 250,
+      accuracyM: 500,
+      precision: 'station',
+      approximate: true,
     },
     ...poiCandidates(listing, city, countryName),
     listing.microdistrict && {
       q: [listing.microdistrict, ...localContext].filter(Boolean).join(', '),
       source: 'microdistrict',
+      role: locationRole(listing, ['microdistrict', 'mahalla'], listing.microdistrict),
+      name: listing.microdistrict,
       jit: 0.002,
       accuracyM: 600,
+      precision: 'neighborhood',
+      approximate: true,
     },
     area && {
       q: [area, ...localContext].filter(Boolean).join(', '),
       source: 'area',
+      role: locationRole(listing, ['local_area', 'microdistrict'], area),
+      name: area,
       jit: 0.003,
       accuracyM: 700,
+      precision: 'neighborhood',
+      approximate: true,
     },
-    ...listCandidates(listing.localAreas, 'localArea', localContext, 800, 0.003),
+    ...listCandidates(listing, listing.localAreas, 'localArea', localContext, 800, 0.003, ['local_area', 'mahalla']),
     listing.locality && {
       q: [listing.locality, city, countryName].filter(Boolean).join(', '),
       source: 'locality',
+      role: locationRole(listing, ['suburb', 'settlement', 'local_area'], listing.locality),
+      name: listing.locality,
       jit: 0.004,
       accuracyM: 1000,
+      precision: 'locality',
+      approximate: true,
     },
-    ...listCandidates(listing.developmentAreas, 'developmentArea', [city, countryName], 1200, 0.004),
-    ...listCandidates(listing.informalAreas, 'informalArea', [city, countryName], 1300, 0.005),
-    ...listCandidates(listing.suburbs, 'suburb', [city, countryName], 1400, 0.005),
-    ...listCandidates(listing.settlements, 'settlement', [city, countryName], 1400, 0.005),
-    ...listCandidates(listing.searchClusters, 'searchCluster', [city, countryName], 1600, 0.006),
+    ...listCandidates(listing, listing.developmentAreas, 'developmentArea', [city, countryName], 1200, 0.004, 'development_area'),
+    ...listCandidates(listing, listing.informalAreas, 'informalArea', [city, countryName], 1300, 0.005, 'informal_area'),
+    ...listCandidates(listing, listing.suburbs, 'suburb', [city, countryName], 1400, 0.005, 'suburb'),
+    ...listCandidates(listing, listing.settlements, 'settlement', [city, countryName], 1400, 0.005, 'settlement'),
+    ...listCandidates(listing, listing.searchClusters, 'searchCluster', [city, countryName], 1600, 0.006, 'search_cluster'),
     ...locationEntityCandidates(listing, city, countryName),
     listing.district && {
       q: [listing.district, city, countryName].filter(Boolean).join(', '),
       source: 'district',
+      role: locationRole(listing, 'district', listing.district),
+      name: listing.district,
       jit: 0.008,
       accuracyM: 2500,
+      precision: 'district',
+      approximate: true,
     },
     city && {
       q: [city, countryName].filter(Boolean).join(', '),
       source: 'city',
+      role: 'mentioned',
+      name: city,
       jit: 0.02,
       accuracyM: 8000,
+      precision: 'city',
+      approximate: true,
     },
   ]
   return dedupeCandidates(candidates)
@@ -269,6 +342,10 @@ export async function geocodeListings(listings, country) {
     listing.lng = coords.lng + dLng
     listing.locationSource = candidate.source
     listing.locationAccuracyM = candidate.accuracyM
+    listing.locationPrecision = candidate.precision || null
+    listing.locationApproximate = candidate.approximate ?? candidate.source !== 'address'
+    listing.locationCanonical = candidate.name || null
+    listing.locationRole = candidate.role || 'mentioned'
   }
 
   for (const listing of listings) {
@@ -279,18 +356,22 @@ export async function geocodeListings(listings, country) {
     if (listing.lat != null && listing.lng != null) {
       listing.locationSource ??= 'coordinates'
       listing.locationAccuracyM ??= 25
+      listing.locationPrecision ??= 'coordinates'
+      listing.locationApproximate ??= false
       continue
     }
 
     const candidates = geocodeCandidates(listing, country)
     const exactCandidates = candidates.filter((candidate) =>
-      ['address', 'street', 'residentialComplex', 'metro'].includes(candidate.source),
+      ['address', 'residentialComplex', 'street', 'metro'].includes(candidate.source)
+      && candidate.role !== 'nearby',
     )
-    const nearbyCandidates = candidates.filter((candidate) => candidate.source === 'nearby')
-    const broadCandidates = candidates.filter((candidate) => [
-      'microdistrict', 'area', 'localArea', 'locality', 'developmentArea',
-      'informalArea', 'suburb', 'settlement', 'searchCluster', 'district',
-    ].includes(candidate.source))
+    const nearbyCandidates = candidates.filter((candidate) =>
+      candidate.source === 'nearby' || candidate.source === 'poi' || candidate.role === 'nearby',
+    )
+    const broadCandidates = candidates.filter((candidate) =>
+      BROAD_SOURCES.has(candidate.source) && candidate.role !== 'nearby',
+    )
 
     let placed = false
 
@@ -321,13 +402,19 @@ export async function geocodeListings(listings, country) {
           listing.locationSource = 'spatial'
           listing.locationAccuracyM = Math.max(100, Math.round(spatial.residualM + 100))
           listing.locationAnchorCount = spatial.anchorCount
+          listing.locationPrecision = 'spatial'
+          listing.locationApproximate = true
+          listing.locationRole = 'inferred'
           placed = true
         }
       }
     }
     if (placed) continue
 
-    for (const candidate of nearbyCandidates) {
+    // An explicitly stated microdistrict/mahalla/local area describes where the
+    // listing is. It must beat a single "near X" reference that could sit outside
+    // that area. Quantified multi-anchor constraints above remain the exception.
+    for (const candidate of broadCandidates) {
       const coords = await lookup(candidate)
       if (!coords) continue
       applyCandidate(listing, candidate, coords)
@@ -336,9 +423,11 @@ export async function geocodeListings(listings, country) {
     }
     if (placed) continue
 
-    for (const candidate of broadCandidates) {
+    for (const candidate of nearbyCandidates) {
       const coords = await lookup(candidate)
       if (!coords) continue
+      candidate.accuracyM = Math.max(candidate.accuracyM || 0, candidate.distanceM || 900)
+      candidate.approximate = true
       applyCandidate(listing, candidate, coords)
       placed = true
       break
