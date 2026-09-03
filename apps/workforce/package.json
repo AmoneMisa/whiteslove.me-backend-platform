@@ -9,5 +9,8 @@
     "@whiteslove/parsing-lexicon": "^0.6.11",
     "fast-xml-parser": "5.11.1",
     "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "yaml": "^2.9.0"
   }
 }
