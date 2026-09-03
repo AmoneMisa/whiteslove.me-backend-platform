@@ -7,6 +7,7 @@ import {
 } from '../src/geo/geo-catalog.js';
 import { geocodeCandidates } from '../src/geo/geocode.js';
 import { applyReverseGeo } from '../src/geo/reverse-geo.js';
+import { applyStructuredAddressFields } from '../src/geo/structured-address.js';
 
 const UZ = {
   code: 'UZ',
@@ -75,6 +76,16 @@ test('geocode candidates preserve nearby role so a reference cannot masquerade a
   assert.equal(complex?.role, 'nearby');
   assert.equal(complex?.approximate, true);
   assert.equal(area?.role, 'primary');
+});
+
+test('a source-provided address keeps source provenance and building precision', () => {
+  const listing = { address: 'ул. Шота Руставели 10' };
+  applyStructuredAddressFields(listing);
+
+  assert.equal(listing.addressSource, 'source');
+  assert.equal(listing.addressPrecision, 'building');
+  assert.equal(listing.addressApproximate, false);
+  assert.equal(listing.houseNumber, '10');
 });
 
 test('reverse geocoding an approximate complex does not invent a house number', async () => {
