@@ -7,4 +7,6 @@ coverage/
 .DS_Store
 .nuxt/
 .output/
+__pycache__/
+*.pyc
 
