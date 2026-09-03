@@ -41,6 +41,7 @@ jobs:
               - 'services/social-fetcher/**'
             vacancies:
               - 'apps/workforce/server/jobs/**'
+              - 'apps/workforce/server/vacancies/**'
               - 'apps/workforce/server/routes/jobs-**'
               - 'apps/workforce/shared/jobs/**'
               - 'apps/workforce/shared/contracts/jobs.ts'
