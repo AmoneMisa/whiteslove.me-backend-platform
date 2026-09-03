@@ -1,8 +1,6 @@
-import { cacheSet } from '../support/cache.js';
 import { geocodeCandidates, geocodeListings, geocodeQuery } from './geocode.js';
 import {
   applyGeoCatalogBroadAnchor,
-  applyGeoCatalogCityFallback,
   applyGeoCatalogExactAnchor,
   applyGeoCatalogNearbyAnchor,
 } from './geo-catalog.js';
@@ -14,7 +12,6 @@ import {
 import { applyStructuredAddressFieldsBatch } from './structured-address.js';
 import { annotateNearbyTransport } from './transport-nearby.js';
 
-const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const ADDRESS_SOURCES = new Set(['address']);
 const STREET_SOURCES = new Set(['street']);
 const ENTITY_EXACT_SOURCES = new Set(['residentialComplex', 'metro']);
@@ -36,6 +33,12 @@ function hasCoordinates(listing) {
     && Number.isFinite(Number(listing.lng));
 }
 
+function finiteAccuracy(value, fallback = null) {
+  if (value == null || value === '') return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
 function distanceM(a, b) {
   const toRad = (value) => (Number(value) * Math.PI) / 180;
   const lat1 = toRad(a.lat);
@@ -47,20 +50,22 @@ function distanceM(a, b) {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-function cacheKey(query) {
-  return `geo:v2:${String(query).toLowerCase().replace(/\s+/g, ' ').trim()}`;
-}
-
 function applyCandidate(listing, candidate, coords, source = candidate.source) {
   listing.lat = Number(coords.lat);
   listing.lng = Number(coords.lng);
   listing.locationSource = source;
-  listing.locationAccuracyM = Number(coords.accuracyM) || candidate.accuracyM;
-  listing.locationPrecision = candidate.precision || null;
+  listing.locationAccuracyM = finiteAccuracy(coords.accuracyM, finiteAccuracy(candidate.accuracyM));
+  listing.locationPrecision = coords.precision || candidate.precision || null;
   listing.locationApproximate = candidate.approximate ?? source !== 'address';
+  if (listing.locationPrecision === 'building' && source === 'address') {
+    listing.locationApproximate = false;
+  }
   listing.locationCanonical = candidate.name || null;
   listing.locationRole = candidate.role || 'mentioned';
-  listing.locationProvider = String(source || '').startsWith('learned') ? 'learned' : 'nominatim';
+  listing.locationProvider = coords.provider
+    || (String(source || '').startsWith('learned') ? 'learned' : 'nominatim');
+  listing.locationProviderId = coords.providerId || null;
+  listing.locationProviderType = coords.providerType || null;
 }
 
 async function learnedLookup(descriptor) {
@@ -76,29 +81,11 @@ async function learnedLookup(descriptor) {
 async function remember(descriptor, coords) {
   if (!descriptor) return false;
   try {
-    return await rememberLearnedGeo(descriptor, coords, { name: 'nominatim' });
+    return await rememberLearnedGeo(descriptor, coords);
   } catch (error) {
     console.warn('[geo:learned] persist degraded:', error?.message || error);
     return false;
   }
-}
-
-async function warmPackageFallback(listing, country, candidates, applyPackageAnchor) {
-  const clone = { ...listing, lat: null, lng: null };
-  if (!applyPackageAnchor(clone, country) || !hasCoordinates(clone)) return false;
-
-  const candidate = candidates.find((item) =>
-    item.source === clone.locationSource
-      || (clone.locationCanonical && item.name === clone.locationCanonical),
-  );
-  if (!candidate?.q) return false;
-
-  await cacheSet(
-    cacheKey(candidate.q),
-    { coords: { lat: Number(clone.lat), lng: Number(clone.lng) } },
-    CACHE_TTL_MS,
-  );
-  return true;
 }
 
 async function tryExactCandidate(listing, country, candidate, budget) {
@@ -115,7 +102,7 @@ async function tryExactCandidate(listing, country, candidate, budget) {
   }
 
   budget.value -= 1;
-  const coords = await geocodeQuery(candidate.q, country?.code);
+  const coords = await geocodeQuery(candidate.q, country?.code, candidate.nominatim || {});
   if (!coords) return { placed: false, usedBudget: true, deferred: false };
 
   applyCandidate(listing, candidate, coords);
@@ -137,6 +124,7 @@ async function refineSourceCoordinateFromExactAddress(listing, country, candidat
 
     const discrepancyM = distanceM(original, probe);
     if (!Number.isFinite(discrepancyM)) return false;
+    listing.sourceCoordinateDistanceM = Math.round(discrepancyM);
 
     if (discrepancyM > SOURCE_COORD_EXACT_MAX_DISTANCE_M) {
       applyCandidate(listing, candidate, probe, probe.locationSource || candidate.source);
@@ -145,10 +133,10 @@ async function refineSourceCoordinateFromExactAddress(listing, country, candidat
       return true;
     }
 
-    // The source point agrees with the exact address. Preserve it, but record a
-    // realistic validated accuracy instead of blindly labelling every source pin 25 m.
+    // The source point agrees with the exact address. Preserve the source point.
+    // Their separation is validation evidence, not a measurement of GPS error.
     listing.locationSource ??= 'coordinates-validated';
-    listing.locationAccuracyM ??= Math.max(25, Math.ceil(discrepancyM));
+    listing.locationAccuracyM = finiteAccuracy(listing.locationAccuracyM);
     listing.locationPrecision ??= 'coordinates';
     listing.locationApproximate ??= false;
     return false;
@@ -239,15 +227,13 @@ export async function geocodeListingsPersistent(listings, country) {
     }
     if (placed) continue;
 
-    // 5. Canonical microdistrict/mahalla/local-area anchors are preferred to an
-    // unbounded landmark reference. When exact HTTP was merely deferred by the
-    // wrapper budget, only warm the lower-priority point and let geocode.js retry.
+    // 5. Canonical microdistrict/mahalla/local-area anchors beat unbounded
+    // landmarks. If a stronger HTTP lookup was only deferred by this wrapper's
+    // budget, leave the row unresolved so geocode.js can still try that exact
+    // candidate with its own budget instead of pre-empting it with a broad point.
     if (!exactDeferred && applyGeoCatalogBroadAnchor(listing, country)) {
       packageResolved.add(listing);
       continue;
-    }
-    if (exactDeferred) {
-      await warmPackageFallback(listing, country, candidates, applyGeoCatalogBroadAnchor);
     }
 
     // 6. If no primary geometry exists, a known nearby ЖК/POI/metro is still a
@@ -259,10 +245,6 @@ export async function geocodeListingsPersistent(listings, country) {
       packageResolved.add(listing);
       continue;
     }
-
-    // City center is viewport metadata only; warm it so legacy resolution never
-    // spends HTTP budget on the city, but geocode.js will not emit it as a point.
-    await warmPackageFallback(listing, country, candidates, applyGeoCatalogCityFallback);
   }
 
   // Existing pipeline handles unresolved HTTP, multi-anchor spatial solving,
@@ -286,7 +268,15 @@ export async function geocodeListingsPersistent(listings, country) {
     const candidate = geocodeCandidates(listing, country)
       .find((item) => item.source === listing.locationSource && item.role !== 'nearby');
     const descriptor = learnedGeoDescriptor(listing, country, candidate);
-    await remember(descriptor, { lat: Number(listing.lat), lng: Number(listing.lng) });
+    await remember(descriptor, {
+      lat: Number(listing.lat),
+      lng: Number(listing.lng),
+      accuracyM: listing.locationAccuracyM,
+      precision: listing.locationPrecision,
+      provider: listing.locationProvider,
+      providerId: listing.locationProviderId,
+      providerType: listing.locationProviderType,
+    });
   }
 
   return listings;
