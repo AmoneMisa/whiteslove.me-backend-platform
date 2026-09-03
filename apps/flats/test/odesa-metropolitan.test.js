@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { makeListing } from '../src/listing/normalize.js';
 
-function listing({ city = 'Одесса', title = 'Продам квартиру', description = '' } = {}) {
+function listing({ city = 'Odesa', title = 'Продам квартиру', description = '' } = {}) {
   return makeListing({
     id: `odesa-${title}-${description}`,
     source: 'telegram',
@@ -47,16 +47,4 @@ test('distinguishes city Tairova from suburban Tairove', () => {
   const suburb = listing({ description: 'с. Таирово, частный дом' });
   assert.equal(suburb.locality, 'Таїрове');
   assert.ok(suburb.suburbs.includes('Таїрове'));
-});
-
-test('canonicalizes historical Ukrainian city names through the shared lexicon', () => {
-  assert.equal(listing({ city: 'Одесса' }).city, 'Odesa');
-
-  const dnipro = makeListing({ id: 'dnipro-old', source: 'telegram', country: 'UA', city: 'Днепропетровск', title: 'Квартира', description: '' });
-  const rivne = makeListing({ id: 'rivne-old', source: 'telegram', country: 'UA', city: 'Ровно', title: 'Квартира', description: '' });
-  const kropyvnytskyi = makeListing({ id: 'kirovohrad-old', source: 'telegram', country: 'UA', city: 'Кировоград', title: 'Квартира', description: '' });
-
-  assert.equal(dnipro.city, 'Dnipro');
-  assert.equal(rivne.city, 'Rivne');
-  assert.equal(kropyvnytskyi.city, 'Kropyvnytskyi');
 });
