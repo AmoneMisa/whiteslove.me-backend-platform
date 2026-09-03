@@ -8,28 +8,33 @@ function text(value) {
   return out || null;
 }
 
-function parsedCandidate(value) {
-  return value?.street ? value : null;
+function parsedCandidate(value, source) {
+  return value?.street ? { value, source } : null;
 }
 
 function bestParsedAddress(sourceAddress, parsedText) {
-  return [parsedCandidate(sourceAddress), parsedCandidate(parsedText)]
+  return [
+    parsedCandidate(sourceAddress, 'source'),
+    parsedCandidate(parsedText, 'parsed'),
+  ]
     .filter(Boolean)
-    .sort((a, b) => Number(b.confidence || 0) - Number(a.confidence || 0))[0] || null;
+    .sort((a, b) => Number(b.value.confidence || 0) - Number(a.value.confidence || 0))[0] || null;
 }
 
 export function applyStructuredAddressFields(listing) {
   if (!listing || typeof listing !== 'object') return listing;
 
+  const rawSourceAddress = text(listing.address);
   const knownStreet = text(listing.street);
-  const sourceAddress = text(listing.address)
-    ? parseHousingAddress(listing.address, { allowBare: true, knownStreet })
+  const sourceAddress = rawSourceAddress
+    ? parseHousingAddress(rawSourceAddress, { allowBare: true, knownStreet })
     : null;
   const prose = `${listing.title || ''}\n${listing.description || ''}`.trim();
   const parsedText = prose
     ? parseHousingAddress(prose, { knownStreet })
     : null;
-  const bestParsed = bestParsedAddress(sourceAddress, parsedText);
+  const best = bestParsedAddress(sourceAddress, parsedText);
+  const bestParsed = best?.value || null;
 
   const street = knownStreet || bestParsed?.street || null;
   const houseNumber = text(listing.houseNumber)
@@ -46,8 +51,18 @@ export function applyStructuredAddressFields(listing) {
   listing.building = building;
   listing.address = canonicalAddress
     || bestParsed?.address
-    || text(listing.address)
+    || rawSourceAddress
     || null;
+
+  if (listing.address) {
+    // Keep textual provenance separate from coordinate provenance. A source field
+    // is still source data even when normalized; an address recovered from prose
+    // is parsed evidence. Street-only values remain explicitly approximate.
+    listing.addressSource ??= rawSourceAddress ? 'source' : (best?.source || 'parsed');
+    listing.addressPrecision ??= houseNumber ? 'building' : (street ? 'street' : null);
+    listing.addressApproximate ??= !houseNumber;
+    if (bestParsed?.confidence != null) listing.addressConfidence ??= Number(bestParsed.confidence);
+  }
 
   return listing;
 }
