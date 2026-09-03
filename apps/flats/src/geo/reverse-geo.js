@@ -6,6 +6,7 @@
 // so an inferred nearby road/house is never confused with a source-stated one.
 
 import { cacheGet, cacheSet } from '../support/cache.js';
+import { canonicalCityName } from './countries.js';
 import { matchDictionaryEntities } from './location-dictionary-resolver.js';
 
 const REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse';
@@ -36,6 +37,14 @@ function cleanPlace(value) {
     .replace(/\s*(?:махалл[яи]|mahalla|MFY|мфй|район[а-яё]*|tumani|district|shahri|city)\s*$/iu, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
+}
+
+function normalizedPlace(value) {
+  return String(value || '')
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, '');
 }
 
 async function fetchReverse(lat, lng) {
@@ -103,6 +112,30 @@ function rejectGeneratedCoordinate(listing, reason) {
   return true;
 }
 
+function knownCityMismatch(listing, country, address, matched) {
+  const countryCode = String(country?.code || '').toUpperCase();
+  const expected = canonicalCityName(countryCode, listing?.city || '');
+  const reverse = canonicalCityName(
+    countryCode,
+    matched?.city || address?.city || address?.town || '',
+  );
+  if (!expected || !reverse || normalizedPlace(expected) === normalizedPlace(reverse)) return null;
+
+  // A listing can legitimately be stored under a metro/search city while its
+  // physical point is in a neighbouring suburb (e.g. Odesa/Fontanka). Reject a
+  // generated point only when reverse geocoding identifies another known target
+  // city of the same country. This catches gross Tashkent→Samarkand-style errors
+  // without discarding valid metropolitan-edge coordinates.
+  const knownCities = new Set([
+    ...(country?.crawlCities || []),
+    ...(country?.cities || []),
+  ].map((city) => normalizedPlace(canonicalCityName(countryCode, city))).filter(Boolean));
+
+  return knownCities.has(normalizedPlace(expected)) && knownCities.has(normalizedPlace(reverse))
+    ? { expected, reverse }
+    : null;
+}
+
 /**
  * Fills country/city/district/microdistrict and, when missing, an explicitly
  * inferred address for listings that already have coordinates.
@@ -152,6 +185,11 @@ export async function applyReverseGeo(listings, country, limit = LOOKUPS_PER_RUN
       .join(', ');
 
     const matched = matchDictionaryEntities(parts, countryCode, listing.city || undefined);
+    const cityMismatch = knownCityMismatch(listing, country, address, matched);
+    if (cityMismatch) {
+      console.warn(`[geocode] reverse geo city mismatch for listing ${listing.id}: expected ${cityMismatch.expected}, got ${cityMismatch.reverse} at ${listing.lat},${listing.lng}`);
+      if (rejectGeneratedCoordinate(listing, 'city-mismatch')) continue;
+    }
 
     let changed = false;
     if (!listing.country && address.country_code) {
