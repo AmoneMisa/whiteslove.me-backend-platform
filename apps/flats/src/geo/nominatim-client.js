@@ -13,7 +13,7 @@ const STREET_KEYS = Object.freeze([
   'street', 'path',
 ]);
 const CITY_KEYS = Object.freeze([
-  'city', 'town', 'municipality', 'village', 'borough', 'city_district',
+  'city', 'town', 'municipality', 'village',
 ]);
 const BUILDING_KEYS = Object.freeze(['building', 'block', 'unit']);
 const CYRILLIC_FOLD = Object.freeze({
@@ -159,24 +159,28 @@ function displayContains(result, value) {
 function streetMatches(result, expectedStreet) {
   if (!expectedStreet) return true;
   const names = resultStreetNames(result);
-  if (names.some((value) => textCompatible(expectedStreet, value))) return true;
+  if (names.length) return names.some((value) => textCompatible(expectedStreet, value));
   return displayContains(result, expectedStreet);
 }
 
 function entityMatches(result, expectedName) {
   if (!expectedName) return true;
-  if (resultNames(result).some((value) => textCompatible(expectedName, value))) return true;
+  const names = resultNames(result);
+  if (names.length) return names.some((value) => textCompatible(expectedName, value));
   return displayContains(result, expectedName);
 }
 
 function cityMatches(result, expectedCity, countryCode) {
   if (!expectedCity) return true;
   const expectedCanonical = canonicalCityName(countryCode, expectedCity) || expectedCity;
-  if (resultCityNames(result).some((value) => {
-    const actualCanonical = canonicalCityName(countryCode, value) || value;
-    return textCompatible(expectedCanonical, actualCanonical)
-      || textCompatible(expectedCity, value);
-  })) return true;
+  const names = resultCityNames(result);
+  if (names.length) {
+    return names.some((value) => {
+      const actualCanonical = canonicalCityName(countryCode, value) || value;
+      return textCompatible(expectedCanonical, actualCanonical)
+        || textCompatible(expectedCity, value);
+    });
+  }
   return displayContains(result, expectedCanonical) || displayContains(result, expectedCity);
 }
 
@@ -247,8 +251,6 @@ export function selectNominatimPoint(data, expectation = {}, countryCode = null)
     if (!point) continue;
 
     const resultCountry = resultCountryCode(result);
-    // With addressdetails=1 Nominatim supplies country_code. When a country was
-    // requested, missing country evidence is not sufficient for a precise match.
     if (expectedCountry && resultCountry !== expectedCountry) continue;
     if (expectation.city && !cityMatches(result, expectation.city, expectedCountry)) continue;
 
