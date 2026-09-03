@@ -13,12 +13,13 @@ function parsedCandidate(value, source) {
 }
 
 function bestParsedAddress(sourceAddress, parsedText) {
-  return [
-    parsedCandidate(sourceAddress, 'source'),
-    parsedCandidate(parsedText, 'parsed'),
-  ]
-    .filter(Boolean)
-    .sort((a, b) => Number(b.value.confidence || 0) - Number(a.value.confidence || 0))[0] || null;
+  // The source-provided address is authoritative whenever it can be parsed as
+  // an address. Prose extraction is a fallback, not a confidence contest: a
+  // high-confidence address-like phrase in the description must never replace
+  // an explicit source address with a different property location.
+  return parsedCandidate(sourceAddress, 'source')
+    || parsedCandidate(parsedText, 'parsed')
+    || null;
 }
 
 export function applyStructuredAddressFields(listing) {
@@ -58,7 +59,7 @@ export function applyStructuredAddressFields(listing) {
     // Keep textual provenance separate from coordinate provenance. A source field
     // is still source data even when normalized; an address recovered from prose
     // is parsed evidence. Street-only values remain explicitly approximate.
-    listing.addressSource ??= rawSourceAddress ? 'source' : (best?.source || 'parsed');
+    listing.addressSource ??= best?.source || (rawSourceAddress ? 'source' : null);
     listing.addressPrecision ??= houseNumber ? 'building' : (street ? 'street' : null);
     listing.addressApproximate ??= !houseNumber;
     if (bestParsed?.confidence != null) listing.addressConfidence ??= Number(bestParsed.confidence);
