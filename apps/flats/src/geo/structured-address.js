@@ -78,6 +78,7 @@ export function applyStructuredAddressFields(listing) {
   const sourceAddress = rawSourceAddress
     ? parseHousingAddress(rawSourceAddress, { allowBare: true, knownStreet })
     : null;
+  const weakLegacySource = listing.addressSource !== 'source' && weakMalformedLegacyAddress(sourceAddress);
   const prose = `${listing.title || ''}\n${listing.description || ''}`.trim();
   const parsedText = prose
     ? parseHousingAddress(prose, { knownStreet })
@@ -119,14 +120,18 @@ export function applyStructuredAddressFields(listing) {
   listing.building = building;
   listing.address = canonicalAddress
     || bestParsed?.address
-    || rawSourceAddress
+    || (!weakLegacySource ? rawSourceAddress : null)
     || null;
 
   if (listing.address) {
-    listing.addressSource ??= best?.source || (rawSourceAddress ? 'source' : null);
+    listing.addressSource ??= best?.source || (rawSourceAddress && !weakLegacySource ? 'source' : null);
     listing.addressPrecision ??= houseNumber ? 'building' : (street ? 'street' : null);
     listing.addressApproximate ??= !houseNumber;
     if (bestParsed?.confidence != null) listing.addressConfidence ??= Number(bestParsed.confidence);
+  } else if (weakLegacySource) {
+    listing.addressSource = null;
+    listing.addressPrecision = null;
+    listing.addressApproximate = true;
   }
 
   return listing;
