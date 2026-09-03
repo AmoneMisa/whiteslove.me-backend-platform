@@ -15,6 +15,7 @@
 
 import {makeListing} from '../listing/normalize.js';
 import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
+import { parseHousingRoomCount } from '@whiteslove/parsing-lexicon/housing-structured';
 import {sleep, throttle} from '../support/ratelimit.js';
 import {olxSegmentDealType} from '../geo/olx-segment.js';
 
@@ -168,14 +169,9 @@ function stateParam(item, keyRe, nameRe) {
 function stateRooms(item) {
   const raw = stateParam(item, /room|komnat|kimnat|xonali|kolichestvo/i, /комнат|кімнат|room|xonali|спал/i);
   let rooms = raw != null ? Number(String(raw).match(/\d+/)?.[0]) : null;
-  if (!rooms) {
-    // Fall back to the title, but only on an explicit room word — never a bare
-    // "кв" (that is "кв.м" area, e.g. "72 кв.м" is 72 m², not 72 rooms).
-    const t = (item.title || '').match(
-      /(\d+)\s*[-хx]?\s*(?:camer|комнатн|комн|кімнат|кімн|room|bedroom|xonali|xona)/i,
-    );
-    rooms = t ? Number(t[1]) : null;
-  }
+  // Fall back to the title via the shared lexicon, which already knows not to
+  // read a bare "кв" (that's "кв.м" area, e.g. "72 кв.м" is 72 m², not rooms).
+  if (!rooms) rooms = parseHousingRoomCount(item.title || '');
   if (rooms != null && (rooms < 1 || rooms > 10)) rooms = null; // sanity cap
   return rooms || null;
 }
