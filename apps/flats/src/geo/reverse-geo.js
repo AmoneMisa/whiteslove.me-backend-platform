@@ -73,8 +73,17 @@ export async function reverseGeocode(lat, lng) {
 }
 
 function canUseReverseHouseNumber(listing) {
-  return ['building', 'complex', 'coordinates'].includes(listing.locationPrecision)
-    || ['address', 'coordinates', 'coordinates-validated', 'residentialComplex'].includes(listing.locationSource);
+  // A reverse service returns the nearest building number to any point. That is
+  // useful only after we have building-level evidence; a ЖК centroid, metro,
+  // POI or neighbourhood point must never manufacture an apartment's house.
+  const accuracyM = Number(listing.locationAccuracyM);
+  return listing.locationSource === 'address'
+    || listing.locationSource === 'coordinates-validated'
+    || (
+      listing.locationPrecision === 'building'
+      && Number.isFinite(accuracyM)
+      && accuracyM <= 80
+    );
 }
 
 function rejectGeneratedCoordinate(listing, reason) {
@@ -170,7 +179,7 @@ export async function applyReverseGeo(listings, country, limit = LOOKUPS_PER_RUN
       listing.address = [address.road, houseNumber].filter(Boolean).join(' ');
       listing.addressSource = 'reverseGeocode';
       listing.addressApproximate = true;
-      listing.addressPrecision = listing.locationPrecision || 'reference';
+      listing.addressPrecision = houseNumber ? 'building' : 'street';
       changed = true;
     } else if (listing.address) {
       listing.addressSource ??= 'source';
