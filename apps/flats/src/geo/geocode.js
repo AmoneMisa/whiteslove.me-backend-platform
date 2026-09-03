@@ -2,8 +2,9 @@
 //
 // Precision order (highest -> lowest):
 //   source coordinates -> exact address -> primary residential complex -> street
-//   -> primary metro -> constrained spatial anchors -> primary local geography
-//   -> nearby/reference anchors -> district. City centres are never apartment points.
+//   -> primary POI -> primary metro -> constrained spatial anchors -> primary local
+//   geography -> nearby/reference anchors -> district. City centres are never
+//   apartment points.
 //
 // Coordinates come from Nominatim (OpenStreetMap). Requests are throttled and
 // cached because geocoding runs during background refreshes, never on the
@@ -35,6 +36,14 @@ const POI_ALIASES = {
   Hospital: 'hospital|больниц\\p{L}*|shifoxon\\p{L}*',
   School: 'school|школ\\p{L}*|maktab\\p{L}*',
 }
+
+const EXACT_SOURCE_PRIORITY = Object.freeze({
+  address: 10,
+  residentialComplex: 20,
+  street: 30,
+  poi: 40,
+  metro: 50,
+})
 
 const BROAD_SOURCES = new Set([
   'microdistrict', 'area', 'localArea', 'locality', 'developmentArea',
@@ -188,7 +197,7 @@ function locationEntityCandidates(listing, city, countryName) {
       name: entity.name,
       accuracyM: config.accuracyM,
       precision: config.precision,
-      approximate: config.source !== 'residentialComplex',
+      approximate: true,
       nominatim: config.source === 'street'
         ? { kind: 'street', street: entity.name, city }
         : { kind: 'entity', name: entity.name, city },
@@ -366,18 +375,18 @@ export async function geocodeListings(listings, country) {
     if (listing.lat != null && listing.lng != null) {
       listing.locationSource ??= 'coordinates'
       listing.locationAccuracyM = finiteAccuracy(listing.locationAccuracyM)
-      listing.locationPrecision ??= 'coordinates'
-      listing.locationApproximate ??= false
+      listing.locationPrecision ??= 'broad'
+      listing.locationApproximate ??= true
       continue
     }
 
     const candidates = geocodeCandidates(listing, country)
     const exactCandidates = candidates.filter((candidate) =>
-      ['address', 'residentialComplex', 'street', 'metro'].includes(candidate.source)
+      Object.hasOwn(EXACT_SOURCE_PRIORITY, candidate.source)
       && candidate.role !== 'nearby',
-    )
+    ).sort((a, b) => EXACT_SOURCE_PRIORITY[a.source] - EXACT_SOURCE_PRIORITY[b.source])
     const nearbyCandidates = candidates.filter((candidate) =>
-      candidate.source === 'nearby' || candidate.source === 'poi' || candidate.role === 'nearby',
+      candidate.source === 'nearby' || candidate.role === 'nearby',
     )
     const broadCandidates = candidates.filter((candidate) =>
       BROAD_SOURCES.has(candidate.source) && candidate.role !== 'nearby',
@@ -421,9 +430,6 @@ export async function geocodeListings(listings, country) {
     }
     if (placed) continue
 
-    // An explicitly stated microdistrict/mahalla/local area describes where the
-    // listing is. It must beat a single "near X" reference that could sit outside
-    // that area. Quantified multi-anchor constraints above remain the exception.
     for (const candidate of broadCandidates) {
       const coords = await lookup(candidate)
       if (!coords) continue
@@ -442,10 +448,6 @@ export async function geocodeListings(listings, country) {
       placed = true
       break
     }
-
-    // A city centroid is viewport metadata, not an apartment location. When no
-    // address/ЖК/microdistrict/district signal resolves, keep the listing off
-    // the point layer instead of manufacturing a plausible-looking marker.
   }
 
   await applyReverseGeo(listings, country)
