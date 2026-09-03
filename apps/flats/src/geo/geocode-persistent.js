@@ -4,6 +4,7 @@ import {
   applyGeoCatalogBroadAnchor,
   applyGeoCatalogCityFallback,
   applyGeoCatalogExactAnchor,
+  applyGeoCatalogNearbyAnchor,
 } from './geo-catalog.js';
 import {
   findLearnedGeo,
@@ -14,9 +15,10 @@ import { applyStructuredAddressFieldsBatch } from './structured-address.js';
 import { annotateNearbyTransport } from './transport-nearby.js';
 
 const CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const EXACT_SOURCES = new Set(['address', 'street']);
+const ADDRESS_SOURCES = new Set(['address']);
+const STREET_SOURCES = new Set(['street']);
 const ENTITY_EXACT_SOURCES = new Set(['residentialComplex', 'metro']);
-const LEARNABLE_SOURCES = new Set([...EXACT_SOURCES, ...ENTITY_EXACT_SOURCES]);
+const LEARNABLE_SOURCES = new Set([...ADDRESS_SOURCES, ...STREET_SOURCES, ...ENTITY_EXACT_SOURCES]);
 const EARTH_RADIUS_M = 6_371_000;
 const EXACT_LOOKUP_BUDGET = Math.max(
   0,
@@ -54,6 +56,11 @@ function applyCandidate(listing, candidate, coords, source = candidate.source) {
   listing.lng = Number(coords.lng);
   listing.locationSource = source;
   listing.locationAccuracyM = Number(coords.accuracyM) || candidate.accuracyM;
+  listing.locationPrecision = candidate.precision || null;
+  listing.locationApproximate = candidate.approximate ?? source !== 'address';
+  listing.locationCanonical = candidate.name || null;
+  listing.locationRole = candidate.role || 'mentioned';
+  listing.locationProvider = String(source || '').startsWith('learned') ? 'learned' : 'nominatim';
 }
 
 async function learnedLookup(descriptor) {
@@ -80,7 +87,10 @@ async function warmPackageFallback(listing, country, candidates, applyPackageAnc
   const clone = { ...listing, lat: null, lng: null };
   if (!applyPackageAnchor(clone, country) || !hasCoordinates(clone)) return false;
 
-  const candidate = candidates.find((item) => item.source === clone.locationSource);
+  const candidate = candidates.find((item) =>
+    item.source === clone.locationSource
+      || (clone.locationCanonical && item.name === clone.locationCanonical),
+  );
   if (!candidate?.q) return false;
 
   await cacheSet(
@@ -92,6 +102,7 @@ async function warmPackageFallback(listing, country, candidates, applyPackageAnc
 }
 
 async function tryExactCandidate(listing, country, candidate, budget) {
+  if (candidate?.role === 'nearby') return { placed: false, usedBudget: false, deferred: false };
   const descriptor = learnedGeoDescriptor(listing, country, candidate);
   const learned = await learnedLookup(descriptor);
   if (learned) {
@@ -138,6 +149,8 @@ async function refineSourceCoordinateFromExactAddress(listing, country, candidat
     // realistic validated accuracy instead of blindly labelling every source pin 25 m.
     listing.locationSource ??= 'coordinates-validated';
     listing.locationAccuracyM ??= Math.max(25, Math.ceil(discrepancyM));
+    listing.locationPrecision ??= 'coordinates';
+    listing.locationApproximate ??= false;
     return false;
   }
   return false;
@@ -146,9 +159,9 @@ async function refineSourceCoordinateFromExactAddress(listing, country, candidat
 /**
  * Persistent geocoding orchestration.
  *
- * The existing geocode.js remains the final Nominatim/spatial/reverse-geo
- * implementation. This layer adds deterministic package/database lookups in
- * front of it without weakening exact-address priority.
+ * Exact source addresses remain strongest. Canonical package anchors are tried
+ * before external guesses; contextual "near" entities are deliberately deferred
+ * until primary address/ЖК/street/local-area evidence has failed.
  */
 export async function geocodeListingsPersistent(listings, country) {
   if (!Array.isArray(listings) || !country) return listings;
@@ -169,8 +182,8 @@ export async function geocodeListingsPersistent(listings, country) {
     let placed = false;
     let exactDeferred = false;
 
-    // 1. House/street coordinates learned earlier, then an exact external lookup.
-    for (const candidate of candidates.filter((item) => EXACT_SOURCES.has(item.source))) {
+    // 1. A concrete parsed address always wins.
+    for (const candidate of candidates.filter((item) => ADDRESS_SOURCES.has(item.source))) {
       const result = await tryExactCandidate(listing, country, candidate, budget);
       exactDeferred ||= result.deferred;
       if (result.placed) {
@@ -180,14 +193,14 @@ export async function geocodeListingsPersistent(listings, country) {
     }
     if (placed) continue;
 
-    // 2. Stable canonical ЖК/metro anchors belong to geo-catalog and outrank HTTP.
+    // 2. Stable canonical ЖК/metro anchors are safer than free-text HTTP guesses.
     if (applyGeoCatalogExactAnchor(listing, country)) {
       packageResolved.add(listing);
       continue;
     }
 
-    // 3. If geo-catalog has no ЖК/metro anchor, use learned DB then Nominatim.
-    for (const candidate of candidates.filter((item) => ENTITY_EXACT_SOURCES.has(item.source))) {
+    // 3. A directly stated street is useful, but remains approximate without a house.
+    for (const candidate of candidates.filter((item) => STREET_SOURCES.has(item.source))) {
       const result = await tryExactCandidate(listing, country, candidate, budget);
       exactDeferred ||= result.deferred;
       if (result.placed) {
@@ -197,9 +210,23 @@ export async function geocodeListingsPersistent(listings, country) {
     }
     if (placed) continue;
 
-    // 4. Coarser package anchors are used only after every exact candidate has
-    // actually been attempted. If the wrapper budget is exhausted, warm the
-    // existing pipeline cache instead so it can attempt exact HTTP first.
+    // 4. Missing canonical ЖК/metro anchors may fall back to learned DB/Nominatim,
+    // but never when the lexicon marked the mention as a nearby reference.
+    for (const candidate of candidates.filter((item) =>
+      ENTITY_EXACT_SOURCES.has(item.source) && item.role !== 'nearby',
+    )) {
+      const result = await tryExactCandidate(listing, country, candidate, budget);
+      exactDeferred ||= result.deferred;
+      if (result.placed) {
+        placed = true;
+        break;
+      }
+    }
+    if (placed) continue;
+
+    // 5. Canonical microdistrict/mahalla/local-area anchors are preferred to an
+    // unbounded landmark reference. When exact HTTP was merely deferred by the
+    // wrapper budget, only warm the lower-priority point and let geocode.js retry.
     if (!exactDeferred && applyGeoCatalogBroadAnchor(listing, country)) {
       packageResolved.add(listing);
       continue;
@@ -208,14 +235,24 @@ export async function geocodeListingsPersistent(listings, country) {
       await warmPackageFallback(listing, country, candidates, applyGeoCatalogBroadAnchor);
     }
 
-    // City center is always a package fallback; never spend a Nominatim request
-    // on a city already present in geo-catalog.
+    // 6. If no primary geometry exists, a known nearby ЖК/POI/metro is still a
+    // useful approximate anchor. Do not preempt a two-distance spatial solution.
+    const constrainedReferences = candidates.filter((item) =>
+      item.role === 'nearby' && item.distanceM != null,
+    );
+    if (!exactDeferred && constrainedReferences.length < 2 && applyGeoCatalogNearbyAnchor(listing, country)) {
+      packageResolved.add(listing);
+      continue;
+    }
+
+    // City center is viewport metadata only; warm it so legacy resolution never
+    // spends HTTP budget on the city, but geocode.js will not emit it as a point.
     await warmPackageFallback(listing, country, candidates, applyGeoCatalogCityFallback);
   }
 
-  // Existing pipeline handles unresolved exact/broad HTTP, spatial POI solving,
-  // reverse geocoding and POI annotations. Rows already placed above are skipped
-  // by its coordinate guard but still receive the final annotations.
+  // Existing pipeline handles unresolved HTTP, multi-anchor spatial solving,
+  // reverse geocoding and POI annotations. Package-resolved rows are skipped by
+  // its coordinate guard but still receive final annotations.
   await geocodeListings(listings, country);
 
   // Canonical transport topology belongs to geo-catalog. This enrichment is
@@ -232,7 +269,7 @@ export async function geocodeListingsPersistent(listings, country) {
     if (!LEARNABLE_SOURCES.has(listing.locationSource)) continue;
 
     const candidate = geocodeCandidates(listing, country)
-      .find((item) => item.source === listing.locationSource);
+      .find((item) => item.source === listing.locationSource && item.role !== 'nearby');
     const descriptor = learnedGeoDescriptor(listing, country, candidate);
     await remember(descriptor, { lat: Number(listing.lat), lng: Number(listing.lng) });
   }
