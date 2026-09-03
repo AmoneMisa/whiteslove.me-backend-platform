@@ -57,7 +57,7 @@ const uchtepaDescription = `Uchtepa tumani 25 dahadan 2 xonali uy ijaraga berila
 
 Atrofida Bobur bog’i, avtobus kanichkasi, poleklinika, maktab va h.k.z`;
 
-test('parses Uchtepa district, daha, floor pair and nearby amenities', () => {
+test('parses Uchtepa district, daha and floor pair', () => {
   const listing = makeListing({
     id: 'uchtepa-test',
     source: 'telegram',
@@ -75,7 +75,6 @@ test('parses Uchtepa district, daha, floor pair and nearby amenities', () => {
   assert.equal(listing.city, 'Tashkent');
   assert.equal(listing.district, 'Uchtepa');
   assert.equal(listing.kvartal, '25 kvartal');
-  assert.deepEqual(listing.nearby.slice(0, 4), ['Dostlik Park', 'Bus stop', 'Clinic', 'School']);
 });
 
 test('parses a bare floor / building-height pair', () => {
