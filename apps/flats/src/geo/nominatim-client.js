@@ -7,6 +7,23 @@ const MISS_TTL_MS = 24 * 60 * 60 * 1000;
 const ERROR_TTL_MS = 60 * 1000;
 const MIN_INTERVAL_MS = 1100;
 
+const STREET_KEYS = Object.freeze([
+  'road', 'pedestrian', 'residential', 'living_street', 'footway',
+  'street', 'path',
+]);
+const CITY_KEYS = Object.freeze([
+  'city', 'town', 'municipality', 'village', 'borough', 'city_district',
+]);
+const CYRILLIC_FOLD = Object.freeze({
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z',
+  и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r',
+  с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'ts', ч: 'ch', ш: 'sh', щ: 'shch',
+  ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya',
+  і: 'i', ї: 'yi', є: 'ye', ґ: 'g', ў: 'o', қ: 'q', ғ: 'g', ҳ: 'h',
+  ә: 'a', ң: 'ng', ө: 'o', ұ: 'u', ү: 'u', һ: 'h',
+});
+const STREET_NOISE_RE = /\b(?:street|st|strada|str|road|rd|avenue|ave|улица|ул|вулиця|вул|kocha|kochasi|кўча|көше)\b/giu;
+
 let lastCallAt = 0;
 
 async function throttle() {
@@ -15,41 +32,208 @@ async function throttle() {
   lastCallAt = Date.now();
 }
 
-export function nominatimCacheKey(query, countryCode) {
-  const country = countryCode ? `${countryCode.toLowerCase()}:` : '';
-  return `geo:v3:${country}${query.toLowerCase().replace(/\s+/g, ' ').trim()}`;
+function normalizeText(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/[’‘ʻʼ`´]/gu, "'")
+    .replace(STREET_NOISE_RE, ' ')
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .replace(/\s+/gu, ' ')
+    .trim();
 }
 
-export async function cachedNominatimPoint(query, countryCode) {
-  const cached = await cacheGet(nominatimCacheKey(query, countryCode));
+function foldCyrillic(value) {
+  return normalizeText(value)
+    .split('')
+    .map((char) => CYRILLIC_FOLD[char] ?? char)
+    .join('')
+    .replace(/\s+/gu, ' ')
+    .trim();
+}
+
+function comparableForms(value) {
+  const direct = normalizeText(value);
+  const folded = foldCyrillic(value);
+  return [...new Set([direct, folded].filter(Boolean))];
+}
+
+function textCompatible(expected, actual) {
+  const expectedForms = comparableForms(expected);
+  const actualForms = comparableForms(actual);
+  if (!expectedForms.length || !actualForms.length) return false;
+  return expectedForms.some((a) => actualForms.some((b) =>
+    a === b || (a.length >= 6 && b.length >= 6 && (a.includes(b) || b.includes(a))),
+  ));
+}
+
+function normalizeHouseNumber(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .toLocaleLowerCase()
+    .replace(/\s+/gu, '')
+    .replace(/[№#]/gu, '')
+    .replace(/[^\p{L}\p{N}/-]+/gu, '');
+}
+
+function expectationCachePart(expectation = {}) {
+  const kind = String(expectation.kind || 'any').toLowerCase();
+  const house = normalizeHouseNumber(expectation.houseNumber);
+  const street = foldCyrillic(expectation.street);
+  const city = foldCyrillic(expectation.city);
+  return [kind, house, street, city].map((value) => encodeURIComponent(value || '-')).join(':');
+}
+
+export function nominatimCacheKey(query, countryCode, expectation = {}) {
+  const country = countryCode ? `${countryCode.toLowerCase()}:` : '';
+  const normalizedQuery = String(query ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
+  return `geo:v4:${country}${expectationCachePart(expectation)}:${normalizedQuery}`;
+}
+
+export async function cachedNominatimPoint(query, countryCode, expectation = {}) {
+  const cached = await cacheGet(nominatimCacheKey(query, countryCode, expectation));
   return cached ? cached.coords : undefined;
 }
 
-export async function fetchNominatimPoint(query, countryCode) {
+function addressValues(result, keys) {
+  const address = result?.address && typeof result.address === 'object' ? result.address : {};
+  return keys.map((key) => address[key]).filter(Boolean);
+}
+
+function resultStreetNames(result) {
+  return addressValues(result, STREET_KEYS);
+}
+
+function resultCityNames(result) {
+  return addressValues(result, CITY_KEYS);
+}
+
+function resultCountryCode(result) {
+  return String(result?.address?.country_code || '').trim().toUpperCase();
+}
+
+function resultHouseNumber(result) {
+  return normalizeHouseNumber(result?.address?.house_number);
+}
+
+function displayContains(result, value) {
+  if (!value || !result?.display_name) return false;
+  const expectedForms = comparableForms(value);
+  const displayForms = comparableForms(result.display_name);
+  return expectedForms.some((a) => displayForms.some((b) => a.length >= 5 && b.includes(a)));
+}
+
+function streetMatches(result, expectedStreet) {
+  if (!expectedStreet) return true;
+  const names = resultStreetNames(result);
+  if (names.some((value) => textCompatible(expectedStreet, value))) return true;
+  return displayContains(result, expectedStreet);
+}
+
+function cityMatches(result, expectedCity) {
+  if (!expectedCity) return false;
+  return resultCityNames(result).some((value) => textCompatible(expectedCity, value))
+    || displayContains(result, expectedCity);
+}
+
+function pointFromResult(result, expectation = {}) {
+  const lat = Number(result?.lat);
+  const lng = Number(result?.lon);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+
+  const kind = expectation.kind || 'any';
+  const precision = kind === 'address' && expectation.houseNumber
+    ? 'building'
+    : kind === 'street' || (kind === 'address' && expectation.street)
+      ? 'street'
+      : null;
+
+  return {
+    lat,
+    lng,
+    precision,
+    accuracyM: null,
+    provider: 'nominatim',
+    providerId: result?.osm_type && result?.osm_id != null
+      ? `${result.osm_type}:${result.osm_id}`
+      : null,
+    providerType: result?.addresstype || result?.type || result?.class || null,
+    placeRank: Number.isFinite(Number(result?.place_rank)) ? Number(result.place_rank) : null,
+  };
+}
+
+/**
+ * Select a Nominatim result conservatively. Exact house lookups must prove the
+ * requested house number and street; accepting the first result is not enough.
+ */
+export function selectNominatimPoint(data, expectation = {}, countryCode = null) {
+  if (!Array.isArray(data)) return null;
+  const expectedCountry = String(countryCode || '').trim().toUpperCase();
+  const expectedHouse = normalizeHouseNumber(expectation.houseNumber);
+  const expectedStreet = expectation.street || null;
+  const kind = expectation.kind || 'any';
+
+  const accepted = [];
+  for (const result of data) {
+    const point = pointFromResult(result, expectation);
+    if (!point) continue;
+
+    const resultCountry = resultCountryCode(result);
+    if (expectedCountry && resultCountry && resultCountry !== expectedCountry) continue;
+
+    const house = resultHouseNumber(result);
+    if (kind === 'address' && expectedHouse) {
+      if (!house || house !== expectedHouse) continue;
+      if (expectedStreet && !streetMatches(result, expectedStreet)) continue;
+    } else if ((kind === 'street' || (kind === 'address' && expectedStreet))
+      && expectedStreet && !streetMatches(result, expectedStreet)) {
+      continue;
+    }
+
+    let score = 0;
+    if (expectedHouse && house === expectedHouse) score += 100;
+    if (expectedStreet && streetMatches(result, expectedStreet)) score += 40;
+    if (expectation.city && cityMatches(result, expectation.city)) score += 20;
+    if (/^(?:house|building|apartments|residential)$/iu.test(String(result?.addresstype || result?.type || ''))) score += 10;
+    score += Math.max(0, Math.min(1, Number(result?.importance) || 0));
+    accepted.push({ point, score });
+  }
+
+  accepted.sort((a, b) => b.score - a.score);
+  return accepted[0]?.point || null;
+}
+
+export async function fetchNominatimPoint(query, countryCode, expectation = {}) {
   await throttle();
+  const key = nominatimCacheKey(query, countryCode, expectation);
   try {
-    const params = new URLSearchParams({ q: query, format: 'json', limit: '1' });
+    const params = new URLSearchParams({
+      q: query,
+      format: 'jsonv2',
+      limit: '5',
+      addressdetails: '1',
+      namedetails: '1',
+    });
     if (countryCode) params.set('countrycodes', countryCode.toLowerCase());
     const response = await fetch(`${NOMINATIM_URL}?${params}`, {
-      headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'en' },
+      headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'en,ru,uk,uz,kk,ro' },
       signal: AbortSignal.timeout(10_000),
     });
     if (!response.ok) throw new Error(`nominatim ${response.status}`);
     const data = await response.json();
-    const first = Array.isArray(data) ? data[0] : null;
-    const coords = first ? { lat: Number(first.lat), lng: Number(first.lon) } : null;
-    await cacheSet(nominatimCacheKey(query, countryCode), { coords }, coords ? HIT_TTL_MS : MISS_TTL_MS);
+    const coords = selectNominatimPoint(data, expectation, countryCode);
+    await cacheSet(key, { coords }, coords ? HIT_TTL_MS : MISS_TTL_MS);
     return coords;
   } catch {
-    await cacheSet(nominatimCacheKey(query, countryCode), { coords: null }, ERROR_TTL_MS);
+    await cacheSet(key, { coords: null }, ERROR_TTL_MS);
     return null;
   }
 }
 
-export async function geocodeQuery(query, countryCode) {
+export async function geocodeQuery(query, countryCode, expectation = {}) {
   if (!query) return null;
-  const cached = await cachedNominatimPoint(query, countryCode);
-  return cached === undefined ? fetchNominatimPoint(query, countryCode) : cached;
+  const cached = await cachedNominatimPoint(query, countryCode, expectation);
+  return cached === undefined ? fetchNominatimPoint(query, countryCode, expectation) : cached;
 }
 
 export async function geocodeBbox(query) {
