@@ -75,7 +75,7 @@ test('parses Uchtepa district, daha, floor pair and nearby amenities', () => {
   assert.equal(listing.city, 'Tashkent');
   assert.equal(listing.district, 'Uchtepa');
   assert.equal(listing.kvartal, '25 kvartal');
-  assert.deepEqual(listing.nearby.slice(0, 4), ['Bobur Park', 'Bus stop', 'Clinic', 'School']);
+  assert.deepEqual(listing.nearby.slice(0, 4), ['Dostlik Park', 'Bus stop', 'Clinic', 'School']);
 });
 
 test('parses a bare floor / building-height pair', () => {
