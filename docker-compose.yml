@@ -159,6 +159,11 @@ services:
       - AI_MIN_CONFIDENCE=${AI_MIN_CONFIDENCE:-0.6}
       - AI_MAX_TEXT_CHARS=${AI_MAX_TEXT_CHARS:-32000}
       - AI_MAX_PHOTOS_PER_LISTING=${AI_MAX_PHOTOS_PER_LISTING:-10}
+      # Ceiling on a vision request that carries photos inline as base64
+      # (cloudflare and gemini refuse remote image URLs). The nginx relay
+      # in front of Gemini answers HTTP 413 above its own 1MB body limit,
+      # so the default stays under it; raise both together.
+      - AI_MAX_INLINE_REQUEST_BYTES=${AI_MAX_INLINE_REQUEST_BYTES:-900000}
       - TEXT_PROVIDERS=${TEXT_PROVIDERS:-freellmapi}
       - TRANSLATION_PROVIDERS=${TRANSLATION_PROVIDERS:-freellmapi}
       - FREE_TRANSLATOR_ENABLED=${FREE_TRANSLATOR_ENABLED:-true}
