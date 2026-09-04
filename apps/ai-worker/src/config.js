@@ -55,6 +55,9 @@ export const config = Object.freeze({
   visionConcurrency: number('VISION_CONCURRENCY', 1, { min: 1, integer: true }),
   visionProviderTimeoutMs: number('VISION_PROVIDER_TIMEOUT_MS', 30_000, { min: 1, integer: true }),
   visionCooldownMs: number('VISION_COOLDOWN_MS', 5 * 60_000, { min: 0, integer: true }),
+  // A rate limit is measured in seconds, not minutes; benching a provider
+  // for the full cooldown over one turns a momentary limit into an outage.
+  visionRateLimitCooldownMs: number('VISION_RATE_LIMIT_COOLDOWN_MS', 30_000, { min: 0, integer: true }),
   visionCacheTtlMs: number('VISION_CACHE_TTL_MS', 30 * 24 * 60 * 60_000, { min: 1, integer: true }),
   groqApiKey: env('GROQ_API_KEY'),
   groqVisionModel: env('GROQ_VISION_MODEL', 'qwen/qwen3.6-27b'),

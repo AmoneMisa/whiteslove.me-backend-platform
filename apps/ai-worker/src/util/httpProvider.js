@@ -4,6 +4,24 @@
 import { config } from '../config.js';
 import { recordProviderResult } from './metrics.js';
 
+/**
+ * A Retry-After header in milliseconds, or null when absent or unparseable.
+ *
+ * The header comes as either a number of seconds or an HTTP date; both forms
+ * are in use across these providers.
+ */
+export function retryAfterMs(headerValue) {
+  if (!headerValue) return null;
+  const raw = String(headerValue).trim();
+
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds)) return seconds > 0 ? Math.round(seconds * 1000) : 0;
+
+  const date = Date.parse(raw);
+  if (Number.isNaN(date)) return null;
+  return Math.max(0, date - Date.now());
+}
+
 export async function fetchJson(url, options, provider, { bucket = 'visionProviders', timeoutMs } = {}) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs || config.visionProviderTimeoutMs);
@@ -17,6 +35,7 @@ export async function fetchJson(url, options, provider, { bucket = 'visionProvid
       const error = new Error(`${provider.toUpperCase()}_HTTP_${response.status}: ${body.slice(0, 200)}`);
       error.status = response.status;
       error.retryable = response.status === 429 || response.status >= 500;
+      error.retryAfterMs = retryAfterMs(response.headers.get('retry-after'));
       throw error;
     }
     recordProviderResult(bucket, provider, { ok: true, ms });
