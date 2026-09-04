@@ -19,10 +19,6 @@ services:
       - PORT=3001
       - ENCRYPTION_KEY=${FREELLMAPI_ENCRYPTION_KEY:-}
       - FREEAPI_DB_PATH=/app/server/data/freellmapi.db
-      - FREELLMAPI_GOOGLE_BASE_URL=${FREELLMAPI_GOOGLE_BASE_URL:-}
-      # The Google relay lives on a private address, which the default policy
-      # rejects as a provider URL.
-      - FREEAPI_BLOCK_PRIVATE_PROVIDER_URLS=${FREEAPI_BLOCK_PRIVATE_PROVIDER_URLS:-false}
       # Existing ai-worker provider credentials are imported declaratively at
       # boot. They are persisted encrypted by FreeLLMAPI and never need to be
       # copied through its dashboard.
@@ -43,19 +39,14 @@ services:
         set -eu
         export FREEAPI_CONFIG_JSON="$$(node - <<'NODE'
         const keys = [];
-        const add = (platform, raw, extra = {}) => {
+        const add = (platform, raw) => {
           const key = String(raw || '').trim();
           keys.push(key
-            ? { platform, key, label: 'env', enabled: true, ...extra }
+            ? { platform, key, label: 'env', enabled: true }
             : { platform, key: 'disabled-by-env', label: 'env', enabled: false });
         };
-        // Google refuses this region outright ("User location is not supported
-        // for the API use"), so the key is routed through the same relay the
-        // ai-worker uses. Without it every Google model in the catalogue is
-        // dead weight in the fallback loop.
-        const googleBase = String(process.env.FREELLMAPI_GOOGLE_BASE_URL || '').trim();
         add('groq', process.env.GROQ_API_KEY);
-        add('google', process.env.GEMINI_API_KEY, googleBase ? { baseUrl: googleBase } : {});
+        add('google', process.env.GEMINI_API_KEY);
         add('nvidia', process.env.NVIDIA_API_KEY);
         add('huggingface', process.env.HUGGINGFACE_API_KEY);
         add('llm7', process.env.LLM7_API_KEY);
