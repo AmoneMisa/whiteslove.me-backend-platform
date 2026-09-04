@@ -29,6 +29,14 @@ test('falls through groq -> gemini to nvidia, the first that succeeds', async ()
         headers: { 'content-type': 'application/json' },
       });
     }
+    // Providers that cannot follow a link (cloudflare, gemini) download the
+    // image and inline it as base64, so the photo URL is a real request now.
+    if (String(url).startsWith('https://example.com/')) {
+      return new Response(Buffer.from('fake-jpeg-bytes'), {
+        status: 200,
+        headers: { 'content-type': 'image/jpeg' },
+      });
+    }
     throw new Error(`unexpected URL: ${url}`);
   };
 
@@ -36,7 +44,7 @@ test('falls through groq -> gemini to nvidia, the first that succeeds', async ()
     const result = await analyzePhotos(['https://example.com/flat.jpg']);
     assert.equal(result.provider, 'nvidia');
     assert.equal(result.data.balcony.value, true);
-    assert.deepEqual(calledUrls.map((u) => new URL(u).hostname), [
+    assert.deepEqual(calledUrls.map((u) => new URL(u).hostname).filter((h) => h !== 'example.com'), [
       'api.groq.com',
       'generativelanguage.googleapis.com',
       'integrate.api.nvidia.com',

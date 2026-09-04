@@ -54,8 +54,43 @@ function mergePhotoResults(items) {
 // photos for every other provider too. More photos is strictly more evidence
 // for the extraction, so each provider now gets as many as it can take.
 const PROVIDER_IMAGE_LIMITS = Object.freeze({
+  // "This model supports up to 3 images" (HTTP 400).
   groq: 3,
+  // "At most 1 image(s) may be provided in one prompt" (HTTP 400).
+  nvidia: 1,
 });
+
+// Providers that will not follow a link: they reject a remote image_url and
+// want the bytes inline. Cloudflare says so outright ("Property image_url
+// only supports base64 encoded image data"), and Gemini's OpenAI-compatible
+// layer answers a remote URL with a bare INVALID_ARGUMENT. Everyone else
+// takes the URL, which is far cheaper than shipping the file, so only these
+// two pay the download.
+const PROVIDERS_NEEDING_INLINE_IMAGES = new Set(['cloudflare', 'gemini']);
+
+// Base64 inflates by a third, and a provider that refuses the payload costs
+// the same failover hop as one that refuses the URL.
+const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
+
+async function toInlineImage(url) {
+  if (/^data:/i.test(url)) return url;
+  const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
+  if (!response.ok) {
+    throw Object.assign(new Error(`IMAGE_FETCH_HTTP_${response.status}`), { code: 'VISION_IMAGE_FETCH_FAILED' });
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (buffer.length > MAX_INLINE_IMAGE_BYTES) {
+    throw Object.assign(new Error('IMAGE_TOO_LARGE_TO_INLINE'), { code: 'VISION_IMAGE_TOO_LARGE' });
+  }
+  const type = (response.headers.get('content-type') || 'image/jpeg').split(';')[0].trim();
+  return `data:${type};base64,${buffer.toString('base64')}`;
+}
+
+/** Image URLs as the given provider will accept them. */
+async function imageUrlsFor(provider, images) {
+  if (!PROVIDERS_NEEDING_INLINE_IMAGES.has(provider)) return images.map((image) => image.url);
+  return Promise.all(images.map((image) => toInlineImage(image.url)));
+}
 
 export function imageLimitFor(provider) {
   const limit = PROVIDER_IMAGE_LIMITS[provider];
@@ -67,8 +102,9 @@ async function openAiCompatibleVision(provider, { baseUrl, apiKey, model, extraB
     throw Object.assign(new Error(`${provider.toUpperCase()}_NOT_CONFIGURED`), { code: 'VISION_PROVIDER_NOT_CONFIGURED' });
   }
   const selected = images.slice(0, imageLimitFor(provider));
+  const urls = await imageUrlsFor(provider, selected);
   const content = [{ type: 'text', text: visionPrompt(selected.map((image) => image.id)) }];
-  for (const image of selected) content.push({ type: 'image_url', image_url: { url: image.url } });
+  for (const url of urls) content.push({ type: 'image_url', image_url: { url } });
   const data = await fetchJson(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
@@ -163,9 +199,18 @@ async function cloudflare(images) {
       {
         method: 'POST',
         headers: { authorization: `Bearer ${config.cloudflareApiToken}`, 'content-type': 'application/json' },
+        // The image goes inside the message content, as base64. A
+        // top-level "image" field with a URL is refused twice over:
+        // "Unable to add image when there are no user-supplied nor
+        // system-supplied messages", then "Malformed image URI".
         body: JSON.stringify({
-          messages: [{ role: 'user', content: visionPrompt([image.id]) }],
-          image: image.url,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'text', text: visionPrompt([image.id]) },
+              { type: 'image_url', image_url: { url: await toInlineImage(image.url) } },
+            ],
+          }],
           max_tokens: 3200,
         }),
       },

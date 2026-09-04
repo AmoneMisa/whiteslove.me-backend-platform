@@ -30,8 +30,11 @@ test('vision requests go to the configured relay instead of Google directly', as
   try {
     const result = await analyzePhotos(['https://example.com/flat.jpg']);
     assert.equal(result.provider, 'gemini');
-    assert.equal(calledUrls.length, 1);
-    assert.equal(calledUrls[0], 'https://relay.example.internal/v1beta/openai/chat/completions');
+    // Gemini will not follow a link, so the photo is downloaded and inlined
+    // first. What matters here is where the *API* call goes.
+    const apiCalls = calledUrls.filter((u) => !u.startsWith('https://example.com/'));
+    assert.equal(apiCalls.length, 1);
+    assert.equal(apiCalls[0], 'https://relay.example.internal/v1beta/openai/chat/completions');
   } finally {
     global.fetch = originalFetch;
   }

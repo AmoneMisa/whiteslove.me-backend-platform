@@ -16,7 +16,10 @@ test('vision falls back between providers and caches the successful result', asy
   const originalFetch = global.fetch;
   let calls = 0;
   global.fetch = async (url) => {
-    calls += 1;
+    // Only provider API calls are counted. Cloudflare cannot follow a link,
+    // so the photo is downloaded and inlined first; that download is
+    // plumbing, not a failover step.
+    if (!String(url).startsWith('https://example.com/')) calls += 1;
     if (String(url).includes('api.groq.com')) {
       return new Response('temporary failure', { status: 503 });
     }
@@ -24,6 +27,14 @@ test('vision falls back between providers and caches the successful result', asy
       return new Response(JSON.stringify({ result: { response: JSON.stringify(vision) } }), {
         status: 200,
         headers: { 'content-type': 'application/json' },
+      });
+    }
+    // Providers that cannot follow a link (cloudflare, gemini) download the
+    // image and inline it as base64, so the photo URL is a real request now.
+    if (String(url).startsWith('https://example.com/')) {
+      return new Response(Buffer.from('fake-jpeg-bytes'), {
+        status: 200,
+        headers: { 'content-type': 'image/jpeg' },
       });
     }
     throw new Error(`unexpected URL: ${url}`);

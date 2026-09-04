@@ -10,15 +10,17 @@ import { imageLimitFor } from '../src/services/vision-providers.js';
 // strictest provider used to throw photos away for every other one.
 
 test('a provider with no stated ceiling gets the full configured set', () => {
-  for (const provider of ['gemini', 'nvidia', 'openrouter', 'mistral', 'llm7']) {
+  for (const provider of ['gemini', 'openrouter', 'mistral', 'llm7', 'huggingface']) {
     assert.equal(imageLimitFor(provider), config.maxPhotosPerListing, provider);
   }
 });
 
-test('groq is cut to the three images its vision model accepts', () => {
-  // A fourth image is not truncated by Groq, it fails the whole request with
-  // HTTP 400 "This model supports up to 3 images".
+test('a provider is cut to the number of images it actually accepts', () => {
+  // Neither of these truncates a too-long list; both fail the whole request.
+  // Groq: HTTP 400 "This model supports up to 3 images".
   assert.equal(imageLimitFor('groq'), 3);
+  // NVIDIA: HTTP 400 "At most 1 image(s) may be provided in one prompt".
+  assert.equal(imageLimitFor('nvidia'), 1);
 });
 
 test('a provider ceiling never raises the global limit', () => {
