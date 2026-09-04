@@ -47,11 +47,26 @@ function mergePhotoResults(items) {
 // Shared shape for OpenAI-compatible chat-completions vision APIs. FreeLLMAPI
 // speaks this dialect and routes image requests only to vision-capable free
 // endpoints. Direct providers remain available for explicit opt-in/debugging.
+// What each provider will accept in one request, where that is lower than
+// what we would like to send. Groq's vision model rejects a fourth image
+// outright ("This model supports up to 3 images", HTTP 400), and before this
+// the only way to stop that was to lower the global cap -- which threw away
+// photos for every other provider too. More photos is strictly more evidence
+// for the extraction, so each provider now gets as many as it can take.
+const PROVIDER_IMAGE_LIMITS = Object.freeze({
+  groq: 3,
+});
+
+export function imageLimitFor(provider) {
+  const limit = PROVIDER_IMAGE_LIMITS[provider];
+  return limit ? Math.min(config.maxPhotosPerListing, limit) : config.maxPhotosPerListing;
+}
+
 async function openAiCompatibleVision(provider, { baseUrl, apiKey, model, extraBody = {} }, images) {
   if (!apiKey) {
     throw Object.assign(new Error(`${provider.toUpperCase()}_NOT_CONFIGURED`), { code: 'VISION_PROVIDER_NOT_CONFIGURED' });
   }
-  const selected = images.slice(0, config.maxPhotosPerListing);
+  const selected = images.slice(0, imageLimitFor(provider));
   const content = [{ type: 'text', text: visionPrompt(selected.map((image) => image.id)) }];
   for (const image of selected) content.push({ type: 'image_url', image_url: { url: image.url } });
   const data = await fetchJson(`${baseUrl}/chat/completions`, {
