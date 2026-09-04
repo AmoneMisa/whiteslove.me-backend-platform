@@ -29,7 +29,7 @@ test('a field with the wrong shape is still rejected', () => {
   assert.equal(VisionSchema.safeParse({ roomsVisible: 6 }).success, false);
 });
 
-test('an unknown field is still rejected', () => {
+test('an unknown field is still rejected by the whole-object schema', () => {
   assert.equal(
     VisionSchema.safeParse({ swimmingPoolVisible: { value: true, confidence: 1, evidence: ['pool'] } }).success,
     false,

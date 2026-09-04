@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { VisionSchema, emptyVisionResult, sanitizeVision } from '../schemas/vision.js';
+import { EvidenceField, VISION_FIELDS, emptyVisionResult, sanitizeVision } from '../schemas/vision.js';
 import { visionPrompt } from '../prompts/vision.js';
 import { fetchJson, parseModelJson } from '../util/httpProvider.js';
 import { resolveFreeLlmApiKey } from '../util/freellmapiKey.js';
@@ -21,15 +21,40 @@ function validate(value) {
   } catch (error) {
     throw schemaError(`not JSON (${error.message}); answer began ${JSON.stringify(String(value).slice(0, 120))}`);
   }
-  const parsed = VisionSchema.safeParse(parsedJson);
-  if (!parsed.success) {
-    const issues = parsed.error.issues
-      .slice(0, 4)
-      .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
-      .join('; ');
-    throw schemaError(`${parsed.error.issues.length} issue(s) -- ${issues}`);
+  if (!parsedJson || typeof parsedJson !== 'object' || Array.isArray(parsedJson)) {
+    throw schemaError(`expected an object, got ${Array.isArray(parsedJson) ? 'array' : typeof parsedJson}`);
   }
-  return sanitizeVision(parsed.data);
+
+  // Validate field by field rather than all-or-nothing. A model that reports
+  // twenty-six fields correctly and botches five had all twenty-six thrown
+  // away, which is most of what these smaller models were losing. A malformed
+  // field is dropped -- never repaired, since inventing the confidence behind
+  // an answer would let an unexplained guess reach a listing.
+  const kept = {};
+  const rejected = [];
+  for (const field of VISION_FIELDS) {
+    if (!(field in parsedJson)) continue;
+    const parsedField = EvidenceField.safeParse(parsedJson[field]);
+    if (parsedField.success) kept[field] = parsedField.data;
+    else rejected.push(`${field}: ${parsedField.error.issues[0]?.message || 'invalid'}`);
+  }
+
+  if (!Object.keys(kept).length) {
+    const detail = rejected.length
+      ? `${rejected.length} field(s) all malformed -- ${rejected.slice(0, 3).join('; ')}`
+      : `no known fields present; keys were ${JSON.stringify(Object.keys(parsedJson).slice(0, 6))}`;
+    throw schemaError(detail);
+  }
+
+  if (rejected.length) {
+    log.warn('vision answer partially usable', {
+      kept: Object.keys(kept).length,
+      dropped: rejected.length,
+      examples: rejected.slice(0, 3),
+    });
+  }
+
+  return sanitizeVision(kept);
 }
 
 function mergePhotoResults(items) {

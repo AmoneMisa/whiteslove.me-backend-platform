@@ -2,7 +2,21 @@ import { VISION_FIELDS } from '../schemas/vision.js';
 
 export function visionPrompt(photoLabels = []) {
   return `Analyze real-estate listing photos and return ONLY one JSON object with exactly these keys: ${VISION_FIELDS.join(', ')}.
-Each key must be {"value":...,"confidence":0..1,"evidence":["photo_1",...]}. Use only the supplied photo labels as evidence IDs.
+
+SHAPE (this is the most common mistake -- read it twice):
+Every key maps to an OBJECT, never to a bare value.
+
+CORRECT:
+  {"roomsVisible": {"value": 3, "confidence": 0.8, "evidence": ["photo_1"]},
+   "balcony": {"value": true, "confidence": 0.9, "evidence": ["photo_2"]},
+   "dishwasherVisible": {"value": null, "confidence": 0, "evidence": []}}
+
+WRONG -- do not do this:
+  {"roomsVisible": 3, "balcony": true, "dishwasherVisible": null}
+
+Output the object directly. Do not introduce it with a sentence, do not wrap it
+in markdown fences, and do not return a single {"value":...} object on its own.
+Use only the supplied photo labels as evidence IDs.
 
 Evidence rules:
 - Report only facts directly visible in the images. Never infer a feature merely because it is common for this type of home.

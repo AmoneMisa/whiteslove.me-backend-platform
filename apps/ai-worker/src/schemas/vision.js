@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-const EvidenceField = z.object({
+export const EvidenceField = z.object({
   value: z.union([z.boolean(), z.number().int().nonnegative(), z.string(), z.null()]),
   confidence: z.number().min(0).max(1).catch(0),
   evidence: z.array(z.string()).max(12).catch([]),
