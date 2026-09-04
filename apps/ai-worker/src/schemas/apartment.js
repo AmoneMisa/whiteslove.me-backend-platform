@@ -21,6 +21,12 @@ const apartmentProperties = {
     floorsTotal: { type: INT },
     district: { type: STR },
     kvartal: { type: STR },
+    // Both feed geocoding, which ranks a street+house above everything else
+    // and a canonical complex just below it -- so a wrong one here does not
+    // merely display wrong, it drags the map pin with it. The merge step
+    // validates both against the location dictionary before they are kept.
+    address: { type: STR },
+    residenceComplex: { type: STR },
     newBuilding: { type: BOOL },
     balcony: { type: BOOL },
     airConditioner: { type: BOOL },
@@ -78,6 +84,8 @@ export const ApartmentSchema = z.object({
   floorsTotal: nullableInt,
   district: nullableStr,
   kvartal: nullableStr,
+  address: nullableStr,
+  residenceComplex: nullableStr,
   newBuilding: nullableBool,
   balcony: nullableBool,
   airConditioner: nullableBool,

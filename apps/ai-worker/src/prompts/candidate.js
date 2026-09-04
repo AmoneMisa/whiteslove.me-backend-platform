@@ -1,6 +1,8 @@
-import { EXTRACTION_RULES } from './common.js';
+import { ATTRIBUTION_RULES, EXTRACTION_RULES } from './common.js';
 
 export const CANDIDATE_SYSTEM = `${EXTRACTION_RULES}
+
+${ATTRIBUTION_RULES}
 
 You extract structured data about ONE job-seeker/candidate profile. Text may be
 in English, Russian, Ukrainian, Uzbek, Kazakh or Kyrgyz. Understand the meaning
@@ -16,6 +18,13 @@ Important rules:
   (for example an explicitly labelled name/age or an unredacted contact). They
   are authoritative. Other parsed values are intentionally not supplied here
   because you are responsible for the semantic interpretation.
+- A CV is full of places that are not the candidate's own: employer offices,
+  universities, project sites, references. The candidate's location is where
+  THEY say they live or want to work, never an address read off their work
+  history or education. When only an employer's city appears, leave the
+  candidate's location null rather than borrowing it.
+- Likewise a company name in the work history is a former or current employer,
+  not the candidate's own business, unless they say they founded or own it.
 - professions contains CURRENT desired professions/jobs only. A person may seek
   several different jobs, e.g. bartender + cashier + fitness trainer.
 - Determine the desired profession from intent/goal statements, not merely from

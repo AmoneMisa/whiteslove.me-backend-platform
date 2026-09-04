@@ -63,9 +63,9 @@ async function run(job) {
         const finishedAtMs = Date.now();
         const processMs = Math.max(0, finishedAtMs - startedAtMs);
         const totalMs = Math.max(0, finishedAtMs - job.timestamp);
-        const ollamaDurationMs = result.timings?.ollamaDurationMs ?? result.timings?.totalMs ?? 0;
+        const inferenceDurationMs = result.timings?.inferenceDurationMs ?? result.timings?.totalMs ?? 0;
         if (job.kind !== 'photo') recordText(result.timings?.totalMs || 0);
-        recordJobTiming(job.kind, { ollamaMs: ollamaDurationMs, totalMs });
+        recordJobTiming(job.kind, { inferenceMs: inferenceDurationMs, totalMs });
         const timings = {
           ...(result.timings || {}),
           queueWaitMs,

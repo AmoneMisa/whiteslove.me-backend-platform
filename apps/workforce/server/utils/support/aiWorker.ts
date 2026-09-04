@@ -32,7 +32,7 @@ type AiWorkerRequestError = Error & { status?: number }
 const workerUrl = (process.env.AI_WORKER_URL || '').replace(/\/$/, '')
 const workerKey = process.env.AI_WORKER_KEY || ''
 // Translation is interactive and a single 3s control-plane timeout used to make
-// the browser abandon an otherwise healthy BullMQ/Ollama job. Keep at least 10s
+// the browser abandon an otherwise healthy queued inference job. Keep at least 10s
 // even when an older production .env still contains AI_WORKER_REQUEST_TIMEOUT_MS=3000.
 const requestTimeoutMs = Math.max(10_000, Number(process.env.AI_WORKER_REQUEST_TIMEOUT_MS) || 0)
 const proxyRequestRetries = Math.max(0, Number(process.env.AI_WORKER_PROXY_RETRIES) || 1)

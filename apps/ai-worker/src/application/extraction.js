@@ -22,7 +22,7 @@ export async function submitExtraction({ kind, rawText, knownFacts = {}, meta = 
       // today's low-latency interactive path.
       const extracted = await extract('translation', { text: normalizedText, knownFacts, meta });
       const totalMs = extracted.timings?.totalMs || 0;
-      recordJobTiming('translation', { ollamaMs: 0, totalMs });
+      recordJobTiming('translation', { inferenceMs: 0, totalMs });
       metrics.succeeded += 1;
       const now = new Date().toISOString();
       const stored = await setResult(key, {

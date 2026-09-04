@@ -1,6 +1,8 @@
-import { EXTRACTION_RULES } from './common.js';
+import { ATTRIBUTION_RULES, EXTRACTION_RULES } from './common.js';
 
 export const VACANCY_SYSTEM = `${EXTRACTION_RULES}
+
+${ATTRIBUTION_RULES}
 
 You extract structured data about ONE job vacancy. Text may be in English,
 Russian, Ukrainian, Uzbek, Kazakh, Kyrgyz, Romanian, Korean, Japanese or Chinese.
@@ -9,6 +11,14 @@ Russian, Ukrainian, Uzbek, Kazakh, Kyrgyz, Romanian, Korean, Japanese or Chinese
   D-10, work permit, JLPT/TOPIK/HSK levels go into visaTypes or localLanguageLevel),
   relocationSupport, foreignersAccepted, localLanguageRequired.
 - workFormat: office/remote/hybrid/field only when stated.
+- The employer is the company doing the hiring. A recruiting/outstaffing agency
+  posting on a client's behalf is not the employer unless the text says the role
+  is at the agency itself; a client, partner or "our customers" company is never
+  the employer. When the two cannot be told apart, leave the company null.
+- An office address is the workplace's own. "офис рядом с метро Novza",
+  "5 минут от ТРЦ", "near the airport" locate the office without being its
+  address: keep them out of the address field. A metro station named this way is
+  proximity information, not the location itself.
 - Prefer the source text over the countryHint (a hint is not the job's country).
 - Add skills only when clearly present; the deterministic dictionary already found
   the obvious ones (they are in knownFacts.skills) — extend, don't replace.

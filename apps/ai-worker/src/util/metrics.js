@@ -21,7 +21,7 @@ export const metrics = {
 
 function kindMetrics(kind) {
   if (!metrics.byKind[kind]) {
-    metrics.byKind[kind] = { count: 0, queueWaitMsTotal: 0, ollamaMsTotal: 0, totalMsTotal: 0 };
+    metrics.byKind[kind] = { count: 0, queueWaitMsTotal: 0, inferenceMsTotal: 0, totalMsTotal: 0 };
   }
   return metrics.byKind[kind];
 }
@@ -55,10 +55,10 @@ export function recordQueueWait(ms, kind = 'unknown') {
   kindMetrics(kind).queueWaitMsTotal += value;
 }
 
-export function recordJobTiming(kind, { ollamaMs = 0, totalMs = 0 } = {}) {
+export function recordJobTiming(kind, { inferenceMs = 0, totalMs = 0 } = {}) {
   const item = kindMetrics(kind);
   item.count += 1;
-  item.ollamaMsTotal += Math.max(0, ollamaMs || 0);
+  item.inferenceMsTotal += Math.max(0, inferenceMs || 0);
   item.totalMsTotal += Math.max(0, totalMs || 0);
 }
 
@@ -66,7 +66,7 @@ export function snapshot({ cache, queue } = {}) {
   const byKind = Object.fromEntries(Object.entries(metrics.byKind).map(([kind, item]) => [kind, {
     ...item,
     avgQueueWaitMs: item.count ? Math.round(item.queueWaitMsTotal / item.count) : 0,
-    avgOllamaMs: item.count ? Math.round(item.ollamaMsTotal / item.count) : 0,
+    avgInferenceMs: item.count ? Math.round(item.inferenceMsTotal / item.count) : 0,
     avgTotalMs: item.count ? Math.round(item.totalMsTotal / item.count) : 0,
   }]));
   const providerSnapshot = (bucket) => Object.fromEntries(Object.entries(metrics[bucket]).map(([provider, item]) => [provider, {
