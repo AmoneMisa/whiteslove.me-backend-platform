@@ -19,6 +19,7 @@ import {
   canonicalDictionaryDistrict,
   dictionaryLocationLists,
 } from '../geo/location-dictionary-resolver.js';
+import { newestFirst } from './enrichment-priority.js';
 
 // Bump when prompts, schema or the merge rules change, so already-enriched
 // listings are re-evaluated instead of keeping an answer from the old contract.
@@ -316,7 +317,9 @@ export function scheduleListingsAi(listings, country, persist) {
   const batchSize = Math.max(1, Number(process.env.AI_WORKER_APARTMENT_BATCH) || 8);
   let queued = 0;
 
-  for (const listing of listings) {
+  // Capacity is the scarce resource, so spend it on the freshest adverts
+  // in the batch rather than whatever order the source page returned.
+  for (const listing of newestFirst(listings)) {
     if (queued >= batchSize) break;
     if (!needsApartmentAi(listing)) continue;
 

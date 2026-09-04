@@ -7,6 +7,7 @@ import {
   scheduleVisionAnalysis,
   visionFingerprint,
 } from '../support/ai-worker.js';
+import { newestFirst } from './enrichment-priority.js';
 
 const STALE_TTL_MS = 60 * 60 * 1000;
 const FULL_FEED_VERSION = 'full-feed-v8';
@@ -247,7 +248,9 @@ export function scheduleListingsVision(listings) {
   const batchSize = Math.max(1, Number(process.env.AI_WORKER_VISION_BATCH) || 3);
   let queued = 0;
 
-  for (const listing of listings) {
+  // Capacity is the scarce resource, so spend it on the freshest adverts
+  // in the batch rather than whatever order the source page returned.
+  for (const listing of newestFirst(listings)) {
     if (queued >= batchSize) break;
     if (!needsVision(listing)) continue;
 
