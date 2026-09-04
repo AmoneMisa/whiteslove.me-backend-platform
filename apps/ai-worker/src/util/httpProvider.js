@@ -36,8 +36,46 @@ export async function fetchJson(url, options, provider, { bucket = 'visionProvid
   }
 }
 
+/**
+ * The first balanced JSON object in `text`, or null.
+ *
+ * Braces inside strings are skipped, so a value like "a {kitchen}" does not
+ * end the object early.
+ */
+function embeddedJsonObject(text) {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let i = start; i < text.length; i += 1) {
+    const char = text[i];
+    if (escaped) { escaped = false; continue; }
+    if (char === '\\') { escaped = true; continue; }
+    if (char === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (char === '{') depth += 1;
+    else if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 export function parseModelJson(value) {
   if (value && typeof value === 'object') return value;
   const text = String(value || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-  return JSON.parse(text);
+  try {
+    return JSON.parse(text);
+  } catch (error) {
+    // Smaller models introduce the answer before giving it: "Based on the
+    // provided image, here is the JSON object:" followed by the object. The
+    // JSON is intact, so throwing away a usable answer over its preamble is
+    // pure loss.
+    const embedded = embeddedJsonObject(text);
+    if (embedded === null) throw error;
+    return JSON.parse(embedded);
+  }
 }

@@ -44,8 +44,14 @@ export const VISION_FIELDS = [
   'renovationLevel',
 ];
 
+// Every field is optional: a model that reports twenty-five of the thirty-one
+// fields has told us twenty-five things, and requiring the whole set threw all
+// of them away over the six it left out. sanitizeVision already fills the gaps
+// from emptyVisionResult, so a partial answer needs no special handling here.
+// The JSON Schema sent to providers still asks for all of them -- this governs
+// what we accept back, not what we request.
 export const VisionSchema = z.object(
-  Object.fromEntries(VISION_FIELDS.map((field) => [field, EvidenceField])),
+  Object.fromEntries(VISION_FIELDS.map((field) => [field, EvidenceField.optional()])),
 ).strict();
 
 // JSON Schema embedded in the provider payload (Structured Outputs, mirrors VisionSchema).
