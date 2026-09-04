@@ -1,5 +1,5 @@
 import { config } from '../config.js';
-import { EvidenceField, VISION_FIELDS, emptyVisionResult, sanitizeVision } from '../schemas/vision.js';
+import { EvidenceField, VISION_FIELDS, emptyVisionResult, sanitizeVision, visionJsonSchema } from '../schemas/vision.js';
 import { visionPrompt } from '../prompts/vision.js';
 import { fetchJson, parseModelJson } from '../util/httpProvider.js';
 import { resolveFreeLlmApiKey } from '../util/freellmapiKey.js';
@@ -167,6 +167,33 @@ export function imageLimitFor(provider) {
   return limit ? Math.min(config.maxPhotosPerListing, limit) : config.maxPhotosPerListing;
 }
 
+// Providers seen to reject a json_schema response_format, remembered for the
+// life of the process so the failed attempt is paid once rather than per job.
+const schemaModeUnsupported = new Set();
+
+function looksLikeSchemaRejection(error) {
+  if (error?.status !== 400 && error?.status !== 422) return false;
+  return /response_format|json_schema|schema|structured/i.test(error.message || '');
+}
+
+/**
+ * `json_object` only obliges a model to emit valid JSON -- a bare
+ * `"roomsVisible": 6` satisfies it completely. Asking for the shape in the
+ * prompt and not enforcing it at decode time is why the smaller models sent
+ * every answer in the wrong wrapper: holding a 31-key nested format across a
+ * long generation is exactly the capability they are shortest on.
+ *
+ * A json_schema response_format constrains the sampler instead, so the wrong
+ * shape becomes unrepresentable rather than merely discouraged.
+ */
+function responseFormatFor(provider) {
+  if (schemaModeUnsupported.has(provider)) return { type: 'json_object' };
+  return {
+    type: 'json_schema',
+    json_schema: { name: 'listing_vision', strict: true, schema: visionJsonSchema },
+  };
+}
+
 async function openAiCompatibleVision(provider, { baseUrl, apiKey, model, extraBody = {} }, images) {
   if (!apiKey) {
     throw Object.assign(new Error(`${provider.toUpperCase()}_NOT_CONFIGURED`), { code: 'VISION_PROVIDER_NOT_CONFIGURED' });
@@ -175,7 +202,8 @@ async function openAiCompatibleVision(provider, { baseUrl, apiKey, model, extraB
   const urls = await imageUrlsFor(provider, selected);
   const content = [{ type: 'text', text: visionPrompt(selected.map((image) => image.id)) }];
   for (const url of urls) content.push({ type: 'image_url', image_url: { url } });
-  const data = await fetchJson(`${baseUrl}/chat/completions`, {
+
+  const send = (responseFormat) => fetchJson(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -183,10 +211,27 @@ async function openAiCompatibleVision(provider, { baseUrl, apiKey, model, extraB
       messages: [{ role: 'user', content }],
       temperature: 0,
       max_completion_tokens: 3200,
-      response_format: { type: 'json_object' },
+      response_format: responseFormat,
       ...extraBody,
     }),
   }, provider);
+
+  let data;
+  try {
+    data = await send(responseFormatFor(provider));
+  } catch (error) {
+    // Not every endpoint implements schema mode, and which ones do changes as
+    // freellmapi routes to different upstreams. Rather than maintain a list
+    // that goes stale, fall back once and remember the answer.
+    if (!looksLikeSchemaRejection(error) || schemaModeUnsupported.has(provider)) throw error;
+    schemaModeUnsupported.add(provider);
+    log.warn('vision provider rejected schema mode, falling back to json_object', {
+      provider,
+      error: error.message.slice(0, 160),
+    });
+    data = await send({ type: 'json_object' });
+  }
+
   return validate(data?.choices?.[0]?.message?.content);
 }
 
