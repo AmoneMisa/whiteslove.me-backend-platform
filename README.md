@@ -10,19 +10,35 @@ linked as a submodule.
 
 ## Current services
 
-| Service | Path | Port | Status |
-| --- | --- | ---: | --- |
-| AI Worker | [`apps/ai-worker`](apps/ai-worker/README.md) | 4030 | migrated |
-| Flats API/worker | [`apps/flats`](apps/flats/README.md) | 4000 | imported |
-| OLX transport | `services/olx-fetcher` | internal | imported |
-| Social transport | `services/social-fetcher` | internal | imported |
-| Vacancies worker | [`apps/workforce`](apps/workforce/README.md) | internal | imported |
-| CV worker | [`apps/workforce`](apps/workforce/README.md) | internal | imported |
-| Crawler core | [`apps/workforce/packages/crawler-core`](apps/workforce/packages/crawler-core/README.md) | library | extracted |
-| Job browser transport | `services/job-browser-fetcher` | internal | imported |
-| Vacancies API | [`apps/workforce`](apps/workforce/README.md) | 4010 | imported |
-| CV API | [`apps/workforce`](apps/workforce/README.md) | 4011 | imported |
-| Telegram subscription bot | [`apps/subscription-bot`](apps/subscription-bot/README.md) | internal | imported |
+| Service | Path | Port |
+| --- | --- | ---: |
+| AI Worker | [`apps/ai-worker`](apps/ai-worker/README.md) | 4030 |
+| Flats API/worker | [`apps/flats`](apps/flats/README.md) | 4000 |
+| OLX transport | `services/olx-fetcher` | internal |
+| Social transport | `services/social-fetcher` | internal |
+| Vacancies worker | [`apps/workforce`](apps/workforce/README.md) | internal |
+| CV worker | [`apps/workforce`](apps/workforce/README.md) | internal |
+| Crawler core | [`apps/workforce/packages/crawler-core`](apps/workforce/packages/crawler-core/README.md) | library |
+| Job browser transport | `services/job-browser-fetcher` | internal |
+| Vacancies API | [`apps/workforce`](apps/workforce/README.md) | 4010 |
+| CV API | [`apps/workforce`](apps/workforce/README.md) | 4011 |
+| Telegram subscription bot | [`apps/subscription-bot`](apps/subscription-bot/README.md) | internal |
+
+### Shared infrastructure
+
+These are Compose services too, and every application above depends on them.
+
+| Service | What it is |
+| --- | --- |
+| `freellmapi` | Third-party LLM gateway (pinned image). Owns free-tier provider/model health, quota routing and failover for `ai-worker`. |
+| `platform-postgres` | The `whiteslove` database. Flats, hiring, jobs, queue and subscriptions each own a schema in it. |
+| `platform-elasticsearch` | Search indices (`flat-listings-v1`, `job-listings-v1`). Search only — enrichment is **not** stored here, see below. |
+| `flats-olx-router` | nginx in front of the OLX fetchers. |
+
+Enrichment results live in Postgres, not Elasticsearch: `flats.listings.data`
+carries the `ai` and `vision` objects as jsonb. Querying the search index for
+enrichment coverage always returns zero. The database role is not `postgres` —
+read `$POSTGRES_USER` from the container environment.
 
 ## Local development
 
@@ -57,9 +73,8 @@ claims and scheduler flags. Neither worker can claim or reschedule the other
 domain's queue work. Their read APIs run as separately selectable Compose
 services and preserve the existing Nuxt response contracts.
 
-The Personal Site BFF cutover is prepared on branch
-`codex/backend-platform-migration`: jobs/hiring routes delegate to these APIs,
-but that cutover has not been merged/deployed yet.
+The Personal Site BFF cutover has landed on `master`: the site's jobs/hiring
+routes delegate to `vacancies-api` and `cv-api` rather than owning that data.
 
 Crawler traversal, durable page/cursor state, pacing, deduplication and the
 shared detail stage are now extracted into `@whiteslove/crawler-core`. The
@@ -79,6 +94,53 @@ See [ARCHITECTURE.md](./ARCHITECTURE.md) for ownership boundaries,
 [docs/DATABASE_VOLUME_MIGRATION.md](./docs/DATABASE_VOLUME_MIGRATION.md) for the
 mandatory production data cutover, and [AGENTS.md](./AGENTS.md) for contributor
 invariants.
+
+## AI enrichment
+
+Enrichment is an optional layer over deterministic parsing: callers keep their
+parser output when inference is unavailable, slow or low-confidence. Nothing
+downstream may require an AI answer.
+
+**The chain.** `TEXT_PROVIDERS`, `VISION_PROVIDERS` and `TRANSLATION_PROVIDERS`
+are ordered lists tried until one succeeds. `freellmapi` leads each of them and
+fans out across free-tier models; the named direct providers after it are real
+fallbacks, not debug-only, and in practice produce a large share of results.
+
+**The schema is enforced, not requested.** Every extraction kind ships a JSON
+Schema that travels as a strict `json_schema` response format, so a model
+cannot return the right answer in the wrong shape. `json_object` alone obliges
+valid JSON and nothing more, which smaller models satisfy while ignoring the
+field structure entirely. An endpoint that rejects schema mode falls back to
+`json_object` once and is remembered for the life of the process.
+
+A consequence worth knowing: strict mode requires every field to be present, so
+a model that cannot determine one answers anyway — `0` is the usual cop-out for
+a number. Sanitizers reject the values that are never legitimate (a zero
+salary, a zero bathroom count on a dwelling) while keeping the ones that are
+("no experience required" is a real statement).
+
+**Capacity is the binding constraint.** These are free tiers: per-day request
+caps, daily compute allowances, monthly credits and per-second rate limits. A
+provider failing with 402/429 is out of allowance, not broken. Because capacity
+sits far below intake, candidates are ordered newest-first — a fresh advert is
+the one someone is about to open.
+
+**Tuning knobs**, all optional with defaults in `docker-compose.yml`:
+
+| Variable | Purpose |
+| --- | --- |
+| `AI_CONCURRENCY`, `VISION_CONCURRENCY` | Parallel jobs. Raising these scales throughput until upstream rate limits bite. |
+| `VISION_PROVIDER_TIMEOUT_MS` | Must be generous: `freellmapi` walks its own fallback loop, and cutting it off cancels the attempt *and* stops it benching the failed model. |
+| `VISION_COOLDOWN_MS` | Bench for a failing provider. |
+| `VISION_RATE_LIMIT_COOLDOWN_MS` | Shorter bench for a 429, since a rate limit is measured in seconds. `Retry-After` wins when sent. |
+| `AI_MAX_PHOTOS_PER_LISTING` | Photos per vision request; more photos is more evidence. |
+| `AI_MAX_INLINE_REQUEST_BYTES` | Cap for providers that need images inline as base64. Must stay under any proxy body limit in front of them. |
+
+**Diagnosing "AI produces nothing".** Check in this order: are jobs reaching
+the worker at all (a missing `AI_WORKER_KEY` fails every request with 401); are
+answers arriving and being *rejected* rather than never arriving (the schema
+rejection detail is in the worker logs); and only then whether providers are
+out of quota.
 
 ## CI and image publishing
 

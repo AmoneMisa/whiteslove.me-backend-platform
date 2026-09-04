@@ -5,12 +5,12 @@ Private AI-enrichment service shared by WhitesLove vacancy/candidate flows and F
 ## Architecture
 
 ```text
-Personal-Site ───────────────┐
-                             ├── private HTTP ──> ai-worker ──> FreeLLMAPI ──> free-tier providers/models
-Flat Finder ─────────────────┘
+Personal-Site ───────────────┐                                ┌─> FreeLLMAPI ─> free-tier providers/models
+                             ├── private HTTP ──> ai-worker ──┤
+Flat Finder ─────────────────┘                                └─> direct free-tier providers (fallback)
 ```
 
-Production uses **FreeLLMAPI as the only LLM gateway** for both text and vision. `ai-worker` does not choose a paid model or call a direct provider in the default Compose deployment. FreeLLMAPI owns provider/model health, free-quota routing and failover; `ai-worker` owns prompts, schemas, validation, caching, queueing and caller-facing contracts.
+FreeLLMAPI leads every provider chain and is the preferred route: it owns provider/model health, free-quota routing and failover, while `ai-worker` owns prompts, schemas, validation, caching, queueing and caller-facing contracts. It is not the *only* route, though. `TEXT_PROVIDERS`, `VISION_PROVIDERS` and `TRANSLATION_PROVIDERS` list direct free-tier providers after it, and production relies on them: when FreeLLMAPI's upstreams are rate-limited or out of allowance, those fallbacks produce a large share of results. No paid model is used.
 
 The LLM remains an enrichment layer. If inference is unavailable, caller applications keep their deterministic parser/canonical data rather than trusting or requiring an AI guess.
 
