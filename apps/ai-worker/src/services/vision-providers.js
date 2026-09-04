@@ -3,6 +3,7 @@ import { VisionSchema, emptyVisionResult, sanitizeVision } from '../schemas/visi
 import { visionPrompt } from '../prompts/vision.js';
 import { fetchJson, parseModelJson } from '../util/httpProvider.js';
 import { resolveFreeLlmApiKey } from '../util/freellmapiKey.js';
+import { log } from '../util/logger.js';
 
 function validate(value) {
   let parsedJson;
@@ -72,6 +73,14 @@ const PROVIDERS_NEEDING_INLINE_IMAGES = new Set(['cloudflare', 'gemini']);
 // the same failover hop as one that refuses the URL.
 const MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024;
 
+// A ceiling on the whole request, not just one photo. Inlining ten photos
+// produces a body large enough that a relay in front of the provider rejects
+// it before the model ever sees it -- Gemini behind an nginx tunnel answers
+// HTTP 413 "Request Entity Too Large", and Groq 413s directly. Photos are
+// added until the budget runs out, so a listing still gets analysed on as
+// many as fit rather than failing outright on all of them.
+const MAX_INLINE_REQUEST_BYTES = Number(process.env.AI_MAX_INLINE_REQUEST_BYTES) || 3 * 1024 * 1024;
+
 async function toInlineImage(url) {
   if (/^data:/i.test(url)) return url;
   const response = await fetch(url, { signal: AbortSignal.timeout(15_000) });
@@ -86,10 +95,37 @@ async function toInlineImage(url) {
   return `data:${type};base64,${buffer.toString('base64')}`;
 }
 
-/** Image URLs as the given provider will accept them. */
+/**
+ * Image URLs as the given provider will accept them.
+ *
+ * For a provider that needs the bytes inline, photos are taken in order until
+ * the request budget is spent. Dropping the tail is much better than the
+ * alternative: an oversized body is refused whole, so one photo too many
+ * costs the listing every photo.
+ */
 async function imageUrlsFor(provider, images) {
   if (!PROVIDERS_NEEDING_INLINE_IMAGES.has(provider)) return images.map((image) => image.url);
-  return Promise.all(images.map((image) => toInlineImage(image.url)));
+
+  const inlined = [];
+  let budget = MAX_INLINE_REQUEST_BYTES;
+  for (const image of images) {
+    let dataUri;
+    try {
+      dataUri = await toInlineImage(image.url);
+    } catch (error) {
+      // One unreachable photo should not lose the rest of the listing.
+      log.warn('vision image inline failed', { provider, code: error?.code, error: error.message });
+      continue;
+    }
+    if (dataUri.length > budget) break;
+    budget -= dataUri.length;
+    inlined.push(dataUri);
+  }
+
+  if (!inlined.length) {
+    throw Object.assign(new Error('VISION_NO_INLINE_IMAGES'), { code: 'VISION_NO_INLINE_IMAGES' });
+  }
+  return inlined;
 }
 
 export function imageLimitFor(provider) {
