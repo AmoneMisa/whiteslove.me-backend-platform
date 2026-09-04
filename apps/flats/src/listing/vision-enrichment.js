@@ -98,9 +98,25 @@ export function mergeVision(listing, result) {
     }
   };
 
-  fill('rooms', data.roomsVisible);
-  fill('bedrooms', data.bedroomsVisible);
-  fill('bathrooms', data.bathroomsVisible);
+  // A count of zero is the counting equivalent of a weak `false`: the photos
+  // did not establish one, which is not the same as there being none. The
+  // schema already refuses to turn "not visible" into "absent" for booleans,
+  // and a zero slipped past that rule and reached listings as fact.
+  const fillCount = (field, item, { floor = null } = {}) => {
+    if (item?.value !== 0) return fill(field, item);
+    if (floor == null) return undefined;
+    // A dwelling has at least one bathroom, so a photo set that never shows it
+    // still supports the floor -- but only the floor, and only as an assumption
+    // rather than something the photos evidenced.
+    return fill(field, { ...item, value: floor, evidence: [] });
+  };
+
+  // Not for a commercial unit: a garage or a warehouse genuinely may have none.
+  const dwelling = listing?.commercial !== true;
+
+  fillCount('rooms', data.roomsVisible);
+  fillCount('bedrooms', data.bedroomsVisible);
+  fillCount('bathrooms', data.bathroomsVisible, { floor: dwelling ? 1 : null });
   fill('bathroomLayout', data.bathroomLayoutVisible);
   fill('airConditioner', data.airConditioner);
   fill('balcony', data.balcony);
