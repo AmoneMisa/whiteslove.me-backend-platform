@@ -9,12 +9,18 @@ The text may be in Russian, Uzbek, Kazakh, Ukrainian, Romanian or English, and
 may contain typos or transliteration (e.g. "kvartil"->kvartal, "kvadirat"->m²,
 "etajli"->storeys). Interpret intent but never guess unstated facts.
 
-- address: the property's OWN street address, and only when the text states a
-  street together with a house/building number ("Amir Temur ko'chasi 15",
-  "ул. Навои, 12А"). A street with no number, a district or a metro station is
-  not an address - leave it null. Never assemble an address out of separate
-  fragments, and never copy one that belongs to an agency office, a viewing
-  point or a landmark.
+- address: the property's OWN address. One with a house number is the best
+  case ("Amir Temur ko'chasi 15", "ул. Навои, 12А"), but a thoroughfare on its
+  own is a real answer too and should be returned - the pipeline records how
+  precise it is. A thoroughfare is not only a street: avenue, boulevard,
+  highway, lane, embankment, square and their equivalents in the source
+  language all count, in Russian, Ukrainian, Uzbek (Cyrillic or Latin),
+  Kazakh, Kyrgyz, English or Romanian - "Metrostroiteley street",
+  "Amir Temur ko'chasi", "проспект Амира Темура", "Достық даңғылы",
+  "Чүй проспектиси", "вулиця Хрещатик", "Bulevardul Unirii".
+  A district, a microdistrict or a metro station is NOT an address; leave it
+  null. Never assemble an address out of separate fragments, and never copy
+  one that belongs to an agency office, a viewing point or a landmark.
 - residenceComplex: the complex the property is actually IN, as named in the
   text ("ЖК Nest One", "Yangi Uzbekiston turar-joy majmuasi"). "рядом с ЖК X",
   "напротив ЖК X" and "5 минут от ЖК X" describe a neighbour: those leave

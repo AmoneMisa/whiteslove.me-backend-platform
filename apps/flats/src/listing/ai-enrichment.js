@@ -138,29 +138,83 @@ function acceptedResidenceComplex(value, listing, countryCode) {
 const PROXIMITY_PHRASING =
   /(рядом|около|недалеко|напротив|через дорог|за угл|близко|в\s*\d+\s*минут|\d+\s*мин(ут)?\s*(от|до|пешк)|yaqin|yonida|near\b|next to|opposite|across from|walking distance|close to|\bfrom the\b)/iu;
 
+// Words that make a phrase a street reference rather than an arbitrary place
+// name. Listings state a street with no number often enough that requiring a
+// house number would throw away most of them ("Metrostroiteley street",
+// "Amir Temur ko'chasi"), but something has to separate a street from a
+// district or a landmark, and this is it.
+// Thoroughfare wording, across every language these listings arrive in:
+// Russian, Ukrainian, Uzbek (both Cyrillic and Latin), Kazakh, Kyrgyz,
+// English and Romanian. A street is only one kind -- avenues, boulevards,
+// highways, lanes, embankments and squares all name an address just as well.
+//
+// Built with String.raw so a backslash survives into the pattern: written as
+// ordinary strings, "\b" is the backspace character and the whole thing
+// silently matches nothing.
+//
+// The Cyrillic stems carry no \b on purpose. That boundary is defined
+// against ASCII \w, so /\bулиц/ can never match; the stems are distinctive
+// enough on their own. They are also cut short of their case endings
+// (проспект-, бульвар-, көшес-) so "проспекти", "бульвары", "көшесі" and
+// friends all match one entry.
+const STREET_WORDING = new RegExp(
+  [
+    // Russian / Ukrainian
+    String.raw`улиц|ул\.|вулиц|вул\.|проспект|пр-?к?т\b|бульвар|шоссе|шосе`,
+    String.raw`|переул|пер\.|провул|проулок|проезд|проїзд|набережн|тупик`,
+    String.raw`|аллея|алея|магистрал|тракт|узвіз|площад|площа|майдан`,
+    // Uzbek (Cyrillic) -- кўчаси, хиёбони, йўли, бульвари, майдони
+    String.raw`|кўча|куча|хиёбон|йўл[иы]|йули`,
+    // Kazakh -- көшесі, даңғылы, тас жолы, алаңы
+    String.raw`|көшес|көше\b|даңғыл|тас жол|жолы|алаң`,
+    // Kyrgyz -- көчөсү, проспектиси, жолу, аянты
+    String.raw`|көчө|жолу|аянт`,
+    // Uzbek (Latin)
+    String.raw`|ko['’‘]?chasi|ko['’‘]?cha\b|ko'?cha\b|prospekt|xiyobon`,
+    String.raw`|bulvar|yo['’‘]?l[iy]\b|maydon|shoh ko`,
+    // English
+    String.raw`|\bstreet\b|\bst\.|\bavenue\b|\bave\.|\broad\b|\brd\.`,
+    String.raw`|\blane\b|\bln\.|\bboulevard\b|\bblvd\b|\bdrive\b|\bdr\.`,
+    String.raw`|\bhighway\b|\bhwy\b|\balley\b|\bterrace\b|\bsquare\b`,
+    String.raw`|\bsq\.|\bcrescent\b|\bparkway\b|\bquay\b|\bembankment\b`,
+    String.raw`|\bpassage\b|\besplanade\b`,
+    // Romanian
+    String.raw`|\bstrada\b|\bstr\.|\bbulevard|\bbd\.|\bcalea\b|\bș?soseaua\b`,
+    String.raw`|\baleea\b|\bsplaiul\b|\bpia[țt]a\b|\bdrumul\b|\bintrarea\b`,
+  ].join(''),
+  'iu',
+);
+
 /**
- * A street address specific enough to be worth geocoding.
+ * A street address worth keeping, and how precise it actually is.
  *
- * Anything without a house number is a street at best, which the geocoder
- * already treats as approximate and can derive itself; accepting one here
- * would only dress it up as a precise source address. The city/district/
- * complex check stops the model from echoing geography we already hold back
- * as a fake street line.
+ * Returns null to refuse, otherwise { address, precision } where precision is
+ * 'building' when a house number is present and 'street' when the listing
+ * only names the street. Street-only is a real, common answer -- the geocoder
+ * already models it as approximate (see GEO_ACCURACY_AUDIT precedence rule 5)
+ * -- so it is kept and labelled rather than dropped, and it is never allowed
+ * to pass as building-precise.
+ *
+ * Refused: proximity phrasing (a landmark, not this address), anything that
+ * is neither numbered nor worded like a street, and a bare echo of geography
+ * we already hold.
  */
 function acceptedAddress(value, listing) {
   if (blank(value)) return null;
   const address = String(value).trim().replace(/\s+/gu, ' ');
-  if (address.length < 6 || address.length > 160) return null;
+  if (address.length < 5 || address.length > 160) return null;
   if (PROXIMITY_PHRASING.test(address)) return null;
-  // A house number is what separates an address from a street name.
-  if (!/\d/u.test(address)) return null;
+
+  const hasHouseNumber = /\d/u.test(address);
+  if (!hasHouseNumber && !STREET_WORDING.test(address)) return null;
 
   const normalized = address.toLocaleLowerCase();
   const echoes = [listing?.city, listing?.district, listing?.kvartal, listing?.residenceComplex]
     .filter(Boolean)
     .map((name) => String(name).trim().toLocaleLowerCase());
   if (echoes.includes(normalized)) return null;
-  return address;
+
+  return { address, precision: hasHouseNumber ? 'building' : 'street' };
 }
 
 function acceptedKvartal(value, listing, countryCode) {
@@ -218,7 +272,12 @@ export function mergeApartmentAi(listing, result, countryCode = null) {
   // established rather than only what the parser had.
   const address = blank(merged.address) ? acceptedAddress(data.address, merged) : null;
   if (address) {
-    merged.address = address;
+    merged.address = address.address;
+    // Provenance the geocoder and the API already understand: a street with
+    // no house number stays flagged approximate instead of being ranked as a
+    // precise source address.
+    merged.addressPrecision ??= address.precision;
+    merged.addressApproximate ??= address.precision !== 'building';
     derivedFields.add('address');
   }
 

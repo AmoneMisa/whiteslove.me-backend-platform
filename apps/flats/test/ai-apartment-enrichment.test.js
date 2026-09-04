@@ -167,25 +167,70 @@ test('a parsed complex is never replaced by the model', () => {
   assert.deepEqual(merged.ai.derivedFields, []);
 });
 
-test('an address needs a house number to be worth keeping', () => {
+test('a numbered address is kept and marked building-precise', () => {
   const listing = { source: 'olx', id: 'a1', city: 'Tashkent' };
 
-  const withNumber = mergeApartmentAi(
+  const merged = mergeApartmentAi(
     listing,
     result({ address: "Amir Temur ko'chasi 15" }),
     'UZ',
   );
-  assert.equal(withNumber.address, "Amir Temur ko'chasi 15");
-  assert.ok(withNumber.ai.derivedFields.includes('address'));
+  assert.equal(merged.address, "Amir Temur ko'chasi 15");
+  assert.equal(merged.addressPrecision, 'building');
+  assert.equal(merged.addressApproximate, false);
+  assert.ok(merged.ai.derivedFields.includes('address'));
+});
 
-  // A street alone is what the geocoder already derives for itself; accepting
-  // it here would only dress it up as a precise source address.
-  const streetOnly = mergeApartmentAi(
-    listing,
-    result({ address: "Amir Temur ko'chasi" }),
-    'UZ',
-  );
-  assert.equal(streetOnly.address, undefined);
+test('a thoroughfare with no house number is kept, at street precision', () => {
+  // Listings state a bare street constantly, in every language the sources
+  // arrive in, and a street is only one kind of thoroughfare -- avenues,
+  // boulevards, highways and squares name an address just as well. Refusing
+  // them threw away most real addresses; the geocoder already models a
+  // street as approximate, so these are kept and labelled rather than
+  // dropped.
+  const listing = { source: 'olx', id: 'a1b', city: 'Tashkent' };
+
+  const addresses = [
+    // Russian
+    'улица Мукимий', 'ул. Навои', 'проспект Амира Темура',
+    'бульвар Мустакиллик', 'шоссе Каттакурганское', 'переулок Тихий',
+    'набережная Анхор', 'площадь Независимости',
+    // Ukrainian
+    'вулиця Хрещатик', 'вул. Соборна', 'проспект Перемоги',
+    'бульвар Шевченка', 'провулок Ботанічний', 'площа Ринок',
+    // Uzbek (Cyrillic)
+    'Амир Темур кўчаси', 'Мустақиллик хиёбони', 'Катта Халқа йўли',
+    // Uzbek (Latin)
+    "Amir Temur ko'chasi", 'Mustaqillik xiyoboni', "Katta Halqa yo'li",
+    'Bunyodkor prospekti', 'Navoi bulvari',
+    // Kazakh
+    'Абай көшесі', 'Достық даңғылы', 'Республика алаңы',
+    // Kyrgyz
+    'Чүй проспектиси', 'Ala-Too көчөсү',
+    // English
+    'Metrostroiteley street', 'Independence Avenue', 'Green Boulevard',
+    'Airport Highway', 'Rose Lane', 'Harbour Quay', 'Market Square',
+    // Romanian
+    'Strada Mihai Eminescu', 'Bulevardul Unirii', 'Calea Victoriei',
+    'Aleea Teilor', 'Piata Romana',
+  ];
+
+  for (const address of addresses) {
+    const merged = mergeApartmentAi(listing, result({ address }), 'UZ');
+    assert.equal(merged.address, address, address);
+    assert.equal(merged.addressPrecision, 'street', address);
+    assert.equal(merged.addressApproximate, true, address);
+  }
+});
+
+test('a bare place name is still not an address', () => {
+  const listing = { source: 'olx', id: 'a1c', city: 'Tashkent' };
+  // Neither numbered nor worded like a street: a district, a landmark or a
+  // metro station name must not become the street line.
+  for (const address of ['Chilonzor', 'Novza', 'Mirzo Ulugbek']) {
+    const merged = mergeApartmentAi(listing, result({ address }), 'UZ');
+    assert.equal(merged.address, undefined, address);
+  }
 });
 
 test('a proximity phrase is a landmark, not this flat\'s address', () => {
