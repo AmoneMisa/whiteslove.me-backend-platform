@@ -5,20 +5,29 @@ import { fetchJson, parseModelJson } from '../util/httpProvider.js';
 import { resolveFreeLlmApiKey } from '../util/freellmapiKey.js';
 import { log } from '../util/logger.js';
 
+function schemaError(reason) {
+  // A bare VISION_SCHEMA_INVALID says a model's answer was rejected but not
+  // what was wrong with it, which is the one thing needed to tell a model
+  // that cannot follow the schema from a prompt that asks for the impossible.
+  const error = new Error(`VISION_SCHEMA_INVALID: ${reason}`);
+  error.code = 'VISION_SCHEMA_INVALID';
+  return error;
+}
+
 function validate(value) {
   let parsedJson;
   try {
     parsedJson = parseModelJson(value);
-  } catch {
-    const error = new Error('VISION_SCHEMA_INVALID');
-    error.code = 'VISION_SCHEMA_INVALID';
-    throw error;
+  } catch (error) {
+    throw schemaError(`not JSON (${error.message}); answer began ${JSON.stringify(String(value).slice(0, 120))}`);
   }
   const parsed = VisionSchema.safeParse(parsedJson);
   if (!parsed.success) {
-    const error = new Error('VISION_SCHEMA_INVALID');
-    error.code = 'VISION_SCHEMA_INVALID';
-    throw error;
+    const issues = parsed.error.issues
+      .slice(0, 4)
+      .map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`)
+      .join('; ');
+    throw schemaError(`${parsed.error.issues.length} issue(s) -- ${issues}`);
   }
   return sanitizeVision(parsed.data);
 }
