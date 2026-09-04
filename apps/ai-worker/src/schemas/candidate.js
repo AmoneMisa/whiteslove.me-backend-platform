@@ -102,8 +102,14 @@ export function sanitizeCandidate(v) {
   if (v.age != null && (v.age < 14 || v.age > 90)) v.age = null;
   if (v.age != null) v.isAdult = v.age >= 18;
   if (v.experienceYears != null && (v.experienceYears < 0 || v.experienceYears > 70)) v.experienceYears = null;
-  if (v.salaryMin != null && v.salaryMin < 0) v.salaryMin = null;
-  if (v.salaryMax != null && v.salaryMax < 0) v.salaryMax = null;
+  // Zero is not a salary. A model obliged to fill every field -- structured
+  // output requires all of them -- answers an unstated salary with 0 far more
+  // often than a candidate genuinely expects nothing, and a 0 that reaches a
+  // profile reads as an expectation rather than a blank.
+  // experienceYears is deliberately not treated this way: "no experience" is a
+  // real thing for a CV to say, unlike a zero salary.
+  if (v.salaryMin != null && v.salaryMin <= 0) v.salaryMin = null;
+  if (v.salaryMax != null && v.salaryMax <= 0) v.salaryMax = null;
   if (v.salaryMin != null && v.salaryMax != null && v.salaryMin > v.salaryMax) {
     [v.salaryMin, v.salaryMax] = [v.salaryMax, v.salaryMin];
   }

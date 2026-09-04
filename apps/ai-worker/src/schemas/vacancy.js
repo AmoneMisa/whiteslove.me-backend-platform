@@ -103,6 +103,13 @@ export const VacancySchema = z.object({
 }).partial();
 
 export function sanitizeVacancy(v) {
+  // Zero is not a salary, and nor is a negative one -- this path had no guard
+  // at all. A model obliged to fill every field answers an unstated salary
+  // with 0, and a vacancy advertising "0" is worse than one advertising
+  // nothing. experienceMinYears keeps its zero: "no experience required" is a
+  // real thing for a posting to say.
+  if (v.salaryMin != null && v.salaryMin <= 0) v.salaryMin = null;
+  if (v.salaryMax != null && v.salaryMax <= 0) v.salaryMax = null;
   if (v.salaryMin != null && v.salaryMax != null && v.salaryMin > v.salaryMax) {
     // swap rather than drop — a min/max inversion is usually just ordering
     [v.salaryMin, v.salaryMax] = [v.salaryMax, v.salaryMin];
