@@ -68,6 +68,7 @@ export async function extract(kind, input) {
     schema: definition.jsonSchema,
     systemPrompt: definition.system,
     payload: definition.payload(input),
+    kind,
     providers: kind === 'translation' ? config.translationProviders : config.textProviders,
   });
 

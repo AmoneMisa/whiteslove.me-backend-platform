@@ -1,10 +1,12 @@
 // Text-only sibling of vision-providers.js: same OpenAI-compatible providers,
-// same JSON-object response mode, but no image content parts. The JSON Schema
-// for the requested extraction kind travels inside the user payload (the system
-// prompt already instructs the model to match "the supplied JSON schema").
+// no image content parts. The JSON Schema for the requested extraction kind is
+// both shown to the model in the user payload and enforced at decode time via
+// a json_schema response_format, so a model that cannot hold the shape across
+// a long generation still cannot emit the wrong one.
 import { config } from '../config.js';
 import { fetchJson, parseModelJson } from '../util/httpProvider.js';
 import { resolveFreeLlmApiKey } from '../util/freellmapiKey.js';
+import { log } from '../util/logger.js';
 
 function validate(value) {
   try {
@@ -16,11 +18,31 @@ function validate(value) {
   }
 }
 
-async function openAiCompatibleText(provider, { baseUrl, apiKey, model, extraBody = {} }, { schema, systemPrompt, payload }) {
+// Providers seen to reject a json_schema response_format, remembered for the
+// life of the process so the failed attempt is paid once rather than per job.
+const schemaModeUnsupported = new Set();
+
+function looksLikeSchemaRejection(error) {
+  if (error?.status !== 400 && error?.status !== 422) return false;
+  return /response_format|json_schema|schema|structured/i.test(error.message || '');
+}
+
+/**
+ * `json_object` only obliges a model to emit valid JSON; it says nothing about
+ * the fields we asked for. Showing the schema in the prompt and hoping is the
+ * arrangement that had smaller vision models returning every answer in the
+ * wrong wrapper. A json_schema response_format constrains the sampler instead.
+ */
+function responseFormatFor(provider, schema, name) {
+  if (schemaModeUnsupported.has(provider) || !schema) return { type: 'json_object' };
+  return { type: 'json_schema', json_schema: { name, strict: true, schema } };
+}
+
+async function openAiCompatibleText(provider, { baseUrl, apiKey, model, extraBody = {} }, { schema, systemPrompt, payload, kind = 'extraction' }) {
   if (!apiKey) {
     throw Object.assign(new Error(`${provider.toUpperCase()}_NOT_CONFIGURED`), { code: 'TEXT_PROVIDER_NOT_CONFIGURED' });
   }
-  const data = await fetchJson(`${baseUrl}/chat/completions`, {
+  const send = (responseFormat) => fetchJson(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: { authorization: `Bearer ${apiKey}`, 'content-type': 'application/json' },
     body: JSON.stringify({
@@ -31,10 +53,28 @@ async function openAiCompatibleText(provider, { baseUrl, apiKey, model, extraBod
       ],
       temperature: 0,
       max_completion_tokens: 2400,
-      response_format: { type: 'json_object' },
+      response_format: responseFormat,
       ...extraBody,
     }),
   }, provider, { bucket: 'textProviders', timeoutMs: config.textTimeoutMs });
+
+  let data;
+  try {
+    data = await send(responseFormatFor(provider, schema, kind));
+  } catch (error) {
+    // Not every endpoint implements schema mode, and freellmapi routes to
+    // whatever upstream is alive, so support varies per request. Losing the
+    // provider over an unsupported parameter is worse than sending the weaker
+    // constraint, so fall back once and remember the answer.
+    if (!looksLikeSchemaRejection(error) || schemaModeUnsupported.has(provider)) throw error;
+    schemaModeUnsupported.add(provider);
+    log.warn('text provider rejected schema mode, falling back to json_object', {
+      provider,
+      error: error.message.slice(0, 160),
+    });
+    data = await send({ type: 'json_object' });
+  }
+
   return validate(data?.choices?.[0]?.message?.content);
 }
 

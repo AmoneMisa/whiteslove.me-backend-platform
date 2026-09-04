@@ -6,10 +6,11 @@
 import { config } from '../config.js';
 import { log } from '../util/logger.js';
 import { TEXT_PROVIDERS } from './text-providers.js';
+import { cooldownFor } from '../util/providerCooldown.js';
 
 const cooldownUntil = new Map();
 
-export async function runText({ schema, systemPrompt, payload, providers = config.textProviders }) {
+export async function runText({ schema, systemPrompt, payload, kind, providers = config.textProviders }) {
   const errors = [];
   for (const provider of providers) {
     const run = TEXT_PROVIDERS[provider];
@@ -20,10 +21,10 @@ export async function runText({ schema, systemPrompt, payload, providers = confi
     if ((cooldownUntil.get(provider) || 0) > Date.now()) continue;
     const started = Date.now();
     try {
-      const data = await run({ schema, systemPrompt, payload });
+      const data = await run({ schema, systemPrompt, payload, kind });
       return { provider, data, timings: { totalMs: Date.now() - started } };
     } catch (error) {
-      if (error?.retryable) cooldownUntil.set(provider, Date.now() + config.visionCooldownMs);
+      if (error?.retryable) cooldownUntil.set(provider, Date.now() + cooldownFor(error));
       errors.push(`${provider}:${error.message}`);
       log.warn('text provider failed', { provider, code: error?.code, error: error.message });
     }

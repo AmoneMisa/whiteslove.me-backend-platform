@@ -245,7 +245,23 @@ export function scheduleVacancyAi<T extends EnrichableJob>(
   const batchSize = Math.max(1, Number(process.env.AI_WORKER_VACANCY_BATCH) || 12)
   let queued = 0
 
-  for (const job of jobs) {
+  // Enrichment capacity sits far below the intake, so a batch that spends its
+  // budget on the oldest vacancies in the page leaves the ones candidates are
+  // about to open unenriched. postedAt is the vacancy's own date; createdAt is
+  // when we recorded it. A vacancy with neither sorts last rather than jumping
+  // the queue on a NaN.
+  const recency = (job: T): number => {
+    for (const field of ['postedAt', 'createdAt'] as const) {
+      const raw = (job as Record<string, unknown>)[field]
+      if (!raw) continue
+      const at = raw instanceof Date ? raw.getTime() : Date.parse(String(raw))
+      if (Number.isFinite(at)) return at
+    }
+    return Number.NEGATIVE_INFINITY
+  }
+  const newestFirst = [...jobs].sort((a, b) => recency(b) - recency(a))
+
+  for (const job of newestFirst) {
     if (queued >= batchSize) break
     if (!needsVacancyAi(job)) continue
 
