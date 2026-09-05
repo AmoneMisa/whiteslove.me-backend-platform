@@ -176,7 +176,8 @@ export async function annotateMetroWalkingWithCatalog(
     const advertisedStop = listing.metro
       ? routedStops.find((stop) => stop.name === listing.metro)
       : null;
-    const selected = advertisedStop || ((listing.metroSource === 'coordinates' || !listing.metro) ? routedStops[0] : null);
+    const coordinateDerived = listing.metroSource === 'coordinates' || !listing.metro;
+    const selected = coordinateDerived ? routedStops[0] : advertisedStop;
     if (selected) {
       listing.metro = selected.name;
       if (!listing.metroSource) listing.metroSource = 'coordinates';
