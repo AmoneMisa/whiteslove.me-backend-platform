@@ -85,6 +85,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.flats == 'true'
     runs-on: ubuntu-latest
+    environment: Production
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -93,6 +94,8 @@ jobs:
         working-directory: apps/flats
       - run: npm test
         working-directory: apps/flats
+        env:
+          GEO_CATALOG_DECRYPTION_KEY: ${{ secrets.GEO_CATALOG_DECRYPTION_KEY }}
       - run: docker build apps/flats
       - run: docker build services/olx-fetcher
 
