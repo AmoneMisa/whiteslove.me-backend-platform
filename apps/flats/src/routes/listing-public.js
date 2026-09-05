@@ -10,7 +10,10 @@ const TRANSIENT_DERIVED_FIELDS = [
   'metroNearby',
   'metroSource',
   'metroDistanceM',
+  'metroWalkingDistanceM',
+  'metroWalkingDurationMin',
   'transportSource',
+  'walkingRouteSource',
   'marketComparison',
 ];
 
