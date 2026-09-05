@@ -164,6 +164,7 @@ jobs:
         needs.changes.outputs.infrastructure == 'true'
       )
     runs-on: ubuntu-latest
+    environment: Production
     steps:
       # Recreates every container whose image just changed, keyed off the same
       # path filters that gate the publish matrix above. A domain's migration
