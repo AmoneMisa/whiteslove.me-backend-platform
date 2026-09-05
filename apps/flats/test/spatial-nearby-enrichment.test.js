@@ -61,6 +61,35 @@ test('transport enrichment stores all nearby metro and non-metro stops with rout
   assert.equal(listing.transportSource, 'geo-catalog');
 });
 
+test('transport enrichment accepts legacy source coordinates without accuracy metadata', () => {
+  const listing = {
+    country: 'UZ',
+    city: 'Tashkent',
+    lat: 41.31,
+    lng: 69.28,
+  };
+
+  const fakeCatalog = {
+    nearestTransportStops(_point, options) {
+      if (options.mode === 'metro') {
+        return [
+          { stop: { id: 'm1', canonicalName: 'Metro A', mode: 'metro', source: 'osm' }, distanceM: 640, routeRefs: ['red'] },
+        ];
+      }
+      return [
+        { stop: { id: 'b1', canonicalName: 'Bus Stop A', mode: 'bus', source: 'osm' }, distanceM: 260, routeRefs: ['17'] },
+      ];
+    },
+  };
+
+  const count = annotateNearbyTransportWithCatalog([listing], { code: 'UZ', cities: ['Tashkent'] }, fakeCatalog);
+
+  assert.equal(count, 1);
+  assert.deepEqual(listing.nearbyMetro.map((item) => item.name), ['Metro A']);
+  assert.deepEqual(listing.nearbyTransport.map((item) => item.name), ['Bus Stop A']);
+  assert.equal(listing.transportSource, 'geo-catalog');
+});
+
 test('transport enrichment does not infer nearby stops from coarse coordinates', () => {
   const listing = { country: 'UZ', city: 'Tashkent', lat: 41.31, lng: 69.28, locationAccuracyM: 2500 };
   const fakeCatalog = { nearestTransportStops: () => { throw new Error('should not run'); } };
