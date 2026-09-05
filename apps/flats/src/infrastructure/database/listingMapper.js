@@ -1,4 +1,5 @@
 import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
+import {buildResidentialCoordinateBackfillPatch} from '../../geo/residential-coordinate-backfill.js';
 import {enrichListingDetails} from '../../listing/listing-enrichment.js';
 
 function finiteNumber(value) {
@@ -43,7 +44,9 @@ function safeTimestamp(value) {
 }
 
 export function mapListingToRow(inputListing) {
-    const listing = enrichListingDetails(inputListing);
+    const enriched = enrichListingDetails(inputListing);
+    const coordinatePatch = buildResidentialCoordinateBackfillPatch(enriched);
+    const listing = coordinatePatch ? {...enriched, ...coordinatePatch} : enriched;
     const country = String(listing.country || '').toUpperCase();
     const sourceCity = String(listing.city || '').trim();
     const city = sourceCity ? (canonicalCity(sourceCity, country) || sourceCity) : null;
