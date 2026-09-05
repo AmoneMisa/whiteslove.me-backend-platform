@@ -5,6 +5,7 @@ import {
   buildResidentialCoordinateBackfillPatch,
   hydrateResidentialCoordinateBackfillListing,
 } from '../src/geo/residential-coordinate-backfill.js';
+import { mapListingToRow } from '../src/infrastructure/database/listingMapper.js';
 
 test('backfill hydrates canonical listing fields from PostgreSQL columns when JSON is sparse', () => {
   const listing = hydrateResidentialCoordinateBackfillListing({
@@ -102,4 +103,32 @@ test('backfill never persists unrelated listing fields', () => {
   assert.equal(Object.hasOwn(patch, 'title'), false);
   assert.equal(Object.hasOwn(patch, 'description'), false);
   assert.equal(Object.hasOwn(patch, 'price'), false);
+});
+
+test('persistence mapper also refines a late-enriched canonical residential complex', () => {
+  const row = mapListingToRow({
+    id: 'late-ai-assalom',
+    source: 'olx',
+    country: 'UZ',
+    city: 'Tashkent',
+    title: 'Apartment in Assalom Sohil',
+    description: '',
+    residenceComplex: 'Assalom Sohil',
+    lat: 41.3122,
+    lng: 69.2797,
+    locationSource: 'coordinates',
+    locationPrecision: 'broad',
+    locationApproximate: true,
+    ai: {
+      status: 'completed',
+      derivedFields: ['residenceComplex'],
+    },
+  });
+
+  assert.ok(Math.abs(row.data.lat - 41.282995) < 0.000001);
+  assert.ok(Math.abs(row.data.lng - 69.308420) < 0.000001);
+  assert.equal(row.data.locationSource, 'residentialComplex');
+  assert.equal(row.data.locationProvider, 'geoCatalog');
+  assert.equal(row.data.locationCanonical, 'Assalom Sohil');
+  assert.equal(row.data.locationGeoEntityId, 'uz:tashkent:residential:assalom-sohil');
 });
