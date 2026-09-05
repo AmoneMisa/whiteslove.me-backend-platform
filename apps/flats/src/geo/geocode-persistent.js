@@ -211,7 +211,7 @@ export async function geocodeListingsPersistent(listings, country) {
     }
     if (placed) continue;
 
-    if (!exactDeferred && applyGeoCatalogBroadAnchor(listing, country)) {
+    if (applyGeoCatalogBroadAnchor(listing, country)) {
       packageResolved.add(listing);
       continue;
     }

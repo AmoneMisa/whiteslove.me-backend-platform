@@ -13,6 +13,7 @@ const CITY_CANONICALIZERS = Object.freeze({
 
 const SOURCE_BY_TYPE = Object.freeze({
   residential_complex: 'residentialComplex',
+  street: 'street',
   metro: 'metro',
   poi: 'poi',
   microdistrict: 'microdistrict',
@@ -26,6 +27,7 @@ const SOURCE_BY_TYPE = Object.freeze({
 
 const PRECISION_BY_TYPE = Object.freeze({
   residential_complex: 'complex',
+  street: 'street',
   metro: 'station',
   poi: 'reference',
   microdistrict: 'neighborhood',
@@ -39,6 +41,7 @@ const PRECISION_BY_TYPE = Object.freeze({
 
 const DEFAULT_ACCURACY_M = Object.freeze({
   residential_complex: 300,
+  street: 600,
   metro: 500,
   poi: 700,
   microdistrict: 600,
@@ -52,8 +55,9 @@ const DEFAULT_ACCURACY_M = Object.freeze({
 
 const EXACT_TYPE_PRIORITY = Object.freeze({
   residential_complex: 10,
-  poi: 20,
-  metro: 30,
+  street: 20,
+  poi: 30,
+  metro: 40,
 });
 
 const BROAD_TYPE_PRIORITY = Object.freeze({
@@ -106,7 +110,7 @@ function entityType(value) {
 function resolve(countryCode, city, type, canonical) {
   const normalizedType = entityType(type);
   const name = text(canonical);
-  if (!name || normalizedType === 'street') return null;
+  if (!name) return null;
   return resolveLexiconGeoEntity({
     country: countryCode,
     city: normalizedType === 'city' ? undefined : city,
@@ -177,6 +181,11 @@ export function applyGeoCatalogExactAnchor(listing, country) {
       type: 'residential_complex',
       canonical: listing.residenceComplex,
       role: roleFor(listing, 'residential_complex', listing.residenceComplex),
+    },
+    {
+      type: 'street',
+      canonical: listing.street,
+      role: roleFor(listing, 'street', listing.street),
     },
     ...(Array.isArray(listing.locationEntities) ? listing.locationEntities : [])
       .map((entity) => ({
