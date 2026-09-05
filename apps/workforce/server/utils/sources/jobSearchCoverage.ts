@@ -2,7 +2,7 @@ import { UZ_CITY_CATALOG, KZ_CITY_CATALOG } from '@whiteslove/parsing-lexicon/ce
 import { CITIES_BY_COUNTRY } from '@whiteslove/parsing-lexicon/geography'
 
 export type SearchPlace = {
-  country: 'UZ' | 'KZ' | 'UA' | 'RO'
+  country: 'UZ' | 'KZ' | 'UA' | 'RO' | 'MY'
   location: string
   label: string
   city?: string
@@ -66,6 +66,11 @@ export const COUNTRY_LOCATIONS: SearchPlace[] = [
   { country: 'KZ', location: 'Kazakhstan', label: 'Казахстан' },
   { country: 'UA', location: 'Ukraine', label: 'Україна' },
   { country: 'RO', location: 'Romania', label: 'România' },
+  { country: 'MY', location: 'Malaysia', label: 'Malaysia' },
+]
+
+const MALAYSIA_CITIES: SearchPlace[] = [
+  { country: 'MY', location: 'Kuala Lumpur', label: 'Kuala Lumpur', city: 'Kuala Lumpur' },
 ]
 
 export function linkedinLocationCoverage(): SearchPlace[] {
@@ -96,14 +101,18 @@ export function threadsJobCoverage(): ThreadsJobTarget[] {
     { country: 'UA', location: 'Ukraine', label: 'Україна', query: 'Вакансії Україна', key: 'threads-ua-country-vacancies' },
     { country: 'RO', location: 'Romania', label: 'România', query: 'Locuri de muncă România', key: 'threads-ro-country-work' },
     { country: 'RO', location: 'Romania', label: 'România', query: 'Angajări România', key: 'threads-ro-country-hiring' },
+    { country: 'MY', location: 'Malaysia', label: 'Malaysia', query: 'urgent hiring Malaysia', key: 'threads-my-country-urgent-hiring' },
+    { country: 'MY', location: 'Malaysia', label: 'Malaysia', query: 'IT jobs Malaysia', key: 'threads-my-country-it-jobs' },
   ]
 
-  for (const place of MAJOR_CITIES) {
+  for (const place of [...MAJOR_CITIES, ...MALAYSIA_CITIES]) {
     const queries = place.country === 'RO'
       ? [`Job ${place.label}`, `Angajări ${place.label}`, `Locuri de muncă ${place.label}`]
       : place.country === 'UZ'
         ? [`Работа ${place.label}`, `Вакансии ${place.label}`, `Ish ${place.location}`, `Vakansiya ${place.location}`]
-        : [`Работа ${place.label}`, `Вакансии ${place.label}`, `Жұмыс ${place.label}`]
+        : place.country === 'MY'
+          ? [`urgent hiring ${place.label}`, `IT jobs ${place.label}`, `hiring ${place.label}`]
+          : [`Работа ${place.label}`, `Вакансии ${place.label}`, `Жұмыс ${place.label}`]
     for (const query of queries) result.push({ ...place, query, key: `threads-${place.country.toLowerCase()}-${slug(query)}` })
   }
 
@@ -126,6 +135,9 @@ export const REMOTE_JOB_QUERIES = [
   'віддалена робота',
   'masofaviy ish',
   'қашықтан жұмыс',
+  'WFH opportunity',
+  'remote insurance jobs',
+  'remote claims examiner',
 ]
 
 export const USA_RELOCATION_QUERIES = [

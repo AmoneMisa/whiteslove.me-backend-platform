@@ -37,6 +37,7 @@ const DEFAULT_GREENHOUSE = [
   'taketwo:Take-Two', 'krafton:KRAFTON', 'scopely:Scopely', 'peak:Peak Games',
   'wildlifestudios:Wildlife Studios', 'wooga:Wooga',
   'nix:N-iX', 'mhp:MHP', 'baidu:Baidu',
+  'pieinsurance:Pie Insurance',
 ].join(',')
 
 const DEFAULT_LEVER = [
@@ -125,6 +126,17 @@ const DEFAULT_CAREERS_PAGES = [
   'Sigma Software|https://career.sigma.software/',
   'Levi9 Ukraine|https://jobs.ua.levi9.com/',
   'Ecommpay|https://careers.ecommpay.com/',
+  'Symetra|https://symetra.eightfold.ai/careers',
+  'Healthmap Solutions|https://jobs.jobvite.com/healthmapsolutions',
+  'UnitedHealth Group|https://careers.unitedhealthgroup.com/search-jobs',
+  'Teleperformance|https://careersus-teleperformance.icims.com/jobs/search?ss=1',
+  'Foundever|https://jobs.foundever.com/viewalljobs/',
+  'Forefront Dermatology|https://careers.forefrontdermatology.com/our-jobs',
+  'Firstsource|https://careers.firstsource.com/USAAllJobs/go/US-All-Jobs/655544/',
+  'SWBC|https://swbc.wd1.myworkdayjobs.com/swbccareers',
+  'Sedgwick|https://sedgwick.wd1.myworkdayjobs.com/Sedgwick',
+  'EMC Insurance|https://emcins.wd5.myworkdayjobs.com/EMC_Careers',
+  'Sarnova|https://jobs.dayforcehcm.com/en-US/sarnova/CANDIDATEPORTAL',
 ].join(',')
 
 const DEFAULT_DOU_COMPANIES = [
