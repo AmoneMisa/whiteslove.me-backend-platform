@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  applyGeoCatalogBroadAnchor,
   applyGeoCatalogExactAnchor,
   applyGeoCatalogNearbyAnchor,
 } from '../src/geo/geo-catalog.js';
@@ -35,6 +36,52 @@ test('canonical Assalom Sohil resolves from geo-catalog with package accuracy/pr
   assert.equal(listing.locationAccuracyM, 140);
   assert.ok(Math.abs(listing.lat - 41.282995) < 1e-9);
   assert.ok(Math.abs(listing.lng - 69.30842) < 1e-9);
+});
+
+test('canonical Tashkent street resolves from geo-catalog without Nominatim', () => {
+  const listing = {
+    id: 'bogbon-street',
+    city: 'Tashkent',
+    street: "Bog'bon Street",
+    locationEntities: [
+      { type: 'street', name: "Bog'bon Street", role: 'primary' },
+    ],
+  };
+
+  assert.equal(applyGeoCatalogExactAnchor(listing, UZ), true);
+  assert.equal(listing.locationSource, 'street');
+  assert.equal(listing.locationProvider, 'geoCatalog');
+  assert.equal(listing.locationCanonical, "Bog'bon Street");
+  assert.equal(listing.locationPrecision, 'street');
+  assert.equal(listing.locationApproximate, true);
+  assert.equal(listing.locationRole, 'primary');
+  assert.equal(listing.locationAccuracyM, 500);
+  assert.equal(listing.locationGeoEntityId, 'uz:tashkent:street:bogbon');
+  assert.ok(Math.abs(listing.lat - 41.3802925) < 1e-9);
+  assert.ok(Math.abs(listing.lng - 69.3072113) < 1e-9);
+});
+
+test('canonical Tashkent microdistrict resolves from the broad geo-catalog fallback', () => {
+  const listing = {
+    id: 'chilanzar-1',
+    city: 'Tashkent',
+    microdistrict: 'Chilanzar-1',
+    locationEntities: [
+      { type: 'microdistrict', name: 'Chilanzar-1', role: 'primary' },
+    ],
+  };
+
+  assert.equal(applyGeoCatalogBroadAnchor(listing, UZ), true);
+  assert.equal(listing.locationSource, 'microdistrict');
+  assert.equal(listing.locationProvider, 'geoCatalog');
+  assert.equal(listing.locationCanonical, 'Chilanzar-1');
+  assert.equal(listing.locationPrecision, 'neighborhood');
+  assert.equal(listing.locationApproximate, true);
+  assert.equal(listing.locationRole, 'primary');
+  assert.equal(listing.locationAccuracyM, 450);
+  assert.equal(listing.locationGeoEntityId, 'uz:tashkent:microdistrict:chilanzar-1');
+  assert.ok(Math.abs(listing.lat - 41.28424) < 1e-9);
+  assert.ok(Math.abs(listing.lng - 69.22845) < 1e-9);
 });
 
 test('a nearby residential complex is not accepted as the listing exact anchor', () => {
