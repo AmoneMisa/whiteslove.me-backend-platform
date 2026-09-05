@@ -2,9 +2,15 @@ const DEFAULT_VALHALLA_URL = 'https://valhalla.openstreetmap.de';
 const DEFAULT_TIMEOUT_MS = 3000;
 
 function finiteCoordinate(point) {
-  return point
-    && Number.isFinite(Number(point.lat))
-    && Number.isFinite(Number(point.lng));
+  if (!point || point.lat == null || point.lng == null || point.lat === '' || point.lng === '') return false;
+  const lat = Number(point.lat);
+  const lng = Number(point.lng);
+  return Number.isFinite(lat)
+    && Number.isFinite(lng)
+    && lat >= -90
+    && lat <= 90
+    && lng >= -180
+    && lng <= 180;
 }
 
 function normalizedBaseUrl(value) {
