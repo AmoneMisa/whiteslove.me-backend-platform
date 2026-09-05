@@ -36,11 +36,11 @@ export function hydrateResidentialCoordinateBackfillListing(row) {
 
   return {
     ...data,
-    id: data.id ?? String(row?.source_id ?? row?.db_id ?? ''),
+    id: data.id ?? row?.id ?? String(row?.source_id ?? row?.db_id ?? ''),
     source: data.source ?? row?.source ?? null,
     country,
     city: data.city ?? row?.city ?? null,
-    residenceComplex: data.residenceComplex ?? row?.residence_complex ?? null,
+    residenceComplex: data.residenceComplex ?? row?.residenceComplex ?? row?.residence_complex ?? null,
     lat,
     lng,
   };
