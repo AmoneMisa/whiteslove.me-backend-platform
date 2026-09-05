@@ -30,10 +30,26 @@ function compactHit(hit) {
   };
 }
 
+function effectiveAccuracyM(listing) {
+  const rawAccuracy = listing?.locationAccuracyM;
+  if (rawAccuracy != null && rawAccuracy !== '') {
+    const accuracy = Number(rawAccuracy);
+    if (Number.isFinite(accuracy) && accuracy >= 0) return accuracy;
+  }
+
+  // Older marketplace rows can have accepted source coordinates without the
+  // accuracy/provenance metadata added later. Keep those rows eligible, but
+  // only at the existing conservative transport-enrichment threshold.
+  const source = String(listing?.locationSource || '').trim().toLowerCase();
+  if (!source || source === 'coordinates') return MAX_ACCURACY_M;
+
+  return Number.POSITIVE_INFINITY;
+}
+
 function eligibleListing(listing, country) {
   if (!listing || String(country?.code || listing.country || '').toUpperCase() !== 'UZ') return false;
   if (!Number.isFinite(listing.lat) || !Number.isFinite(listing.lng)) return false;
-  if ((listing.locationAccuracyM ?? Number.POSITIVE_INFINITY) > MAX_ACCURACY_M) return false;
+  if (effectiveAccuracyM(listing) > MAX_ACCURACY_M) return false;
   const city = String(listing.city || country?.cities?.[0] || '');
   return !city || city === 'Tashkent';
 }
@@ -96,6 +112,7 @@ export async function annotateNearbyTransport(listings, country) {
 
 export const __transportNearbyTest = {
   compactHit,
+  effectiveAccuracyM,
   eligibleListing,
   METRO_RADIUS_M,
   TRANSPORT_RADIUS_M,
