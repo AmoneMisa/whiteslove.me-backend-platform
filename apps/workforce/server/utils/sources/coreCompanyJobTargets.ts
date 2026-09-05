@@ -137,7 +137,11 @@ const DEFAULT_CAREERS_PAGES = [
   'Sedgwick|https://sedgwick.wd1.myworkdayjobs.com/Sedgwick',
   'EMC Insurance|https://emcins.wd5.myworkdayjobs.com/EMC_Careers',
   'Sarnova|https://jobs.dayforcehcm.com/en-US/sarnova/CANDIDATEPORTAL',
+  'World Duty Free|https://resourcebank.avature.net/worlddutyfreejobs/SearchJobs',
+  'Dubai Duty Free|https://www.dubaidutyfree.com/DDF_Careers',
 ].join(',')
+
+const DUTY_FREE_UZ_URL = 'https://dutyfree.uz/ru/careers'
 
 const DEFAULT_DOU_COMPANIES = [
   'macpaw:MacPaw', 'uklon:Uklon', 'genesis-technology-partners:Genesis',
@@ -151,6 +155,7 @@ type CompanyTarget =
   | { kind: HostedKind; key: string; handle: string; label: string }
   | { kind: 'career'; key: string; label: string; url: string }
   | { kind: 'dou'; key: string; handle: string; label: string }
+  | { kind: 'dutyfree-uz'; key: string; label: string; url: string }
 
 function stripHtml(value: unknown): string {
   return String(value || '')
@@ -247,6 +252,9 @@ function configuredTargets(): CompanyTarget[] {
   }
   for (const board of douCompanies()) {
     targets.push({ kind: 'dou', key: `dou:${board.handle}`, ...board })
+  }
+  if (process.env.COMPANIES_DEFAULTS !== 'off') {
+    targets.push({ kind: 'dutyfree-uz', key: 'dutyfree-uz', label: 'Duty Free Uzbekistan', url: DUTY_FREE_UZ_URL })
   }
   return targets
 }
@@ -563,6 +571,35 @@ async function fetchEmbeddedAts(html: string, label: string): Promise<Job[]> {
   return []
 }
 
+function parseAvatureJobs(html: string, pageUrl: string, label: string): Job[] {
+  const out: Job[] = []
+  const articleRe = /<article\b[^>]*class="[^"]*article--result[^"]*"[\s\S]*?<\/article>/gi
+  let article: RegExpExecArray | null
+  while ((article = articleRe.exec(html))) {
+    const block = article[0]
+    const linkMatch = block.match(/<a\b[^>]*href="([^"]*\/JobDetail\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/i)
+    if (!linkMatch) continue
+    const url = linkMatch[1]!.split('?')[0]!
+    const title = stripHtml(linkMatch[2]).trim()
+    if (!title) continue
+    const sectorMatch = block.match(/class="list-item-sector">([\s\S]*?)<\/span>/i)
+    const location = sectorMatch ? stripHtml(sectorMatch[1]).trim() : 'See listing'
+    const idMatch = url.match(/\/(\d+)$/)
+    out.push({
+      id: `companies-avature-${new URL(pageUrl).hostname}-${idMatch?.[1] || url}`,
+      title,
+      company: label,
+      location,
+      url,
+      source: 'companies',
+      remote: /remote/i.test(`${title} ${location}`),
+      tags: [label],
+      postedAt: new Date().toISOString(),
+    })
+  }
+  return out
+}
+
 function parseJsonLdJobs(html: string, pageUrl: string, label: string): Job[] {
   const out: Job[] = []
   const re = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi
@@ -641,6 +678,10 @@ function parseJobAnchors(html: string, pageUrl: string, label: string): Job[] {
 
 async function fetchCareerPage(pageUrl: string, label: string): Promise<Job[]> {
   const html = await fetchHtml(pageUrl)
+  if (/\.avature\.net\b/i.test(pageUrl) || /\.avature\.net\b/i.test(html)) {
+    const jobs = parseAvatureJobs(html, pageUrl, label)
+    if (jobs.length) return jobs
+  }
   if (/phApp\.ddo/.test(html)) {
     try {
       const jobs = await fetchPhenomJobs(pageUrl, label)
@@ -700,6 +741,66 @@ async function fetchDouCompany(handle: string, label: string): Promise<Job[]> {
   return out
 }
 
+function unescapeJsString(raw: string): string {
+  try { return JSON.parse(`"${raw}"`) } catch { return raw }
+}
+
+/**
+ * dutyfree.uz has no ATS: its vacancies ship as data embedded in a Next.js
+ * "flight" payload (`self.__next_f.push([1, "..."])`), not as HTML/JSON-LD
+ * a generic crawler can read. Long descriptions are split into their own
+ * numbered chunk and referenced from the job entry as `"$<chunkId>"`.
+ */
+function resolveFlightTextChunks(stream: string): Map<string, string> {
+  const headerRe = /(\d+):T[0-9a-f]+,/g
+  const headers: { id: string; index: number; end: number }[] = []
+  let match: RegExpExecArray | null
+  while ((match = headerRe.exec(stream))) headers.push({ id: match[1]!, index: match.index, end: match.index + match[0].length })
+  const map = new Map<string, string>()
+  headers.forEach((header, i) => {
+    const stop = i + 1 < headers.length ? headers[i + 1]!.index : stream.length
+    map.set(header.id, stream.slice(header.end, stop))
+  })
+  return map
+}
+
+type DutyFreeUzPosting = { id: string; title: string; location: string; description: string }
+
+function extractDutyFreeUzJobs(html: string): DutyFreeUzPosting[] {
+  let stream = ''
+  const pushRe = /self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)/g
+  let push: RegExpExecArray | null
+  while ((push = pushRe.exec(html))) stream += unescapeJsString(push[1]!)
+
+  const chunks = resolveFlightTextChunks(stream)
+  const jobRe = /\{"id":"([^"]+)","title":"((?:[^"\\]|\\.)*)","location":"((?:[^"\\]|\\.)*)","applyUrl":"(?:[^"\\]|\\.)*","description":"((?:[^"\\]|\\.)*)"\}/g
+  const jobs: DutyFreeUzPosting[] = []
+  let match: RegExpExecArray | null
+  while ((match = jobRe.exec(stream))) {
+    const [, id, titleRaw, locationRaw, descriptionRaw] = match
+    const reference = /^\$(\d+)$/.exec(descriptionRaw!)
+    const description = reference ? (chunks.get(reference[1]!) || '') : unescapeJsString(descriptionRaw!)
+    jobs.push({ id: id!, title: unescapeJsString(titleRaw!), location: unescapeJsString(locationRaw!), description: description.trim() })
+  }
+  return jobs
+}
+
+async function fetchDutyFreeUz(pageUrl: string, label: string): Promise<Job[]> {
+  const html = await fetchHtml(pageUrl)
+  return extractDutyFreeUzJobs(html).map((job) => ({
+    id: `companies-dutyfree-uz-${job.id}`,
+    title: job.title,
+    company: label,
+    location: job.location || 'Uzbekistan',
+    url: `${pageUrl}#${job.id}`,
+    source: 'companies' as const,
+    remote: false,
+    tags: [label],
+    postedAt: new Date().toISOString(),
+    description: job.description || undefined,
+  }))
+}
+
 export const CORE_COMPANY_TARGET_PREFIX = 'core-company-source:'
 
 export function configuredCoreCompanyTargets(): string[] {
@@ -722,5 +823,6 @@ export async function fetchCoreCompanyTarget(target: string): Promise<Job[]> {
   if (config.kind === 'smartrecruiters') return fetchSmartRecruitersBoard(config.handle, config.label)
   if (config.kind === 'ashby') return fetchAshbyBoard(config.handle, config.label)
   if (config.kind === 'career') return fetchCareerPage(config.url, config.label)
+  if (config.kind === 'dutyfree-uz') return fetchDutyFreeUz(config.url, config.label)
   return fetchDouCompany(config.handle, config.label)
 }
