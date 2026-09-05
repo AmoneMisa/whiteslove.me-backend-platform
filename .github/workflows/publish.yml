@@ -145,3 +145,61 @@ jobs:
             ghcr.io/amonemisa/whiteslove.me-backend-platform-${{ matrix.name }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    needs: [changes, publish]
+    if: |
+      always() &&
+      needs.publish.result == 'success' &&
+      (
+        github.event_name == 'workflow_dispatch' ||
+        needs.changes.outputs.ai == 'true' ||
+        needs.changes.outputs.flats == 'true' ||
+        needs.changes.outputs.social == 'true' ||
+        needs.changes.outputs.vacancies == 'true' ||
+        needs.changes.outputs.cv == 'true' ||
+        needs.changes.outputs.crawler_core == 'true' ||
+        needs.changes.outputs.workforce_shared == 'true' ||
+        needs.changes.outputs.subscriptions == 'true' ||
+        needs.changes.outputs.infrastructure == 'true'
+      )
+    runs-on: ubuntu-latest
+    steps:
+      # Recreates every container whose image just changed, keyed off the same
+      # path filters that gate the publish matrix above. A domain's migration
+      # service is included alongside its api/worker so schema changes land
+      # before the process that depends on them starts.
+      - name: Determine services to redeploy
+        id: services
+        run: |
+          services=()
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            services+=(flats-migrate flats-api flats-worker flats-olx-fetcher flats-olx-fetcher-ua ai-worker social-fetcher workforce-queue-migrate vacancies-migrate vacancies-api vacancies-worker cv-migrate cv-api cv-worker subscriptions-migrate subscription-bot platform-elasticsearch)
+          else
+            [[ "${{ needs.changes.outputs.ai }}" == "true" ]] && services+=(ai-worker)
+            [[ "${{ needs.changes.outputs.flats }}" == "true" ]] && services+=(flats-migrate flats-api flats-worker flats-olx-fetcher flats-olx-fetcher-ua)
+            [[ "${{ needs.changes.outputs.social }}" == "true" ]] && services+=(social-fetcher)
+            if [[ "${{ needs.changes.outputs.vacancies }}" == "true" || "${{ needs.changes.outputs.crawler_core }}" == "true" || "${{ needs.changes.outputs.workforce_shared }}" == "true" ]]; then
+              services+=(workforce-queue-migrate vacancies-migrate vacancies-api vacancies-worker)
+            fi
+            if [[ "${{ needs.changes.outputs.cv }}" == "true" || "${{ needs.changes.outputs.workforce_shared }}" == "true" ]]; then
+              services+=(workforce-queue-migrate cv-migrate cv-api cv-worker)
+            fi
+            [[ "${{ needs.changes.outputs.subscriptions }}" == "true" ]] && services+=(subscriptions-migrate subscription-bot)
+            [[ "${{ needs.changes.outputs.infrastructure }}" == "true" ]] && services+=(platform-elasticsearch)
+          fi
+          unique=($(printf '%s\n' "${services[@]}" | awk '!seen[$0]++'))
+          echo "list=${unique[*]}" >> "$GITHUB_OUTPUT"
+      - name: Deploy via SSH
+        if: steps.services.outputs.list != ''
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ vars.SERVER_HOST }}
+          username: ${{ vars.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/backend
+            git fetch --quiet origin master
+            git reset --quiet --hard origin/master
+            ./deploy.sh ${{ steps.services.outputs.list }}
