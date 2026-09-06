@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { geocodeCandidates } from '../src/geo/geocode.js';
-import { applyGeoCatalogBroadAnchor } from '../src/geo/geo-catalog.js';
+import { applyGeoCatalogBroadAnchor, applyGeoCatalogExactAnchor } from '../src/geo/geo-catalog.js';
 
 const uzbekistan = {
   code: 'UZ',
@@ -32,6 +32,23 @@ test('same-name broad candidates never shadow a declared residential complex', (
   assert.equal(candidates.some((candidate) =>
     ['area', 'localArea', 'microdistrict', 'district'].includes(candidate.source)
       && candidate.name === 'Yangi Sergeli'), false);
+});
+
+test('published geo-catalog resolves Yangi Sergeli to the exact residential-complex anchor', () => {
+  const listing = {
+    city: 'Tashkent',
+    district: 'Sergeli',
+    residenceComplex: 'Yangi Sergeli',
+    area: 'Yangi Sergeli',
+  };
+
+  assert.equal(applyGeoCatalogExactAnchor(listing, uzbekistan), true);
+  assert.equal(listing.locationGeoEntityId, 'uz:tashkent:residential:yangi-sergeli');
+  assert.equal(listing.locationCanonical, 'Yangi Sergeli');
+  assert.equal(listing.locationPrecision, 'complex');
+  assert.equal(listing.locationSource, 'residentialComplex');
+  assert.equal(listing.lat, 41.222096);
+  assert.equal(listing.lng, 69.224966);
 });
 
 test('geo-catalog broad fallback skips the same-name local area and may use a genuinely broader parent', () => {
