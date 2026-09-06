@@ -49,6 +49,7 @@ const PRECISION_RANK = Object.freeze({
   city: 100,
 });
 const EARTH_RADIUS_M = 6_371_000;
+const CATALOG_COORDINATE_TOLERANCE_M = 1;
 const EXACT_LOOKUP_BUDGET = Math.max(
   0,
   Number(process.env.PERSISTENT_EXACT_GEOCODE_BUDGET ?? 30) || 0,
@@ -300,7 +301,6 @@ function sourceCoordinateIsStrongerThanComplex(listing) {
 
 export function refineSourceCoordinateFromGeoCatalogResidentialComplex(listing, country) {
   if (!hasCoordinates(listing) || sourceCoordinateIsStrongerThanComplex(listing)) return false;
-  if (listing.locationSource === 'residentialComplex' && listing.locationProvider === 'geoCatalog') return false;
 
   const original = { lat: Number(listing.lat), lng: Number(listing.lng) };
   const probe = {
@@ -325,6 +325,13 @@ export function refineSourceCoordinateFromGeoCatalogResidentialComplex(listing, 
 
   const discrepancyM = distanceM(original, probe);
   if (!Number.isFinite(discrepancyM)) return false;
+
+  const alreadyCurrentCatalogAnchor = listing.locationSource === 'residentialComplex'
+    && listing.locationProvider === 'geoCatalog'
+    && listing.locationGeoEntityId
+    && listing.locationGeoEntityId === probe.locationGeoEntityId
+    && discrepancyM <= CATALOG_COORDINATE_TOLERANCE_M;
+  if (alreadyCurrentCatalogAnchor) return false;
 
   Object.assign(listing, probe);
   listing.sourceCoordinateRefined = true;
