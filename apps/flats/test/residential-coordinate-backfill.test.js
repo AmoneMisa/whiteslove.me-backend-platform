@@ -80,6 +80,67 @@ test('backfill produces no patch for an already exact building-level coordinate'
   assert.equal(patch, null);
 });
 
+test('backfill refreshes an already catalog-refined complex when the catalog anchor moved', () => {
+  const patch = buildResidentialCoordinateBackfillPatch({
+    db_id: '105',
+    source: 'olx',
+    country: 'UZ',
+    source_id: 'stale-yangi-sergeli',
+    city: 'Tashkent',
+    residence_complex: 'Yangi Sergeli',
+    lat: 41.221894,
+    lng: 69.225708,
+    data: {
+      residenceComplex: 'Yangi Sergeli',
+      lat: 41.221894,
+      lng: 69.225708,
+      locationSource: 'residentialComplex',
+      locationProvider: 'geoCatalog',
+      locationPrecision: 'complex',
+      locationApproximate: true,
+      locationCanonical: 'Yangi Sergeli',
+      locationRole: 'mentioned',
+      locationGeoEntityId: 'uz:tashkent:residential:yangi-sergeli',
+      sourceCoordinateRefined: true,
+    },
+  });
+
+  assert.ok(patch);
+  assert.equal(patch.lat, 41.222096);
+  assert.equal(patch.lng, 69.224966);
+  assert.equal(patch.locationCanonical, 'Yangi Sergeli');
+  assert.equal(patch.locationGeoEntityId, 'uz:tashkent:residential:yangi-sergeli');
+  assert.ok(patch.sourceCoordinateDistanceM >= 60 && patch.sourceCoordinateDistanceM <= 70);
+});
+
+test('backfill is idempotent once a catalog-refined complex already matches the current anchor', () => {
+  const patch = buildResidentialCoordinateBackfillPatch({
+    db_id: '106',
+    source: 'olx',
+    country: 'UZ',
+    source_id: 'current-yangi-sergeli',
+    city: 'Tashkent',
+    residence_complex: 'Yangi Sergeli',
+    lat: 41.222096,
+    lng: 69.224966,
+    data: {
+      residenceComplex: 'Yangi Sergeli',
+      lat: 41.222096,
+      lng: 69.224966,
+      locationSource: 'residentialComplex',
+      locationProvider: 'geoCatalog',
+      locationPrecision: 'complex',
+      locationApproximate: true,
+      locationCanonical: 'Yangi Sergeli',
+      locationRole: 'mentioned',
+      locationGeoEntityId: 'uz:tashkent:residential:yangi-sergeli',
+      sourceCoordinateRefined: true,
+    },
+  });
+
+  assert.equal(patch, null);
+});
+
 test('backfill never persists unrelated listing fields', () => {
   const patch = buildResidentialCoordinateBackfillPatch({
     db_id: '104',
