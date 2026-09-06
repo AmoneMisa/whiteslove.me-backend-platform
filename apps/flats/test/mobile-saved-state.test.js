@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {cleanItemKey, cleanSavedStateId} from '../src/mobile/mobile-saved-state.js';
+import {
+  cleanInstallationSecret,
+  cleanItemKey,
+  cleanSavedStateId,
+  installationSecretHash,
+} from '../src/mobile/mobile-saved-state.js';
 
 test('saved-state ids accept the existing random device/preset id format', () => {
   const id = '4f3a2b1c9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e';
@@ -13,6 +18,18 @@ test('saved-state ids reject path/control injection and tiny identifiers', () =>
   assert.equal(cleanSavedStateId('../../etc/passwd'), null);
   assert.equal(cleanSavedStateId('short'), null);
   assert.equal(cleanSavedStateId('abc\n123456'), null);
+});
+
+test('saved-state secret requires 256-bit hex and is stored only as SHA-256', () => {
+  const secret = 'ab'.repeat(32);
+  assert.equal(cleanInstallationSecret(secret.toUpperCase()), secret);
+  assert.equal(cleanInstallationSecret('ab'.repeat(31)), null);
+  assert.equal(cleanInstallationSecret(`${'ab'.repeat(31)}zz`), null);
+
+  const hash = installationSecretHash(secret);
+  assert.match(hash, /^[a-f0-9]{64}$/);
+  assert.notEqual(hash, secret);
+  assert.equal(hash, installationSecretHash(secret));
 });
 
 test('listing identity keys may contain source separators but not controls', () => {
