@@ -85,16 +85,30 @@ function applyCandidate(listing, candidate, coords) {
   listing.locationProviderType = coords.providerType || null;
 }
 
+/**
+ * Exact point-like evidence must carry enough relationship context to justify
+ * placing the apartment on the anchor itself. A POI/metro merely mentioned in
+ * text is a reference, not the apartment location, so it is deliberately kept
+ * out of the exact stage and may only participate in the later reference tier.
+ */
+export function exactCandidateAllowed(candidate) {
+  if (!candidate || candidate.role === 'nearby') return false;
+  if (!Object.hasOwn(EXACT_PRIORITY, candidate.source)) return false;
+  if (candidate.source === 'poi' || candidate.source === 'metro') {
+    return candidate.role === 'primary';
+  }
+  return true;
+}
+
 function exactCandidates(listing, country) {
   return geocodeCandidates(listing, country)
-    .filter((candidate) =>
-      Object.hasOwn(EXACT_PRIORITY, candidate.source)
-        && candidate.role !== 'nearby',
-    )
+    .filter(exactCandidateAllowed)
     .sort((a, b) => EXACT_PRIORITY[a.source] - EXACT_PRIORITY[b.source]);
 }
 
 async function lookupExact(listing, country, candidate, budgets) {
+  if (!exactCandidateAllowed(candidate)) return {coords: null, deferred: false};
+
   const structured = structuredInput(listing, country, candidate);
   if (structured) {
     let coords = await cachedStructuredAddressPoint(structured);
@@ -167,4 +181,5 @@ export const __geocodeFacadeTest = {
   exactCandidates,
   structuredInput,
   exactPriority: EXACT_PRIORITY,
+  exactCandidateAllowed,
 };
