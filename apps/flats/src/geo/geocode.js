@@ -16,7 +16,7 @@
 export * from './geocode-base.js';
 
 import {
-  geocodeCandidates,
+  geocodeCandidates as geocodeCandidatesBase,
   geocodeListings as geocodeListingsBase,
   resolveAccuracyM,
 } from './geocode-base.js';
@@ -38,6 +38,10 @@ const EXACT_PRIORITY = Object.freeze({
   metro: 40,
   street: 50,
 });
+const BROAD_COLLISION_SOURCES = new Set([
+  'microdistrict', 'area', 'localArea', 'locality', 'developmentArea',
+  'informalArea', 'suburb', 'settlement', 'searchCluster', 'district',
+]);
 
 function hasCoordinates(listing) {
   return listing?.lat != null
@@ -50,6 +54,29 @@ function finiteAccuracy(value, fallback = null) {
   if (value == null || value === '') return fallback;
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : fallback;
+}
+
+function sameName(a, b) {
+  return String(a || '').trim().toLocaleLowerCase() === String(b || '').trim().toLocaleLowerCase();
+}
+
+/**
+ * A parsed residential-complex field is stronger property-location evidence
+ * than any broad geography with the same display name. If the complex itself
+ * cannot be resolved, silently reinterpreting that name as an area/district
+ * creates a confidently wrong pin (for example Yangi Sergeli RC vs the Yangi
+ * Sergeli local area). Drop only the colliding weaker candidate; unrelated
+ * broad geography remains available as a normal fallback.
+ */
+export function residentialComplexBroadCollision(listing, candidate) {
+  if (!listing?.residenceComplex || !candidate?.name) return false;
+  if (!BROAD_COLLISION_SOURCES.has(candidate.source)) return false;
+  return sameName(listing.residenceComplex, candidate.name);
+}
+
+export function geocodeCandidates(listing, country) {
+  return geocodeCandidatesBase(listing, country)
+    .filter((candidate) => !residentialComplexBroadCollision(listing, candidate));
 }
 
 function structuredInput(listing, country, candidate) {
@@ -153,6 +180,9 @@ export async function geocodeListings(listings, country) {
       continue;
     }
 
+    const rawCandidates = geocodeCandidatesBase(listing, country);
+    const hasBroadResidentialNameCollision = rawCandidates
+      .some((candidate) => residentialComplexBroadCollision(listing, candidate));
     const listingBudgetBeforeExact = budgets.listing;
     let placed = false;
     let deferred = false;
@@ -174,8 +204,14 @@ export async function geocodeListings(listings, country) {
     // delegate unresolved rows when the exact stage was cache-only; otherwise
     // defer broad fallbacks until the next crawl, when the exact misses are
     // cached and the base layer can use the single fresh network budget.
+    //
+    // A same-name broad/RC collision is also never delegated: geocode-base owns
+    // its own candidate generation and would otherwise be able to resurrect the
+    // weaker area candidate that this facade deliberately suppressed.
     const exactStageUsedNetwork = budgets.listing < listingBudgetBeforeExact;
-    if (placed || (!deferred && !exactStageUsedNetwork)) delegate.push(listing);
+    if (placed || (!deferred && !exactStageUsedNetwork && !hasBroadResidentialNameCollision)) {
+      delegate.push(listing);
+    }
   }
 
   if (delegate.length) await geocodeListingsBase(delegate, country);
@@ -187,4 +223,5 @@ export const __geocodeFacadeTest = {
   structuredInput,
   exactPriority: EXACT_PRIORITY,
   exactCandidateAllowed,
+  residentialComplexBroadCollision,
 };
