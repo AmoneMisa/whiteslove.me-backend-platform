@@ -1,3 +1,5 @@
+import {createHash, timingSafeEqual} from 'node:crypto';
+
 import {pool} from '../infrastructure/database/pool.js';
 import {checkRate} from '../support/request-rate-limit.js';
 
@@ -7,11 +9,22 @@ const MAX_FAVORITES = 1000;
 const MAX_SORTED_COLLECTIONS = 100;
 const MAX_SORTED_ITEMS = 5000;
 const MAX_PRESETS = 100;
+const DEVICE_HEADER = 'x-flat-finder-device-id';
+const SECRET_HEADER = 'x-flat-finder-device-secret';
 
 export function cleanSavedStateId(value, {max = 80, min = 8} = {}) {
   const result = String(value || '').trim();
   if (result.length < min || result.length > max) return null;
   return /^[A-Za-z0-9._:-]+$/.test(result) ? result : null;
+}
+
+export function cleanInstallationSecret(value) {
+  const result = String(value || '').trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(result) ? result : null;
+}
+
+export function installationSecretHash(secret) {
+  return createHash('sha256').update(secret, 'utf8').digest('hex');
 }
 
 export function cleanItemKey(value) {
@@ -26,6 +39,27 @@ function cleanTitle(value, fallback = '') {
 
 function cleanObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function badRequest(message) {
+  return Object.assign(new Error(message), {statusCode: 400});
+}
+
+function unauthorized() {
+  return Object.assign(new Error('Invalid installation credentials'), {statusCode: 401});
+}
+
+function credentialsFromRequest(req) {
+  const deviceId = cleanSavedStateId(req.get(DEVICE_HEADER));
+  const secret = cleanInstallationSecret(req.get(SECRET_HEADER));
+  return deviceId && secret ? {deviceId, secret} : null;
+}
+
+function hashesEqual(a, b) {
+  if (!/^[a-f0-9]{64}$/i.test(String(a || '')) || !/^[a-f0-9]{64}$/i.test(String(b || ''))) {
+    return false;
+  }
+  return timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex'));
 }
 
 function normalizePreset(raw) {
@@ -43,19 +77,21 @@ function normalizePreset(raw) {
   };
 }
 
+function normalizeItem(raw) {
+  const item = cleanObject(raw);
+  if (!item) return null;
+  const key = cleanItemKey(item.key ?? item.itemKey);
+  const listing = cleanObject(item.listing ?? item.payload);
+  return key && listing ? {key, listing} : null;
+}
+
 function normalizeSortedCollection(raw) {
   const value = cleanObject(raw);
   if (!value) return null;
   const id = cleanSavedStateId(value.id);
-  if (!id) return null;
+  if (!id || id === FAVORITES_ID) return null;
   const rawItems = Array.isArray(value.items) ? value.items : [];
-  const items = rawItems.map((entry) => {
-    const item = cleanObject(entry);
-    if (!item) return null;
-    const key = cleanItemKey(item.key);
-    const listing = cleanObject(item.listing ?? item.payload);
-    return key && listing ? {key, listing} : null;
-  }).filter(Boolean);
+  const items = rawItems.map(normalizeItem).filter(Boolean);
   if (items.length !== rawItems.length) return null;
   return {
     id,
@@ -66,38 +102,52 @@ function normalizeSortedCollection(raw) {
   };
 }
 
-async function ensureInstallation(client, deviceId) {
+async function ensureInstallation(client, {deviceId, secret}) {
+  const secretHash = installationSecretHash(secret);
   await client.query(`
-    INSERT INTO ${SCHEMA}.installations(device_id)
-    VALUES ($1)
-    ON CONFLICT (device_id) DO UPDATE SET updated_at = NOW()
+    INSERT INTO ${SCHEMA}.installations(device_id, sync_secret_hash)
+    VALUES ($1, $2)
+    ON CONFLICT (device_id) DO NOTHING
+  `, [deviceId, secretHash]);
+
+  const result = await client.query(`
+    SELECT sync_secret_hash
+    FROM ${SCHEMA}.installations
+    WHERE device_id = $1
+  `, [deviceId]);
+  const stored = result.rows[0]?.sync_secret_hash;
+  if (!hashesEqual(stored, secretHash)) throw unauthorized();
+
+  await client.query(`
+    UPDATE ${SCHEMA}.installations
+    SET updated_at = NOW()
+    WHERE device_id = $1
   `, [deviceId]);
 }
 
-async function savedStateSnapshot(deviceId) {
+async function savedStateSnapshot(credentials) {
+  const {deviceId} = credentials;
   const client = await pool.connect();
   try {
-    await ensureInstallation(client, deviceId);
-    const [collectionsResult, itemsResult, presetsResult] = await Promise.all([
-      client.query(`
-        SELECT collection_id, kind, title, is_preset, preset_name
-        FROM ${SCHEMA}.saved_collections
-        WHERE device_id = $1
-        ORDER BY updated_at DESC, collection_id
-      `, [deviceId]),
-      client.query(`
-        SELECT collection_id, item_key, payload
-        FROM ${SCHEMA}.saved_items
-        WHERE device_id = $1
-        ORDER BY updated_at DESC, item_key
-      `, [deviceId]),
-      client.query(`
-        SELECT preset_id, name, filters, enabled, notifications_enabled
-        FROM ${SCHEMA}.saved_presets
-        WHERE device_id = $1
-        ORDER BY updated_at DESC, preset_id
-      `, [deviceId]),
-    ]);
+    await ensureInstallation(client, credentials);
+    const collectionsResult = await client.query(`
+      SELECT collection_id, kind, title, is_preset, preset_name
+      FROM ${SCHEMA}.saved_collections
+      WHERE device_id = $1
+      ORDER BY updated_at DESC, collection_id
+    `, [deviceId]);
+    const itemsResult = await client.query(`
+      SELECT collection_id, item_key, payload
+      FROM ${SCHEMA}.saved_items
+      WHERE device_id = $1
+      ORDER BY updated_at DESC, item_key
+    `, [deviceId]);
+    const presetsResult = await client.query(`
+      SELECT preset_id, name, filters, enabled, notifications_enabled
+      FROM ${SCHEMA}.saved_presets
+      WHERE device_id = $1
+      ORDER BY updated_at DESC, preset_id
+    `, [deviceId]);
 
     const byCollection = new Map();
     for (const row of collectionsResult.rows) {
@@ -136,32 +186,69 @@ async function savedStateSnapshot(deviceId) {
   }
 }
 
-async function importLegacyState(deviceId, body) {
+async function assertImportCapacity(client, deviceId) {
+  const result = await client.query(`
+    SELECT
+      (SELECT COUNT(*)::int
+       FROM ${SCHEMA}.saved_items
+       WHERE device_id = $1 AND collection_id = $2) AS favorites,
+      (SELECT COUNT(*)::int
+       FROM ${SCHEMA}.saved_collections
+       WHERE device_id = $1 AND kind = 'sorted') AS sorted_collections,
+      (SELECT COUNT(*)::int
+       FROM ${SCHEMA}.saved_items i
+       JOIN ${SCHEMA}.saved_collections c
+         ON c.device_id = i.device_id AND c.collection_id = i.collection_id
+       WHERE i.device_id = $1 AND c.kind = 'sorted') AS sorted_items,
+      (SELECT COUNT(*)::int
+       FROM ${SCHEMA}.saved_presets
+       WHERE device_id = $1) AS presets
+  `, [deviceId, FAVORITES_ID]);
+  const counts = result.rows[0] || {};
+  if (counts.favorites > MAX_FAVORITES ||
+      counts.sorted_collections > MAX_SORTED_COLLECTIONS ||
+      counts.sorted_items > MAX_SORTED_ITEMS ||
+      counts.presets > MAX_PRESETS) {
+    throw badRequest('saved state exceeds account limits');
+  }
+}
+
+async function importLegacyState(credentials, body) {
+  const {deviceId} = credentials;
   const rawFavorites = Array.isArray(body.favorites) ? body.favorites : [];
   const rawSorted = Array.isArray(body.sorted) ? body.sorted : [];
   const rawPresets = Array.isArray(body.presets) ? body.presets : [];
-  if (rawFavorites.length > MAX_FAVORITES || rawSorted.length > MAX_SORTED_COLLECTIONS || rawPresets.length > MAX_PRESETS) {
-    throw Object.assign(new Error('saved state exceeds import limits'), {statusCode: 400});
+  if (rawFavorites.length > MAX_FAVORITES ||
+      rawSorted.length > MAX_SORTED_COLLECTIONS ||
+      rawPresets.length > MAX_PRESETS) {
+    throw badRequest('saved state exceeds import limits');
   }
 
-  const favorites = rawFavorites.map((entry) => {
-    const value = cleanObject(entry);
-    if (!value) return null;
-    const key = cleanItemKey(value.key);
-    const listing = cleanObject(value.listing ?? value.payload);
-    return key && listing ? {key, listing} : null;
-  }).filter(Boolean);
-  const sorted = rawSorted.map(normalizeSortedCollection).filter(Boolean);
+  const favorites = rawFavorites.map(normalizeItem).filter(Boolean);
+  const normalizedSorted = rawSorted.map(normalizeSortedCollection).filter(Boolean);
   const presets = rawPresets.map(normalizePreset).filter(Boolean);
-  const sortedItems = sorted.reduce((count, collection) => count + collection.items.length, 0);
-  if (favorites.length !== rawFavorites.length || sorted.length !== rawSorted.length || presets.length !== rawPresets.length || sortedItems > MAX_SORTED_ITEMS) {
-    throw Object.assign(new Error('invalid saved state import payload'), {statusCode: 400});
+  if (favorites.length !== rawFavorites.length ||
+      normalizedSorted.length !== rawSorted.length ||
+      presets.length !== rawPresets.length) {
+    throw badRequest('invalid saved state import payload');
   }
+
+  const seenSortedKeys = new Set();
+  const sorted = normalizedSorted.map((collection) => ({
+    ...collection,
+    items: collection.items.filter((item) => {
+      if (seenSortedKeys.has(item.key)) return false;
+      seenSortedKeys.add(item.key);
+      return true;
+    }),
+  })).filter((collection) => collection.items.length > 0);
+  const sortedItems = sorted.reduce((count, collection) => count + collection.items.length, 0);
+  if (sortedItems > MAX_SORTED_ITEMS) throw badRequest('too many sorted items');
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await ensureInstallation(client, deviceId);
+    await ensureInstallation(client, credentials);
 
     if (favorites.length) {
       await client.query(`
@@ -188,7 +275,14 @@ async function importLegacyState(deviceId, body) {
       for (const item of collection.items) {
         await client.query(`
           INSERT INTO ${SCHEMA}.saved_items(device_id, collection_id, item_key, payload)
-          VALUES ($1, $2, $3, $4::jsonb)
+          SELECT $1, $2, $3, $4::jsonb
+          WHERE NOT EXISTS (
+            SELECT 1
+            FROM ${SCHEMA}.saved_items i
+            JOIN ${SCHEMA}.saved_collections c
+              ON c.device_id = i.device_id AND c.collection_id = i.collection_id
+            WHERE i.device_id = $1 AND i.item_key = $3 AND c.kind = 'sorted'
+          )
           ON CONFLICT (device_id, collection_id, item_key) DO NOTHING
         `, [deviceId, collection.id, item.key, JSON.stringify(item.listing)]);
       }
@@ -203,6 +297,15 @@ async function importLegacyState(deviceId, body) {
       `, [deviceId, preset.id, preset.name, JSON.stringify(preset.filters), preset.enabled, preset.notificationsEnabled]);
     }
 
+    await client.query(`
+      DELETE FROM ${SCHEMA}.saved_collections c
+      WHERE c.device_id = $1 AND c.kind = 'sorted'
+        AND NOT EXISTS (
+          SELECT 1 FROM ${SCHEMA}.saved_items i
+          WHERE i.device_id = c.device_id AND i.collection_id = c.collection_id
+        )
+    `, [deviceId]);
+    await assertImportCapacity(client, deviceId);
     await client.query('COMMIT');
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {});
@@ -212,18 +315,45 @@ async function importLegacyState(deviceId, body) {
   }
 }
 
-async function mutateSavedState(deviceId, raw) {
+async function mutationCapacity(client, deviceId, op, value) {
+  if (op === 'favorite.put') {
+    const result = await client.query(`
+      SELECT
+        EXISTS(SELECT 1 FROM ${SCHEMA}.saved_items WHERE device_id = $1 AND collection_id = $2 AND item_key = $3) AS exists,
+        (SELECT COUNT(*)::int FROM ${SCHEMA}.saved_items WHERE device_id = $1 AND collection_id = $2) AS count
+    `, [deviceId, FAVORITES_ID, value.itemKey]);
+    if (!result.rows[0]?.exists && result.rows[0]?.count >= MAX_FAVORITES) {
+      throw badRequest('favorite limit reached');
+    }
+    return;
+  }
+
+  if (op === 'preset.put') {
+    const result = await client.query(`
+      SELECT
+        EXISTS(SELECT 1 FROM ${SCHEMA}.saved_presets WHERE device_id = $1 AND preset_id = $2) AS exists,
+        (SELECT COUNT(*)::int FROM ${SCHEMA}.saved_presets WHERE device_id = $1) AS count
+    `, [deviceId, value.presetId]);
+    if (!result.rows[0]?.exists && result.rows[0]?.count >= MAX_PRESETS) {
+      throw badRequest('preset limit reached');
+    }
+  }
+}
+
+async function mutateSavedState(credentials, raw) {
+  const {deviceId} = credentials;
   const value = cleanObject(raw);
   const op = String(value?.op || '');
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await ensureInstallation(client, deviceId);
+    await ensureInstallation(client, credentials);
 
     if (op === 'favorite.put') {
       const key = cleanItemKey(value.itemKey);
       const listing = cleanObject(value.listing);
-      if (!key || !listing) throw Object.assign(new Error('invalid favorite payload'), {statusCode: 400});
+      if (!key || !listing) throw badRequest('invalid favorite payload');
+      await mutationCapacity(client, deviceId, op, {itemKey: key});
       await client.query(`
         INSERT INTO ${SCHEMA}.saved_collections(device_id, collection_id, kind, title)
         VALUES ($1, $2, 'favorites', 'Favorites')
@@ -232,53 +362,145 @@ async function mutateSavedState(deviceId, raw) {
       await client.query(`
         INSERT INTO ${SCHEMA}.saved_items(device_id, collection_id, item_key, payload)
         VALUES ($1, $2, $3, $4::jsonb)
-        ON CONFLICT (device_id, collection_id, item_key) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
+        ON CONFLICT (device_id, collection_id, item_key) DO UPDATE SET
+          payload = EXCLUDED.payload,
+          updated_at = NOW()
       `, [deviceId, FAVORITES_ID, key, JSON.stringify(listing)]);
     } else if (op === 'favorite.delete') {
       const key = cleanItemKey(value.itemKey);
-      if (!key) throw Object.assign(new Error('invalid favorite key'), {statusCode: 400});
-      await client.query(`DELETE FROM ${SCHEMA}.saved_items WHERE device_id = $1 AND collection_id = $2 AND item_key = $3`, [deviceId, FAVORITES_ID, key]);
+      if (!key) throw badRequest('invalid favorite key');
+      await client.query(`
+        DELETE FROM ${SCHEMA}.saved_items
+        WHERE device_id = $1 AND collection_id = $2 AND item_key = $3
+      `, [deviceId, FAVORITES_ID, key]);
     } else if (op === 'sorted.put') {
       const collectionId = cleanSavedStateId(value.collectionId);
       const key = cleanItemKey(value.itemKey);
       const listing = cleanObject(value.listing);
-      if (!collectionId || !key || !listing) throw Object.assign(new Error('invalid sorted payload'), {statusCode: 400});
-      await client.query(`DELETE FROM ${SCHEMA}.saved_items i USING ${SCHEMA}.saved_collections c WHERE i.device_id = $1 AND i.item_key = $2 AND i.device_id = c.device_id AND i.collection_id = c.collection_id AND c.kind = 'sorted'`, [deviceId, key]);
+      if (!collectionId || collectionId === FAVORITES_ID || !key || !listing) {
+        throw badRequest('invalid sorted payload');
+      }
+
+      const existing = await client.query(`
+        SELECT EXISTS(
+          SELECT 1
+          FROM ${SCHEMA}.saved_items i
+          JOIN ${SCHEMA}.saved_collections c
+            ON c.device_id = i.device_id AND c.collection_id = i.collection_id
+          WHERE i.device_id = $1 AND i.item_key = $2 AND c.kind = 'sorted'
+        ) AS exists
+      `, [deviceId, key]);
+      const existed = existing.rows[0]?.exists === true;
+
+      await client.query(`
+        DELETE FROM ${SCHEMA}.saved_items i
+        USING ${SCHEMA}.saved_collections c
+        WHERE i.device_id = $1 AND i.item_key = $2
+          AND i.device_id = c.device_id AND i.collection_id = c.collection_id
+          AND c.kind = 'sorted'
+      `, [deviceId, key]);
+      await client.query(`
+        DELETE FROM ${SCHEMA}.saved_collections c
+        WHERE c.device_id = $1 AND c.kind = 'sorted'
+          AND NOT EXISTS (
+            SELECT 1 FROM ${SCHEMA}.saved_items i
+            WHERE i.device_id = c.device_id AND i.collection_id = c.collection_id
+          )
+      `, [deviceId]);
+
+      const capacity = await client.query(`
+        SELECT
+          EXISTS(SELECT 1 FROM ${SCHEMA}.saved_collections WHERE device_id = $1 AND collection_id = $2 AND kind = 'sorted') AS collection_exists,
+          (SELECT COUNT(*)::int FROM ${SCHEMA}.saved_collections WHERE device_id = $1 AND kind = 'sorted') AS collections,
+          (SELECT COUNT(*)::int FROM ${SCHEMA}.saved_items i JOIN ${SCHEMA}.saved_collections c ON c.device_id = i.device_id AND c.collection_id = i.collection_id WHERE i.device_id = $1 AND c.kind = 'sorted') AS items
+      `, [deviceId, collectionId]);
+      const counts = capacity.rows[0] || {};
+      if (!counts.collection_exists && counts.collections >= MAX_SORTED_COLLECTIONS) {
+        throw badRequest('sorted collection limit reached');
+      }
+      if (!existed && counts.items >= MAX_SORTED_ITEMS) {
+        throw badRequest('sorted item limit reached');
+      }
+
       await client.query(`
         INSERT INTO ${SCHEMA}.saved_collections(device_id, collection_id, kind, title, is_preset, preset_name)
         VALUES ($1, $2, 'sorted', $3, $4, $5)
-        ON CONFLICT (device_id, collection_id) DO UPDATE SET title = EXCLUDED.title, is_preset = EXCLUDED.is_preset, preset_name = EXCLUDED.preset_name, updated_at = NOW()
-      `, [deviceId, collectionId, cleanTitle(value.collectionTitle), value.isPreset === true, value.presetName == null ? null : cleanTitle(value.presetName)]);
+        ON CONFLICT (device_id, collection_id) DO UPDATE SET
+          title = EXCLUDED.title,
+          is_preset = EXCLUDED.is_preset,
+          preset_name = EXCLUDED.preset_name,
+          updated_at = NOW()
+      `, [
+        deviceId,
+        collectionId,
+        cleanTitle(value.collectionTitle),
+        value.isPreset === true,
+        value.presetName == null ? null : cleanTitle(value.presetName),
+      ]);
       await client.query(`
         INSERT INTO ${SCHEMA}.saved_items(device_id, collection_id, item_key, payload)
         VALUES ($1, $2, $3, $4::jsonb)
-        ON CONFLICT (device_id, collection_id, item_key) DO UPDATE SET payload = EXCLUDED.payload, updated_at = NOW()
+        ON CONFLICT (device_id, collection_id, item_key) DO UPDATE SET
+          payload = EXCLUDED.payload,
+          updated_at = NOW()
       `, [deviceId, collectionId, key, JSON.stringify(listing)]);
-      await client.query(`DELETE FROM ${SCHEMA}.saved_collections c WHERE c.device_id = $1 AND c.kind = 'sorted' AND NOT EXISTS (SELECT 1 FROM ${SCHEMA}.saved_items i WHERE i.device_id = c.device_id AND i.collection_id = c.collection_id)`, [deviceId]);
     } else if (op === 'sorted.delete') {
       const collectionId = cleanSavedStateId(value.collectionId);
       const key = cleanItemKey(value.itemKey);
-      if (!collectionId || !key) throw Object.assign(new Error('invalid sorted key'), {statusCode: 400});
-      await client.query(`DELETE FROM ${SCHEMA}.saved_items WHERE device_id = $1 AND collection_id = $2 AND item_key = $3`, [deviceId, collectionId, key]);
-      await client.query(`DELETE FROM ${SCHEMA}.saved_collections c WHERE c.device_id = $1 AND c.collection_id = $2 AND NOT EXISTS (SELECT 1 FROM ${SCHEMA}.saved_items i WHERE i.device_id = c.device_id AND i.collection_id = c.collection_id)`, [deviceId, collectionId]);
+      if (!collectionId || collectionId === FAVORITES_ID || !key) {
+        throw badRequest('invalid sorted key');
+      }
+      await client.query(`
+        DELETE FROM ${SCHEMA}.saved_items
+        WHERE device_id = $1 AND collection_id = $2 AND item_key = $3
+      `, [deviceId, collectionId, key]);
+      await client.query(`
+        DELETE FROM ${SCHEMA}.saved_collections c
+        WHERE c.device_id = $1 AND c.collection_id = $2 AND c.kind = 'sorted'
+          AND NOT EXISTS (
+            SELECT 1 FROM ${SCHEMA}.saved_items i
+            WHERE i.device_id = c.device_id AND i.collection_id = c.collection_id
+          )
+      `, [deviceId, collectionId]);
     } else if (op === 'sorted.deleteCollection') {
       const collectionId = cleanSavedStateId(value.collectionId);
-      if (!collectionId) throw Object.assign(new Error('invalid collection id'), {statusCode: 400});
-      await client.query(`DELETE FROM ${SCHEMA}.saved_collections WHERE device_id = $1 AND collection_id = $2 AND kind = 'sorted'`, [deviceId, collectionId]);
+      if (!collectionId || collectionId === FAVORITES_ID) {
+        throw badRequest('invalid collection id');
+      }
+      await client.query(`
+        DELETE FROM ${SCHEMA}.saved_collections
+        WHERE device_id = $1 AND collection_id = $2 AND kind = 'sorted'
+      `, [deviceId, collectionId]);
     } else if (op === 'preset.put') {
       const preset = normalizePreset(value.preset);
-      if (!preset) throw Object.assign(new Error('invalid preset payload'), {statusCode: 400});
+      if (!preset) throw badRequest('invalid preset payload');
+      await mutationCapacity(client, deviceId, op, {presetId: preset.id});
       await client.query(`
         INSERT INTO ${SCHEMA}.saved_presets(device_id, preset_id, name, filters, enabled, notifications_enabled)
         VALUES ($1, $2, $3, $4::jsonb, $5, $6)
-        ON CONFLICT (device_id, preset_id) DO UPDATE SET name = EXCLUDED.name, filters = EXCLUDED.filters, enabled = EXCLUDED.enabled, notifications_enabled = EXCLUDED.notifications_enabled, updated_at = NOW()
-      `, [deviceId, preset.id, preset.name, JSON.stringify(preset.filters), preset.enabled, preset.notificationsEnabled]);
+        ON CONFLICT (device_id, preset_id) DO UPDATE SET
+          name = EXCLUDED.name,
+          filters = EXCLUDED.filters,
+          enabled = EXCLUDED.enabled,
+          notifications_enabled = EXCLUDED.notifications_enabled,
+          updated_at = NOW()
+      `, [
+        deviceId,
+        preset.id,
+        preset.name,
+        JSON.stringify(preset.filters),
+        preset.enabled,
+        preset.notificationsEnabled,
+      ]);
     } else if (op === 'preset.delete') {
       const presetId = cleanSavedStateId(value.presetId);
-      if (!presetId) throw Object.assign(new Error('invalid preset id'), {statusCode: 400});
-      await client.query(`DELETE FROM ${SCHEMA}.saved_presets WHERE device_id = $1 AND preset_id = $2`, [deviceId, presetId]);
+      if (!presetId) throw badRequest('invalid preset id');
+      await client.query(`
+        DELETE FROM ${SCHEMA}.saved_presets
+        WHERE device_id = $1 AND preset_id = $2
+      `, [deviceId, presetId]);
     } else {
-      throw Object.assign(new Error('unsupported saved state mutation'), {statusCode: 400});
+      throw badRequest('unsupported saved state mutation');
     }
 
     await client.query('COMMIT');
@@ -290,44 +512,46 @@ async function mutateSavedState(deviceId, raw) {
   }
 }
 
+function sendSavedStateError(res, error, fallback) {
+  if (error?.statusCode === 400) return res.status(400).json({error: error.message});
+  if (error?.statusCode === 401) return res.status(401).json({error: 'Invalid installation credentials'});
+  console.error(`[mobile-saved-state] ${fallback}:`, error);
+  return res.status(500).json({error: 'Could not access saved state'});
+}
+
 export function registerMobileSavedStateRoutes(app) {
   app.get('/api/mobile/saved-state', async (req, res) => {
     if (!checkRate(req, res, 'mobile-saved-state-read', 250)) return;
-    const deviceId = cleanSavedStateId(req.query?.deviceId);
-    if (!deviceId) return res.status(400).json({error: 'Invalid deviceId'});
+    const credentials = credentialsFromRequest(req);
+    if (!credentials) return res.status(401).json({error: 'Missing installation credentials'});
     try {
-      return res.json(await savedStateSnapshot(deviceId));
+      return res.json(await savedStateSnapshot(credentials));
     } catch (error) {
-      console.error('[mobile-saved-state] read failed:', error);
-      return res.status(500).json({error: 'Could not load saved state'});
+      return sendSavedStateError(res, error, 'read failed');
     }
   });
 
   app.post('/api/mobile/saved-state/import', async (req, res) => {
-    if (!checkRate(req, res, 'mobile-saved-state-import', 1000)) return;
-    const deviceId = cleanSavedStateId(req.body?.deviceId);
-    if (!deviceId) return res.status(400).json({error: 'Invalid deviceId'});
+    if (!checkRate(req, res, 'mobile-saved-state-import', 250)) return;
+    const credentials = credentialsFromRequest(req);
+    if (!credentials) return res.status(401).json({error: 'Missing installation credentials'});
     try {
-      await importLegacyState(deviceId, req.body || {});
+      await importLegacyState(credentials, req.body || {});
       return res.json({ok: true});
     } catch (error) {
-      if (error?.statusCode === 400) return res.status(400).json({error: error.message});
-      console.error('[mobile-saved-state] import failed:', error);
-      return res.status(500).json({error: 'Could not import saved state'});
+      return sendSavedStateError(res, error, 'import failed');
     }
   });
 
   app.post('/api/mobile/saved-state/mutate', async (req, res) => {
-    if (!checkRate(req, res, 'mobile-saved-state-mutate', 150)) return;
-    const deviceId = cleanSavedStateId(req.body?.deviceId);
-    if (!deviceId) return res.status(400).json({error: 'Invalid deviceId'});
+    if (!checkRate(req, res, 'mobile-saved-state-mutate', 100)) return;
+    const credentials = credentialsFromRequest(req);
+    if (!credentials) return res.status(401).json({error: 'Missing installation credentials'});
     try {
-      await mutateSavedState(deviceId, req.body);
+      await mutateSavedState(credentials, req.body);
       return res.json({ok: true});
     } catch (error) {
-      if (error?.statusCode === 400) return res.status(400).json({error: error.message});
-      console.error('[mobile-saved-state] mutation failed:', error);
-      return res.status(500).json({error: 'Could not save state'});
+      return sendSavedStateError(res, error, 'mutation failed');
     }
   });
 }
