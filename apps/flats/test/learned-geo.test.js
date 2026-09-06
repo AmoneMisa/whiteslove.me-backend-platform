@@ -59,6 +59,24 @@ test('learned address identity ignores query text, street labels and number form
   assert.notEqual(a.queryText, b.queryText);
 });
 
+test('learned address identity normalizes Cyrillic street labels', () => {
+  const candidate = { source: 'address', q: 'Шота Руставели 12, Ташкент', accuracyM: 40 };
+  const a = learnedGeoDescriptor({
+    country: 'UZ',
+    city: 'Tashkent',
+    street: 'ул. Шота Руставели',
+    houseNumber: '№12',
+  }, { code: 'UZ' }, candidate);
+  const b = learnedGeoDescriptor({
+    country: 'UZ',
+    city: 'Tashkent',
+    street: 'Шота Руставели улица',
+    houseNumber: '12',
+  }, { code: 'UZ' }, candidate);
+
+  assert.equal(a.lookupKey, b.lookupKey);
+});
+
 test('learned entity identity removes type labels but never crosses entity types', () => {
   const residential = learnedGeoDescriptor({
     country: 'UZ',
