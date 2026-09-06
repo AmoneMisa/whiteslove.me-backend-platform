@@ -2,6 +2,7 @@ CREATE SCHEMA IF NOT EXISTS user_data;
 
 CREATE TABLE IF NOT EXISTS user_data.installations (
   device_id VARCHAR(80) PRIMARY KEY,
+  sync_secret_hash CHAR(64) NOT NULL,
   account_id TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
