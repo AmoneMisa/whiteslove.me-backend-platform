@@ -34,7 +34,7 @@ test('same-name broad candidates never shadow a declared residential complex', (
       && candidate.name === 'Yangi Sergeli'), false);
 });
 
-test('geo-catalog broad fallback refuses the local-area owner when it matches residenceComplex', () => {
+test('geo-catalog broad fallback skips the same-name local area and may use a genuinely broader parent', () => {
   const listing = {
     city: 'Tashkent',
     district: 'Sergeli',
@@ -42,10 +42,10 @@ test('geo-catalog broad fallback refuses the local-area owner when it matches re
     area: 'Yangi Sergeli',
   };
 
-  assert.equal(applyGeoCatalogBroadAnchor(listing, uzbekistan), false);
-  assert.equal(listing.lat, undefined);
-  assert.equal(listing.lng, undefined);
-  assert.equal(listing.locationGeoEntityId, undefined);
+  assert.equal(applyGeoCatalogBroadAnchor(listing, uzbekistan), true);
+  assert.notEqual(listing.locationGeoEntityId, 'uz:tashkent:local-area:yangi-sergeli');
+  assert.equal(listing.locationCanonical, 'Sergeli');
+  assert.equal(listing.locationPrecision, 'district');
 });
 
 test('geo-catalog broad fallback still accepts an unrelated valid area', () => {
