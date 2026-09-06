@@ -53,11 +53,14 @@ const DEFAULT_ACCURACY_M = Object.freeze({
   city: 8000,
 });
 
+// Required point-like precedence from GEO_ACCURACY_AUDIT.md:
+// verified residential complex > verified primary POI > verified primary metro
+// > bare street. Street+house is handled before this catalog layer.
 const EXACT_TYPE_PRIORITY = Object.freeze({
   residential_complex: 10,
-  street: 20,
-  poi: 30,
-  metro: 40,
+  poi: 20,
+  metro: 30,
+  street: 40,
 });
 
 const BROAD_TYPE_PRIORITY = Object.freeze({
