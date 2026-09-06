@@ -1,6 +1,7 @@
 import {COUNTRY_CODES} from '../geo/countries.js';
 import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
 import {attachResolvedSearchGeometry} from '../geo/search-filter-geometry.js';
+import {applyPostgresGeoGate, withoutLegacyGeoFilters} from '../infrastructure/search/postgres-geo-gate.js';
 import {getRates} from '../support/fx.js';
 import {refreshAll} from '../scheduling/scheduler.js';
 import {searchPostgresListings} from '../support/postgres-search-fast.js';
@@ -183,7 +184,7 @@ async function tryPostgresSearch({filters, codes, force}) {
   }
 
   let searchError = null;
-  const searchMatches = filters.query
+  let searchMatches = filters.query
     ? await searchListingMatches(filters.query, {
         countries: codes,
         sources: filters.sources,
@@ -194,6 +195,13 @@ async function tryPostgresSearch({filters, codes, force}) {
       })
     : null;
 
+  searchMatches = await applyPostgresGeoGate({
+    filters,
+    countries: codes,
+    searchMatches,
+  });
+  const databaseFilters = withoutLegacyGeoFilters(filters);
+
   let fxRates = null;
   try {
     fxRates = (await getRates()).rates;
@@ -201,7 +209,7 @@ async function tryPostgresSearch({filters, codes, force}) {
 
   if (filters.mapOnly) {
     const result = await searchPostgresMapPoints({
-      filters,
+      filters: databaseFilters,
       countries: codes,
       rates: fxRates,
       searchMatches,
@@ -218,8 +226,8 @@ async function tryPostgresSearch({filters, codes, force}) {
       searchEngine: filters.query
         ? (searchMatches ? 'elasticsearch+postgres' : 'postgres-fallback')
         : 'postgres',
-      searchIndexedMatches: searchMatches?.total ?? null,
-      searchTruncated: searchMatches?.truncated ?? false,
+      searchIndexedMatches: filters.query ? searchMatches?.total ?? null : null,
+      searchTruncated: filters.query ? searchMatches?.truncated ?? false : false,
       queryMs: result.queryMs,
       mapPoints: result.points,
       mapPointsTruncated: result.truncated,
@@ -231,7 +239,7 @@ async function tryPostgresSearch({filters, codes, force}) {
   }
 
   const result = await searchPostgresListings({
-    filters,
+    filters: databaseFilters,
     countries: codes,
     rates: fxRates,
     searchMatches,
@@ -268,8 +276,8 @@ async function tryPostgresSearch({filters, codes, force}) {
     searchEngine: filters.query
       ? (searchMatches ? 'elasticsearch+postgres' : 'postgres-fallback')
       : 'postgres',
-    searchIndexedMatches: searchMatches?.total ?? null,
-    searchTruncated: searchMatches?.truncated ?? false,
+    searchIndexedMatches: filters.query ? searchMatches?.total ?? null : null,
+    searchTruncated: filters.query ? searchMatches?.truncated ?? false : false,
     queryMs: result.queryMs,
     countMs: result.countMs ?? null,
     pageMs: result.pageMs ?? null,
