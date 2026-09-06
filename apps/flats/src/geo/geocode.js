@@ -166,4 +166,5 @@ export async function geocodeListings(listings, country) {
 export const __geocodeFacadeTest = {
   exactCandidates,
   structuredInput,
+  exactPriority: EXACT_PRIORITY,
 };
