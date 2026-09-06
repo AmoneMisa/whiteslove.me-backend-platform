@@ -29,6 +29,71 @@ test('learned key stays stable when inferred district changes', () => {
   assert.equal(a.lookupKey, b.lookupKey);
 });
 
+test('learned address identity ignores query text, street labels and number formatting', () => {
+  const a = learnedGeoDescriptor({
+    country: 'UZ',
+    city: 'Tashkent',
+    district: 'Sergeli',
+    street: 'Street Shota Rustaveli',
+    houseNumber: '#12',
+    building: 'corp 2',
+  }, { code: 'UZ' }, {
+    source: 'address',
+    q: 'first provider query',
+    accuracyM: 40,
+  });
+  const b = learnedGeoDescriptor({
+    country: 'UZ',
+    city: 'Tashkent',
+    district: 'Another inferred district',
+    street: 'Shota Rustaveli street',
+    houseNumber: '12',
+    building: '2',
+  }, { code: 'UZ' }, {
+    source: 'address',
+    q: 'completely different query text',
+    accuracyM: 40,
+  });
+
+  assert.equal(a.lookupKey, b.lookupKey);
+  assert.notEqual(a.queryText, b.queryText);
+});
+
+test('learned entity identity removes type labels but never crosses entity types', () => {
+  const residential = learnedGeoDescriptor({
+    country: 'UZ',
+    city: 'Tashkent',
+    residenceComplex: 'Residential Complex Yangi Sergeli',
+  }, { code: 'UZ' }, {
+    source: 'residentialComplex',
+    name: 'Residential Complex Yangi Sergeli',
+    q: 'Yangi Sergeli, Tashkent',
+  });
+  const residentialPlain = learnedGeoDescriptor({
+    country: 'UZ',
+    city: 'Tashkent',
+    residenceComplex: 'Yangi Sergeli',
+  }, { code: 'UZ' }, {
+    source: 'residentialComplex',
+    name: 'Yangi Sergeli',
+    q: 'Yangi Sergeli, Tashkent',
+  });
+  const localArea = learnedGeoDescriptor({
+    country: 'UZ',
+    city: 'Tashkent',
+    area: 'Yangi Sergeli',
+  }, { code: 'UZ' }, {
+    source: 'area',
+    name: 'Yangi Sergeli',
+    q: 'Yangi Sergeli, Tashkent',
+  });
+
+  assert.equal(residential.lookupKey, residentialPlain.lookupKey);
+  assert.notEqual(residential.lookupKey, localArea.lookupKey);
+  assert.match(residential.lookupKey, /\|residential_complex\|/u);
+  assert.match(localArea.lookupKey, /\|local_area\|/u);
+});
+
 test('daily exporter appends entities without rewriting existing lookup keys', () => {
   const current = `// Generated/append-only spatial anchors promoted from runtime geocoding.\nexport const LEARNED_ADDRESS_ENTITIES = Object.freeze([\n  {\n    "id": "learned:old",\n    "type": "address",\n    "country": "UA",\n    "canonicalName": "Old 1",\n    "lookupKey": "v1|UA|address|odesa|old|1|",\n    "center": { "lat": 46.4, "lng": 30.7 }\n  }\n]);\n`;
 
