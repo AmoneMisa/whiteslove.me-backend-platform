@@ -1,12 +1,18 @@
 import { cacheGet, cacheSet } from '../support/cache.js';
 import { selectNominatimPoint } from './nominatim-client.js';
 
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const NOMINATIM_URL = String(
+  process.env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org/search',
+).replace(/\/$/u, '');
 const USER_AGENT = 'flat-finder/1.0 (housing aggregator; contact: admin@whiteslove.me)';
 const HIT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MISS_TTL_MS = 24 * 60 * 60 * 1000;
 const ERROR_TTL_MS = 60 * 1000;
-const MIN_INTERVAL_MS = 1100;
+const PUBLIC_NOMINATIM = /^https:\/\/nominatim\.openstreetmap\.org(?:\/|$)/iu.test(NOMINATIM_URL);
+const MIN_INTERVAL_MS = Math.max(
+  PUBLIC_NOMINATIM ? 15_500 : 250,
+  Number(process.env.NOMINATIM_MIN_INTERVAL_MS) || (PUBLIC_NOMINATIM ? 15_500 : 1100),
+);
 
 let lastCallAt = 0;
 
@@ -96,9 +102,8 @@ export async function fetchStructuredAddressPoint(input = {}) {
     const coords = selectNominatimPoint(data, expectation, input.countryCode || null);
     await cacheSet(key, { coords }, coords ? HIT_TTL_MS : MISS_TTL_MS);
 
-    // `nominatim-client.js` owns the historical free-text limiter. Structured
-    // lookups use the same provider, so leave a full provider interval before
-    // the caller is allowed to fall back to a free-text lookup in that module.
+    // Free-text fallback uses the same provider. Leave a complete public-policy
+    // interval so sequential structured -> free-text calls cannot burst.
     await new Promise((resolve) => setTimeout(resolve, MIN_INTERVAL_MS));
     return coords;
   } catch {

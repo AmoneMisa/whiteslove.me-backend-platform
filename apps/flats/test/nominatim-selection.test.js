@@ -188,7 +188,7 @@ test('cache identity includes validation expectations and current selector versi
   });
 
   assert.notEqual(a, b);
-  assert.match(a, /^geo:v6:uz:/);
+  assert.match(a, /^geo:v7:uz:/);
 });
 
 test('canonical corpus in the address query participates in the cache validation identity', () => {

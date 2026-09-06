@@ -90,6 +90,10 @@ function text(value) {
   return result || null;
 }
 
+function sameName(a, b) {
+  return text(a)?.toLocaleLowerCase() === text(b)?.toLocaleLowerCase();
+}
+
 function hasCoordinates(listing) {
   return listing?.lat != null
     && listing?.lng != null
@@ -136,6 +140,14 @@ function roleFor(listing, type, canonical) {
       && text(item?.name)?.toLocaleLowerCase() === name,
   );
   return normalizedRole(match?.role);
+}
+
+function broadInputShadowsResidentialComplex(listing, input) {
+  return Boolean(
+    listing?.residenceComplex
+      && input?.canonical
+      && sameName(listing.residenceComplex, input.canonical),
+  );
 }
 
 function apply(listing, entity, input = {}) {
@@ -283,6 +295,10 @@ export function applyGeoCatalogBroadAnchor(listing, country) {
   ].filter((input) => input.role !== 'nearby');
 
   for (const input of uniqueInputs(inputs)) {
+    // A declared residential complex is stronger semantic evidence than any
+    // same-name broad geography. If its exact owner is missing, do not silently
+    // reinterpret the RC name as a neighborhood/district and place a false pin.
+    if (broadInputShadowsResidentialComplex(listing, input)) continue;
     const entity = resolve(countryCode, city, input.type, input.canonical);
     if (entity && apply(listing, entity, input)) return true;
   }
@@ -356,4 +372,5 @@ export function applyGeoCatalogCityFallback(listing, country) {
 export const __geoCatalogPriorityTest = {
   exactInputAllowed,
   referenceInputAllowed,
+  broadInputShadowsResidentialComplex,
 };

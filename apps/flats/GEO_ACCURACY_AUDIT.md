@@ -1,8 +1,8 @@
 # Flats geocoding accuracy audit
 
-Date: 2026-09-03
+Date: 2026-09-06
 
-Scope: `apps/flats` forward geocoding, canonical geo-catalog fallback, source-coordinate validation, reverse geocoding, address provenance, and dependency-level spatial semantics.
+Scope: `apps/flats` forward geocoding, canonical geo-catalog fallback, persistent learned coordinates, keyless provider fallback, source-coordinate validation, reverse geocoding, address provenance, and dependency-level spatial semantics.
 
 This document records the precision rules and the concrete checks performed for the geocoding hardening branch. The goal is not to manufacture a plausible point for every listing. The goal is to prefer the strongest defensible spatial evidence, preserve uncertainty, and reject or downgrade contradictory evidence.
 
@@ -11,20 +11,23 @@ This document records the precision rules and the concrete checks performed for 
 The resolver should use the strongest available evidence in this order:
 
 1. explicit source address with a concrete street + house, after the geocoder proves country, city, street and house (and corpus/building when supplied);
-2. canonical residential complex with a verified geo-catalog point;
-3. specific primary POI / landmark with a verified canonical point;
-4. primary metro station with a verified canonical point;
-5. directly stated street when no stronger point-like anchor is available; a street result remains approximate without a house;
-6. constrained multi-anchor spatial inference from two or more quantified nearby references;
-7. microdistrict / mahalla / local area / suburb / settlement;
-8. nearby/reference ЖК, POI or metro as an explicitly approximate fallback;
-9. district only as broad location evidence.
+2. canonical residential complex with a verified curated geo-catalog point;
+3. the same exact typed residential complex from persistent `learned_geo` when no curated catalog anchor exists;
+4. specific primary POI / landmark, preferring a verified curated canonical point, then an exact typed learned/provider match;
+5. primary metro station, preferring a verified curated canonical point, then an exact typed learned/provider match;
+6. directly stated street when no stronger point-like anchor is available; a street result remains approximate without a house;
+7. constrained multi-anchor spatial inference from two or more quantified nearby references;
+8. microdistrict / mahalla / local area / suburb / settlement;
+9. nearby/reference ЖК, POI or metro as an explicitly approximate fallback;
+10. district only as broad location evidence.
 
 A city centre is viewport/search metadata and is never an apartment point.
 
 `near X`, `до X`, `рядом с X`, `N минут от X` and equivalent context must preserve `X` as useful evidence but must not promote it to the property itself.
 
 The point-like canonical order intentionally puts a verified POI/metro ahead of a bare street centroid. A named object with a known center normally constrains the property more tightly than an arbitrarily chosen point on a street. A street + house remains stronger than all of these and is handled by rule 1.
+
+`@whiteslove/geo-catalog` is the curated source of truth. `learned_geo` is a persistent runtime extension/cache, not an equal-authority replacement. A learned row is consulted only by its exact typed identity and may later be promoted into the curated catalog after verification.
 
 ## Precision and provenance contract
 
@@ -51,11 +54,11 @@ An inferred/reverse-geocoded address must never silently become a source-provide
 
 ## Pass 1 — forward-geocoder result validation
 
-Nominatim search results are not accepted because they are first in the response. A candidate must prove the expected structured facts.
+Provider search results are not accepted because they are first in the response. A candidate must prove the expected structured facts.
 
 For a building-level address:
 
-- requested country must match `address.country_code`;
+- requested country must match structured country evidence;
 - requested city must match structured city/town/municipality evidence;
 - requested house number must match;
 - requested street must match a structured road/street field;
@@ -64,10 +67,21 @@ For a building-level address:
 For named entities:
 
 - country and city must match;
-- the requested entity name must match structured name/namedetails evidence;
-- a different entity containing the requested words only somewhere in `display_name` is insufficient.
+- the requested entity name must match structured name evidence;
+- a different entity containing the requested words only somewhere in a display label is insufficient.
 
-The Nominatim cache identity includes the validation expectations and selector version so an old weakly validated result cannot bypass stricter rules after deployment.
+The provider cache identity includes the validation expectations and selector version so an old weakly validated result cannot bypass stricter rules after deployment.
+
+### Keyless provider chain
+
+The runtime first uses persistent/curated coordinates and only reaches a public geocoder for a cache miss. Two keyless OSM-backed sources are supported for forward lookup:
+
+- Photon is tried first for named entities and streets. Its result must still prove country, city, name and semantic level. Broad `place`/`boundary` objects are rejected for point-like RC/POI/metro/street requests.
+- Public Nominatim remains the fallback and the provider for exact building validation. Its public endpoint is throttled for recurring/background use and all hits/misses are cached. `NOMINATIM_URL` can point to a self-hosted/managed instance when higher throughput is required.
+
+Photon is deliberately **not** trusted for exact street+house placement. The exact-address tier keeps the stricter structured Nominatim validation contract instead of adding a second provider that cannot prove the same fields.
+
+Open-Meteo's keyless geocoding API is suitable for city/place-name lookup but does not provide the address/object semantics required for the exact residential-complex or building tiers. It is therefore not promoted into those tiers merely to increase provider count.
 
 ## Pass 1b — matched-footprint validation
 
@@ -78,21 +92,17 @@ validation accepts all of them, so the selector additionally compares the
 **footprint the provider actually returned** with the semantic level that was
 requested.
 
-Every candidate now carries its expected level (`building`, `street`, `complex`,
+Every candidate carries its expected level (`building`, `street`, `complex`,
 `station`, `reference`, `neighborhood`, `locality`, `district`, `city`) into the
 geocoder expectation, and the expectation participates in the cache identity.
 
 Rules:
 
-- the ground radius of a result is derived from its bounding box;
-- among validated candidates, the one whose radius best fits the requested level
-  ranks highest — footprint fit is ranked ahead of Nominatim `importance`, which
-  otherwise favours whatever is famous rather than whatever is the right size;
-- a result with no bounding box falls back to `place_rank` fit, and a result with
-  neither ranks as before, on name/street/house evidence and importance alone;
-- a point-like request (`building`, `street`, `complex`, `station`, `reference`)
-  is rejected outright when the matched footprint is more than 25x its level,
-  because that is a different object sharing the name, not a loose match.
+- the ground radius of a result is derived from its bounding box/extent when available;
+- among validated candidates, the one whose radius best fits the requested level ranks highest — footprint fit is ranked ahead of provider popularity/importance;
+- a result with no footprint falls back to provider type/rank evidence rather than inventing geometry;
+- a point-like request (`building`, `street`, `complex`, `station`, `reference`) is rejected when the matched footprint is clearly a much broader object sharing the same name;
+- provider semantic tags such as Photon `place`/`boundary` are also used to reject a neighborhood/district masquerading as a point-like anchor.
 
 The measured footprint is also reported (`locationExtentM`) and folded into the
 accuracy radius: a placed listing never advertises a radius tighter than the
@@ -102,7 +112,7 @@ complex-level radius instead of claiming node precision.
 
 ## Pass 2 — canonical anchors and contextual roles
 
-Canonical `@whiteslove/geo-catalog` coordinates are preferred over ambiguous free-text geocoder guesses when a matching canonical entity exists.
+Canonical `@whiteslove/geo-catalog` coordinates are preferred over learned rows and ambiguous free-text provider guesses when a matching canonical entity exists.
 
 The resolver preserves lexical role:
 
@@ -126,6 +136,23 @@ Expected spatial interpretation:
 - `Infinity` — nearby reference, never the property complex;
 - `C-1` — nearby/reference location, never allowed to displace the primary complex;
 - `2/10/16` — rooms/floor/total floors, never an address.
+
+## Pass 2b — persistent learned coordinates and deduplication
+
+`learned_geo` is read before any fresh network lookup for the same exact candidate. A valid learned hit stops the provider chain and therefore reduces external requests.
+
+Identity is typed. The following are intentionally different keys even when the display name is identical:
+
+```text
+UZ | Tashkent | residential_complex | Yangi Sergeli
+UZ | Tashkent | local_area          | Yangi Sergeli
+```
+
+A declared `residenceComplex` can therefore never be satisfied by the same-named learned `local_area` row.
+
+Learned address/entity keys are semantic identities, not query identities. `query_text` and inferred district are excluded. City names are canonicalized; address street labels, house-number punctuation and building prefixes are normalized; harmless entity type labels such as `Residential Complex` are removed from the identity while the original display value remains stored. The descriptor also retains legacy/raw lookup-key aliases, so normalization upgrades reuse an already learned row instead of creating another one when the previous key is known.
+
+`lookup_key` remains the database primary key and upserts refresh the existing row. `exported_at` is workflow state only: it records promotion/export processing and is **not** a runtime trust gate.
 
 ## Pass 3 — source-coordinate validation
 
@@ -158,7 +185,7 @@ A weak legacy field that only parses through permissive bare-address mode and co
 
 A street + house appearing under a lexical `nearby` role remains a nearby geo reference and is not upgraded into the property's building address.
 
-## Pass 6 — canonical data verification for the motivating Tashkent case
+## Pass 6 — canonical data verification for the motivating Tashkent cases
 
 ### Assalom Sohil
 
@@ -175,6 +202,15 @@ Cross-checks performed:
 - the `ASSALOM SOHIL` trademark is registered to Golden House Property Group, supporting the developer/project identity.
 
 The stored point is therefore suitable as the representative complex anchor. It must still be reported as complex-level/approximate geography, not the exact apartment entrance.
+
+### Yangi Sergeli
+
+`Yangi Sergeli` exists as two different semantic objects and must remain two different identities:
+
+- residential complex: `41.221894, 69.225708`;
+- local area: a separate neighborhood-level anchor.
+
+When a listing explicitly declares `residenceComplex = Yangi Sergeli`, the residential-complex coordinate wins. If the RC cannot be resolved, an identically named `area/local_area` is skipped rather than allowed to impersonate the missing RC; a differently named honest broader parent such as `Sergeli` district may still remain as an explicitly broad fallback.
 
 ### Infinity
 
@@ -201,16 +237,21 @@ This matters downstream because a false umbrella match can create a broad catalo
 
 The audit treats CI failures as evidence to inspect, not something to suppress by weakening assertions.
 
-During this pass two unrelated baseline/dependency failures were identified:
-
-- parsing-lexicon master exposed the `Qorasuv-6` umbrella-prefix regression above; it needs the matcher boundary fix before the current package line is considered green;
-- geo-catalog's Tashkent parent regression itself passes, while its branch CI is currently blocked by a stale Ukraine city-count assertion (`90` expected vs `91` current entities). That count failure is unrelated to the Tashkent coordinate/parent change and should be corrected separately rather than hidden inside the geo patch.
+Provider failure is also not evidence that a weaker spatial level is correct. If an exact lookup is deferred because the network budget is exhausted, the listing stays unresolved for that pass instead of falling through to a broad point.
 
 ## Regression coverage
 
 The branch includes or relies on regression tests for:
 
 - Assalom Sohil canonical anchor;
+- Yangi Sergeli residential-complex/local-area identity separation;
+- same-name broad geography suppression when a residential complex is declared;
+- a differently named honest parent remaining available as broad fallback;
+- normalized learned address identity ignoring query text, inferred district, street labels and harmless number formatting;
+- learned entity identity retaining `entity_type` isolation;
+- Photon country/city/name validation;
+- Photon point-like requests rejecting same-name broad `place` objects;
+- Photon exact-building suppression;
 - nearby Infinity suppression;
 - source-address provenance;
 - parsed-address provenance;
@@ -252,18 +293,13 @@ padding is converted at the bbox latitude; otherwise the tolerance is ~25%
 tighter east-west than north-south at Tashkent's latitude and clips valid points
 off the eastern and western city edges.
 
-Provider data can be stale or incomplete. Canonical geo-catalog points remain the runtime source of truth when independently verified; external provider IDs and reverse-geocoder output are evidence/provenance, not automatic replacements for stored canonical centers.
+Provider data can be stale or incomplete. Curated canonical geo-catalog points remain the highest-authority runtime source when independently verified. `learned_geo` is a typed persistent runtime cache beneath that layer; external provider IDs and reverse-geocoder output are evidence/provenance, not automatic replacements for stored curated centers.
 
 ## Known remaining gap
 
-Exact building lookups still go to Nominatim as a free-form `q` string. Nominatim
-also offers a structured search (separate `street`/`city`/`country` parameters)
-that parses house-level queries considerably more reliably, especially when a
-district name sits between the street and the city in the free-form string.
-Adopting it is the largest remaining accuracy win for precedence rule 1, but it
-either replaces free-form outright (unverified against live results) or costs a
-second request per address miss, which changes the per-listing lookup budget.
-It is therefore left as a separate, separately measured change.
+Learned-key normalization deliberately does not attempt arbitrary transliteration equivalence. For example, two unrelated strings should not collapse merely because a heuristic transliterator makes them look similar. Canonical parser/catalog aliases remain the correct place to bind verified Cyrillic/Latin spellings of the same physical entity.
+
+The public Photon service is a best-effort fallback, not an SLA-backed dependency. Heavy/bulk usage must be avoided or moved to a self-hosted Photon instance. The public Nominatim endpoint is similarly treated as a scarce fallback and is cached/throttled; production-scale throughput should use an intentionally provisioned endpoint rather than increasing public-service concurrency.
 
 ## Merge gate
 
@@ -273,5 +309,6 @@ Before merge, all of the following must be true:
 - no new geocoding regression test is failing;
 - parsing-lexicon contextual role and numbered-block boundary support required by the Tashkent examples is available in the backend dependency lock;
 - package/catalog coordinates used as canonical anchors are from an approved published or otherwise intentionally pinned dependency version;
-- geo-catalog validation is green, including any independent baseline-count repair needed by current master;
+- geo-catalog validation is green;
+- keyless-provider selectors preserve country/city/type/footprint validation and do not increase exact-address precision without proof;
 - the PR remains unmerged until explicit user approval.

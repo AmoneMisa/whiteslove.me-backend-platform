@@ -1,12 +1,26 @@
 import { cacheGet, cacheSet } from '../support/cache.js';
 import { canonicalCityName } from './countries.js';
+import {
+  cachedPhotonPoint,
+  fetchPhotonPoint,
+  supportsPhotonExpectation,
+} from './photon-client.js';
 
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const NOMINATIM_URL = String(
+  process.env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org/search',
+).replace(/\/$/u, '');
 const USER_AGENT = 'flat-finder/1.0 (housing aggregator; contact: admin@whiteslove.me)';
 const HIT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MISS_TTL_MS = 24 * 60 * 60 * 1000;
 const ERROR_TTL_MS = 60 * 1000;
-const MIN_INTERVAL_MS = 1100;
+// The public Nominatim policy is stricter for recurring/background scripts than
+// for occasional interactive lookups. Keep the public default below 4 req/min;
+// self-hosted deployments may explicitly lower the interval with env config.
+const PUBLIC_NOMINATIM = /^https:\/\/nominatim\.openstreetmap\.org(?:\/|$)/iu.test(NOMINATIM_URL);
+const MIN_INTERVAL_MS = Math.max(
+  PUBLIC_NOMINATIM ? 15_500 : 250,
+  Number(process.env.NOMINATIM_MIN_INTERVAL_MS) || (PUBLIC_NOMINATIM ? 15_500 : 1100),
+);
 
 const STREET_KEYS = Object.freeze([
   'road', 'pedestrian', 'residential', 'living_street', 'footway',
@@ -60,7 +74,7 @@ const CYRILLIC_FOLD = Object.freeze({
   і: 'i', ї: 'yi', є: 'ye', ґ: 'g', ў: 'o', қ: 'q', ғ: 'g', ҳ: 'h',
   ә: 'a', ң: 'ng', ө: 'o', ұ: 'u', ү: 'u', һ: 'h',
 });
-const STREET_NOISE_RE = /\b(?:street|st|strada|str|road|rd|avenue|ave|улица|ул|вулиця|вул|kocha|kochasi|кўча|көше)\b/giu;
+const STREET_NOISE_RE = /(?<![\p{L}\p{N}])(?:street|st|strada|str|road|rd|avenue|ave|улица|ул|вулиця|вул|kocha|kochasi|кўча|көше)(?![\p{L}\p{N}])/giu;
 const QUERY_BUILDING_RE = /(?:корп(?:ус)?\.?|building|bldg\.?|bloc|corp|korpus)\s*([\p{L}\p{N}/-]{1,16})/iu;
 
 let lastCallAt = 0;
@@ -121,6 +135,8 @@ function normalizeHouseNumber(value) {
   return String(value ?? '')
     .normalize('NFKC')
     .toLocaleLowerCase()
+    .trim()
+    .replace(/^(?:№|#|no\.?)\s*/iu, '')
     .replace(/\s+/gu, '')
     .replace(/[№#]/gu, '')
     .replace(/(?:корп(?:ус)?|корпус|building|bldg|bloc|corp)/gu, 'к')
@@ -150,7 +166,7 @@ export function nominatimCacheKey(query, countryCode, expectation = {}) {
   const country = countryCode ? `${countryCode.toLowerCase()}:` : '';
   const normalizedQuery = String(query ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
   const effectiveExpectation = expectationForQuery(query, expectation);
-  return `geo:v6:${country}${expectationCachePart(effectiveExpectation)}:${normalizedQuery}`;
+  return `geo:v7:${country}${expectationCachePart(effectiveExpectation)}:${normalizedQuery}`;
 }
 
 export async function cachedNominatimPoint(query, countryCode, expectation = {}) {
@@ -373,9 +389,27 @@ export function selectNominatimBbox(data, countryCode = null, expectedCity = nul
 }
 
 export async function fetchNominatimPoint(query, countryCode, expectation = {}) {
-  await throttle();
   const effectiveExpectation = expectationForQuery(query, expectation);
   const key = nominatimCacheKey(query, countryCode, effectiveExpectation);
+
+  // Keep a single external request inside one geocoding budget slot. For
+  // named entities/streets, a previously unseen query goes to Photon first.
+  // A strict Photon miss is cached there; only a later pass may spend its one
+  // request on Nominatim. Exact building addresses stay on Nominatim directly.
+  if (supportsPhotonExpectation(effectiveExpectation)) {
+    const cachedPhoton = await cachedPhotonPoint(query, countryCode, effectiveExpectation);
+    if (cachedPhoton === undefined) {
+      const photon = await fetchPhotonPoint(query, countryCode, effectiveExpectation);
+      if (photon) await cacheSet(key, { coords: photon }, HIT_TTL_MS);
+      return photon || null;
+    }
+    if (cachedPhoton) {
+      await cacheSet(key, { coords: cachedPhoton }, HIT_TTL_MS);
+      return cachedPhoton;
+    }
+  }
+
+  await throttle();
   try {
     const params = new URLSearchParams({
       q: query,
