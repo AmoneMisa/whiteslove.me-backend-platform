@@ -324,6 +324,7 @@ export function scheduleListingsAi(listings, country, persist) {
     if (!needsApartmentAi(listing)) continue;
 
     const input = apartmentAiInput(listing);
+    const original = Object.defineProperty(structuredClone(listing), '_sourceRevision', {value: listing._sourceRevision});
     // Same text and same deterministic facts as last time: nothing to re-ask.
     if (listing.ai?.fingerprint === input.fingerprint) continue;
 
@@ -348,7 +349,7 @@ export function scheduleListingsAi(listings, country, persist) {
         }
         const merged = mergeApartmentAi(listing, result, countryCode);
         merged.ai.fingerprint = input.fingerprint;
-        await persist?.(merged);
+        await persist?.(merged, original);
       },
       onFailed: (status) => {
         listing.ai = {

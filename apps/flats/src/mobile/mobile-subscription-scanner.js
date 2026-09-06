@@ -8,6 +8,7 @@ import {getRates} from '../support/fx.js';
 import {mobilePushConfigured, sendMobilePush} from './mobile-fcm.js';
 import {searchPostgresListings} from '../support/postgres-search-fast.js';
 import {mobilePresetSearch} from './mobile-preset-search.js';
+import {applyPostgresGeoGate, withoutLegacyGeoFilters} from '../infrastructure/search/postgres-geo-gate.js';
 
 const SCHEMA = 'subscriptions';
 const SCANNER_ADVISORY_LOCK = 742_102;
@@ -90,7 +91,8 @@ async function fetchMatches(subscription) {
   try {
     rates = (await getRates()).rates;
   } catch {}
-  const result = await searchPostgresListings({filters, countries, rates, searchMatches: null});
+  const searchMatches = await applyPostgresGeoGate({filters, countries});
+  const result = await searchPostgresListings({filters: withoutLegacyGeoFilters(filters), countries, rates, searchMatches});
   return result.listings || [];
 }
 
@@ -306,9 +308,10 @@ async function scanSubscription(subscription) {
 export async function scanMobileSubscriptions() {
   if (scanning || !mobilePushConfigured()) return;
   scanning = true;
-  const lockClient = await pool.connect();
+  let lockClient;
   let locked = false;
   try {
+    lockClient = await pool.connect();
     const lockResult = await lockClient.query(
       'SELECT pg_try_advisory_lock($1) AS locked',
       [SCANNER_ADVISORY_LOCK],
@@ -331,7 +334,7 @@ export async function scanMobileSubscriptions() {
         console.warn('[mobile-subscriptions] scanner unlock failed:', err?.message ?? err);
       }
     }
-    lockClient.release();
+    lockClient?.release();
     scanning = false;
   }
 }
@@ -343,9 +346,12 @@ export function startMobileSubscriptionScanner() {
   }
   if (scanTimer) return;
   console.log(`[mobile-push] scanning apartment presets every ${Math.round(POLL_MS / 1000)}s`);
-  scanTimer = setInterval(() => void scanMobileSubscriptions(), POLL_MS);
+  const tick = () => void scanMobileSubscriptions().catch((error) => {
+    console.warn('[mobile-subscriptions] scan unavailable:', error?.message ?? error);
+  });
+  scanTimer = setInterval(tick, POLL_MS);
   scanTimer.unref?.();
-  void scanMobileSubscriptions();
+  tick();
 }
 
 export function stopMobileSubscriptionScanner() {

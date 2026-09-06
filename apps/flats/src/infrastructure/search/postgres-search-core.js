@@ -1,6 +1,6 @@
 import { pool } from '../database/pool.js';
 
-const MAX_AGE_DAYS = 21;
+const MAX_AGE_DAYS = 14;
 const CURSOR_VERSION = 1;
 const EARTH_RADIUS_M = 6_371_000;
 
@@ -78,8 +78,9 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
   if (filters.sources?.length) where.push(`l.source = ANY(${add(filters.sources.map((v) => String(v).toLowerCase()))}::text[])`);
 
   const customSources = [...new Set((filters.customSources || []).map(String).filter(Boolean))];
-  if (customSources.length) where.push(`(l.source <> 'custom' OR l.data->>'customSourceUrl' = ANY(${add(customSources)}::text[]))`);
-  else where.push(`l.source <> 'custom'`);
+  const publicSource = `(l.source <> 'custom' OR l.data @> '{"curatedSource":true}'::jsonb)`;
+  if (customSources.length) where.push(`(${publicSource} OR l.data->>'customSourceUrl' = ANY(${add(customSources)}::text[]))`);
+  else where.push(publicSource);
 
   if (filters.listingId) where.push(`l.source_id = ${add(String(filters.listingId))}`);
 
@@ -88,7 +89,7 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
   const ageDays = filters.maxAgeDays != null && filters.maxAgeDays > 0
     ? Math.min(Number(filters.maxAgeDays), MAX_AGE_DAYS)
     : MAX_AGE_DAYS;
-  where.push(`(l.created_at IS NULL OR l.created_at >= NOW() - (${add(ageDays)}::double precision * INTERVAL '1 day'))`);
+  where.push(`COALESCE(l.created_at, l.first_seen_at) >= NOW() - (${add(ageDays)}::double precision * INTERVAL '1 day')`);
 
   if (filters.propertyType && filters.propertyType !== 'any') where.push(`l.property_type = ${add(filters.propertyType)}`);
   if (filters.dealType && filters.dealType !== 'any') {

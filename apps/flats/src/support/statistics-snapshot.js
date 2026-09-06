@@ -294,6 +294,7 @@ async function readStoredSnapshot() {
  * the stored row is missing or older than SNAPSHOT_STALE_MS.
  */
 export async function refreshStatisticsSnapshot() {
+  const generationStartedAt = new Date().toISOString();
   let rates = null;
   try {
     rates = (await getRates()).rates;
@@ -311,14 +312,14 @@ export async function refreshStatisticsSnapshot() {
   // a slow computation can never overwrite a newer snapshot.
   const stored = await pool.query(`
     INSERT INTO listing_statistics_snapshots (scope, payload, max_age_days, generated_at)
-    VALUES ($1, $2::jsonb, $3, NOW())
+    VALUES ($1, $2::jsonb, $3, $4::timestamptz)
     ON CONFLICT (scope) DO UPDATE SET
       payload = EXCLUDED.payload,
       max_age_days = EXCLUDED.max_age_days,
       generated_at = EXCLUDED.generated_at
     WHERE EXCLUDED.generated_at > listing_statistics_snapshots.generated_at
     RETURNING generated_at
-  `, [SNAPSHOT_SCOPE, JSON.stringify(statistics), SNAPSHOT_MAX_AGE_DAYS]);
+  `, [SNAPSHOT_SCOPE, JSON.stringify(statistics), SNAPSHOT_MAX_AGE_DAYS, generationStartedAt]);
 
   const generatedAt = stored.rows[0]?.generated_at;
   if (!generatedAt) {

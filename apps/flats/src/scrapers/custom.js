@@ -487,7 +487,7 @@ async function scrapeTelegramUrl(u, country) {
   const seg = u.pathname.split('/').filter(Boolean);
   const channel = seg[0] === 's' ? seg[1] : seg[0];
   if (!channel) throw new SourceError('Not a Telegram channel URL');
-  const listings = await fetchChannel(channel, country).catch(() => []);
+  const listings = await fetchChannel({name: channel}, country);
   if (!listings.length) {
     throw new SourceError('No readable listings — the channel is private or empty');
   }

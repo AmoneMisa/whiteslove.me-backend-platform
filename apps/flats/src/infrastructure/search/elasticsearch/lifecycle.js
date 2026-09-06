@@ -63,7 +63,7 @@ export async function initElasticsearch() {
 
 export async function elasticsearchHealth() {
     try {
-        const health = await client.cluster.health();
+        const health = await client.cluster.health({}, {requestTimeout: 1000, maxRetries: 0});
 
         return {
             ok: true,

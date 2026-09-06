@@ -1,5 +1,5 @@
 import { cacheGet, cacheSet } from '../support/cache.js';
-import { upsertListings } from '../infrastructure/database/listingRepository.js';
+import {copyEnrichmentSnapshot, updateListingEnrichment} from '../infrastructure/database/listingEnrichmentRepository.js';
 import { indexListings } from '../infrastructure/search/elasticsearch.js';
 import { detectExactDuplicatePhotos } from './photo-antifake.js';
 import {
@@ -22,7 +22,7 @@ function listingKey(listing) {
   return `${listing.source}:${listing.id}`;
 }
 
-const PHOTO_BASE_URL = (process.env.VISION_PHOTO_BASE_URL || 'http://flat-finder-backend:4000').replace(/\/$/, '');
+const PHOTO_BASE_URL = (process.env.VISION_PHOTO_BASE_URL || 'http://flats-api:4000').replace(/\/$/, '');
 
 function absolutePhotoUrl(raw) {
   const url = String(raw || '').trim();
@@ -183,10 +183,10 @@ export function mergeVision(listing, result) {
   return merged;
 }
 
-async function persistMerged(listing) {
+async function persistMerged(listing, original) {
   try {
-    const saved = await upsertListings([listing]);
-    if (saved) await indexListings([listing]);
+    const saved = await updateListingEnrichment(original, listing);
+    if (saved) await indexListings([saved]);
   } catch (error) {
     console.warn(`[flats:vision] persistence failed for ${listingKey(listing)}: ${error.message}`);
   }
@@ -259,7 +259,22 @@ function scheduleAntiFake(countryCode, listing, images, fingerprint) {
 }
 
 export function scheduleListingsVision(listings) {
-  if (!aiWorkerEnabled() || !Array.isArray(listings) || !listings.length) return 0;
+  if (!Array.isArray(listings) || !listings.length) return 0;
+
+  for (const listing of listings) {
+    const images = listingImages(listing);
+    if (!images.length) continue;
+    const key = `${listing.country}:${listingKey(listing)}`;
+    if (antiFakeRunning.has(key)) continue;
+    const original = copyEnrichmentSnapshot(listing);
+    antiFakeRunning.add(key);
+    void detectExactDuplicatePhotos(original, images)
+      .then(result => persistMerged({...original, antiFake: result, duplicatePhotoRisk: result.risk,
+        exactDuplicatePhoto: result.exactDuplicatePhoto}, original))
+      .catch(error => console.warn(`[flats:antifake] ${key}: ${error.message}`))
+      .finally(() => antiFakeRunning.delete(key));
+  }
+  if (!aiWorkerEnabled()) return 0;
 
   const batchSize = Math.max(1, Number(process.env.AI_WORKER_VISION_BATCH) || 3);
   let queued = 0;
@@ -282,7 +297,7 @@ export function scheduleListingsVision(listings) {
       onResult: async (result) => {
         const merged = mergeVision(listing, result);
         if (visionFingerprint(listingImages(merged)) !== fingerprint) return;
-        await persistMerged(merged);
+        await persistMerged(merged, original);
       },
       onFailed: (status) => {
         console.warn(`[flats:vision] ${id} failed status=${status}`);

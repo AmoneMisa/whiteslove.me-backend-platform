@@ -3,13 +3,14 @@
 import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
 import {COUNTRY_CODES} from '../geo/countries.js';
 import {parseListingFilters} from '../routes/listing-routes.js';
+import {attachResolvedSearchGeometry} from '../geo/search-filter-geometry.js';
 
 function snapshotQuery(snapshot) {
   const query = {};
   for (const [key, value] of Object.entries(snapshot || {})) {
     if (value == null || value === '') continue;
     if (key === 'countries' || key === 'amenities' || key === 'sort') continue;
-    if (key === 'sources' || key === 'customSources') {
+    if (key === 'sources' || key === 'customSources' || key === 'metro') {
       query[key] = Array.isArray(value) ? value.join(',') : String(value);
       continue;
     }
@@ -20,6 +21,9 @@ function snapshotQuery(snapshot) {
     if (key) query[key] = 'true';
   }
   query.sort = 'newest';
+  if (snapshot?.metroBearingFrom != null && snapshot?.metroBearingTo != null) {
+    query.metroArc = `${snapshot.metroBearingFrom},${snapshot.metroBearingTo}`;
+  }
   query.limit = '60';
   query.offset = '0';
   return query;
@@ -38,5 +42,6 @@ export function mobilePresetSearch(snapshot) {
     const country = codes.length === 1 ? codes[0] : undefined;
     filters.city = canonicalCity(filters.city, country) || filters.city;
   }
+  attachResolvedSearchGeometry(filters, codes);
   return {filters, countries: codes};
 }

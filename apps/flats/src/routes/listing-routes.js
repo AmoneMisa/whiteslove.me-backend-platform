@@ -14,7 +14,7 @@ import {prepareCustomSources} from '../sources/custom-source-queue.js';
 const LISTING_MAX_AGE_DAYS = 14;
 const LISTING_PAGE_SIZE = 20;
 const LISTING_MAX_PAGE_SIZE = 60;
-const VALID_SOURCES = ['olx', 'telegram', 'facebook', 'threads'];
+const VALID_SOURCES = ['olx', 'telegram', 'facebook', 'threads', 'custom'];
 // Title ordering is deliberately absent: it is the only sort the public-feed
 // read model cannot serve, so it forced the request onto the general search
 // path and a full sort of the result set. Clients that still send it fall back
