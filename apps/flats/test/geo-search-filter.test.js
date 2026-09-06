@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {parseListingFilters} from '../src/routes/listing-routes.js';
 import {__postgresGeoFilterTest} from '../src/infrastructure/search/postgres-geo-filter.js';
 import {withoutLegacyGeoFilters} from '../src/infrastructure/search/postgres-geo-gate.js';
+import {searchCursorScope} from '../src/support/postgres-cursor-scope.js';
 
 function collector() {
   const params = [];
@@ -60,7 +61,7 @@ test('metro spatial SQL is selected-station Haversine plus wrap-safe bearing arc
   assert.ok(params.includes(20));
 });
 
-test('legacy district/metro clauses are removed after database geo membership is gated', () => {
+test('legacy geo clauses are removed after DB gate while semantic geo scope remains', () => {
   const original = {
     city: 'Tashkent',
     district: 'Chilanzar',
@@ -76,6 +77,37 @@ test('legacy district/metro clauses are removed after database geo membership is
   assert.deepEqual(stripped.metros, []);
   assert.equal(stripped.metroMaxM, null);
   assert.equal(stripped.metroArc, null);
+  assert.deepEqual(stripped.geoScope, {
+    district: 'Chilanzar',
+    metros: ['Chilonzor', 'Novza'],
+    metroMaxM: 500,
+    metroArc: {from: 270, to: 90},
+  });
   assert.equal(stripped.city, 'Tashkent');
   assert.equal(stripped.priceMax, 500);
+});
+
+test('cursor scope changes when geographic membership changes', () => {
+  const base = {
+    city: 'Tashkent',
+    district: 'Chilanzar',
+    metro: 'Novza',
+    metros: ['Novza'],
+    metroMaxM: 800,
+    metroArc: {from: 340, to: 20},
+    sort: 'newest',
+  };
+  const novza = searchCursorScope(withoutLegacyGeoFilters(base), ['UZ']);
+  const chilonzor = searchCursorScope(withoutLegacyGeoFilters({
+    ...base,
+    metro: 'Chilonzor',
+    metros: ['Chilonzor'],
+  }), ['UZ']);
+  const largerRadius = searchCursorScope(withoutLegacyGeoFilters({
+    ...base,
+    metroMaxM: 1200,
+  }), ['UZ']);
+
+  assert.notEqual(novza, chilonzor);
+  assert.notEqual(novza, largerRadius);
 });
