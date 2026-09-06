@@ -1,4 +1,5 @@
 import {canonicalListingFilters} from '../listing/listing-filter-canonical.js';
+import {copyResolvedSearchGeometry} from '../geo/search-filter-geometry.js';
 import {
   canUseFastListingPath,
   searchPostgresListings as searchPostgresListingsCore,
@@ -20,11 +21,11 @@ export async function searchPostgresListings(args) {
   const scope = searchCursorScope(filters, args?.countries || []);
   const preparedCursor = prepareCursorForScope(filters.cursor, scope);
   const rejectedCursor = Boolean(filters.cursor) && !preparedCursor;
-  const scopedFilters = {
+  const scopedFilters = copyResolvedSearchGeometry(filters, {
     ...filters,
     cursor: preparedCursor,
     ...(rejectedCursor ? {offset: 0} : {}),
-  };
+  });
 
   const scopedArgs = {...args, filters: scopedFilters};
   const result = canUseCanonicalFeedPath(scopedFilters, args?.searchMatches)
