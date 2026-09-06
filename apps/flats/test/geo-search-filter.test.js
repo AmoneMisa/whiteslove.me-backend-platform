@@ -70,7 +70,29 @@ test('district boundary SQL uses polygon containment and subtracts GeoJSON holes
   assert.equal(params.length, 2);
 });
 
-test('metro spatial SQL is selected-station Haversine plus wrap-safe bearing arc', () => {
+test('metro radius uses an index-friendly bbox before exact Haversine distance', () => {
+  const {params, add} = collector();
+  const sql = __postgresGeoFilterTest.stationSpatialPredicate(
+    'l',
+    {center: {lat: 41.3, lng: 69.2}},
+    {metroMaxM: 750},
+    add,
+  );
+  assert.match(sql, /l\.lat BETWEEN \$\d+ AND \$\d+/);
+  assert.match(sql, /l\.lng BETWEEN \$\d+ AND \$\d+/);
+  assert.match(sql, /ACOS/);
+  assert.ok(params.includes(750));
+
+  const bounds = __postgresGeoFilterTest.stationRadiusBounds(
+    {center: {lat: 41.3, lng: 69.2}},
+    750,
+  );
+  assert.ok(bounds.minLat < 41.3 && bounds.maxLat > 41.3);
+  assert.ok(bounds.minLng < 69.2 && bounds.maxLng > 69.2);
+  assert.equal(bounds.fullLongitude, false);
+});
+
+test('metro spatial SQL keeps wrap-safe bearing arc after bbox and Haversine', () => {
   const {params, add} = collector();
   const sql = __postgresGeoFilterTest.stationSpatialPredicate(
     'l',
@@ -78,6 +100,8 @@ test('metro spatial SQL is selected-station Haversine plus wrap-safe bearing arc
     {metroMaxM: 750, metroArc: {from: 340, to: 20}},
     add,
   );
+  assert.match(sql, /l\.lat BETWEEN/);
+  assert.match(sql, /l\.lng BETWEEN/);
   assert.match(sql, /ACOS/);
   assert.match(sql, /ATAN2/);
   assert.match(sql, />=/);
@@ -86,6 +110,30 @@ test('metro spatial SQL is selected-station Haversine plus wrap-safe bearing arc
   assert.ok(params.includes(750));
   assert.ok(params.includes(340));
   assert.ok(params.includes(20));
+});
+
+test('arc-only metro filter does not invent a radius bbox', () => {
+  const {add} = collector();
+  const sql = __postgresGeoFilterTest.stationSpatialPredicate(
+    'l',
+    {center: {lat: 41.3, lng: 69.2}},
+    {metroArc: {from: 250, to: 290}},
+    add,
+  );
+  assert.match(sql, /ATAN2/);
+  assert.doesNotMatch(sql, /l\.lat BETWEEN -?4\d/);
+});
+
+test('metro bbox handles the antimeridian without excluding wrapped matches', () => {
+  const {add} = collector();
+  const sql = __postgresGeoFilterTest.stationRadiusBboxSql(
+    'l',
+    {center: {lat: 0, lng: 179.9}},
+    50_000,
+    add,
+  );
+  assert.match(sql, /l\.lat BETWEEN/);
+  assert.match(sql, /l\.lng >= .* OR l\.lng <=/);
 });
 
 test('general listing count/page/map context applies geo predicates directly in SQL', () => {
@@ -100,6 +148,7 @@ test('general listing count/page/map context applies geo predicates directly in 
   const context = buildSearchContext({filters, countries: ['UZ'], rates: null, searchMatches: null});
   const sql = context.where.join('\n');
   assert.match(sql, /point\(l\.lng, l\.lat\)/);
+  assert.match(sql, /l\.lat BETWEEN/);
   assert.match(sql, /ACOS/);
   assert.match(sql, /ATAN2/);
   assert.match(sql, /NOT \(l\.lat IS NOT NULL[\s\S]*LOWER\(l\.district\) =/);
@@ -118,6 +167,7 @@ test('canonical feed applies the same geo predicates before count and pagination
   const context = buildMemberWhere({filters, countries: ['UZ'], maxAgeDays: 14, rates: null});
   const sql = context.where;
   assert.match(sql, /point\(m\.lng, m\.lat\)/);
+  assert.match(sql, /m\.lat BETWEEN/);
   assert.match(sql, /ACOS/);
   assert.match(sql, /ATAN2/);
   assert.match(sql, /NOT \(m\.lat IS NOT NULL[\s\S]*LOWER\(m\.district\) =/);
