@@ -42,12 +42,45 @@ function safeTimestamp(value) {
         .toISOString();
 }
 
+function preserveStablePhotoFields(data) {
+    const next = {...data};
+    const photos = Array.isArray(next.photos)
+        ? next.photos.filter((value) => typeof value === 'string' && value.trim())
+        : [];
+    const photo = typeof next.photo === 'string' && next.photo.trim()
+        ? next.photo.trim()
+        : null;
+
+    // Source pages occasionally omit their media block during a crawl. The
+    // repository merges JSONB with the new snapshot on the right, so persisting
+    // photo:null / photos:[] here would erase previously valid images. Omit only
+    // empty photo fields; a later non-empty snapshot still replaces them.
+    if (photos.length) {
+        next.photos = photos;
+    } else {
+        delete next.photos;
+    }
+
+    if (photo) {
+        next.photo = photo;
+    } else if (photos.length) {
+        next.photo = photos[0];
+    } else {
+        delete next.photo;
+    }
+
+    return next;
+}
+
 export function mapListingToRow(inputListing) {
     const listing = enrichListingDetails(inputListing);
     const country = String(listing.country || '').toUpperCase();
     const sourceCity = String(listing.city || '').trim();
     const city = sourceCity ? (canonicalCity(sourceCity, country) || sourceCity) : null;
-    const data = city && sourceCity && city !== sourceCity ? {...listing, city, sourceCity} : {...listing, city};
+    const normalizedData = city && sourceCity && city !== sourceCity
+        ? {...listing, city, sourceCity}
+        : {...listing, city};
+    const data = preserveStablePhotoFields(normalizedData);
 
     return {
         source:
