@@ -1,6 +1,6 @@
-import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
 import {buildResidentialCoordinateBackfillPatch} from '../../geo/residential-coordinate-backfill.js';
 import {enrichListingDetails} from '../../listing/listing-enrichment.js';
+import {canonicalizeListingLocations} from '../../listing/location-canonicalization.js';
 
 function finiteNumber(value) {
     if (
@@ -75,15 +75,12 @@ function preserveStablePhotoFields(data) {
 
 export function mapListingToRow(inputListing) {
     const enriched = enrichListingDetails(inputListing);
-    const coordinatePatch = buildResidentialCoordinateBackfillPatch(enriched);
-    const listing = coordinatePatch ? {...enriched, ...coordinatePatch} : enriched;
+    const canonical = canonicalizeListingLocations(enriched);
+    const coordinatePatch = buildResidentialCoordinateBackfillPatch(canonical);
+    const listing = coordinatePatch ? {...canonical, ...coordinatePatch} : canonical;
     const country = String(listing.country || '').toUpperCase();
-    const sourceCity = String(listing.city || '').trim();
-    const city = sourceCity ? (canonicalCity(sourceCity, country) || sourceCity) : null;
-    const normalizedData = city && sourceCity && city !== sourceCity
-        ? {...listing, city, sourceCity}
-        : {...listing, city};
-    const data = preserveStablePhotoFields(normalizedData);
+    const city = String(listing.city || '').trim() || null;
+    const data = preserveStablePhotoFields({...listing, city});
 
     return {
         source:
@@ -157,8 +154,9 @@ export function mapListingToRow(inputListing) {
                 listing.createdAt,
             ),
 
-        // Полный normalized Listing.
-        // ES позже будем строить именно из него.
+        // Full normalized Listing. All recognized semantic geography reaches
+        // PostgreSQL and Elasticsearch in canonical form; source spellings stay
+        // in source* audit fields when a canonical replacement was made.
         data,
     };
 }
