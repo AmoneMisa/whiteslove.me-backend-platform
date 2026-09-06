@@ -153,6 +153,7 @@ export async function geocodeListings(listings, country) {
       continue;
     }
 
+    const listingBudgetBeforeExact = budgets.listing;
     let placed = false;
     let deferred = false;
     for (const candidate of exactCandidates(listing, country)) {
@@ -167,10 +168,14 @@ export async function geocodeListings(listings, country) {
       break;
     }
 
-    // Placed rows are delegated so the mature reverse/nearby annotation stages
-    // still run. Proven exact misses are cached, so the base exact loop becomes
-    // a no-network no-op before it reaches spatial/broad fallbacks.
-    if (placed || !deferred) delegate.push(listing);
+    // The base geocoder owns a separate internal budget. Delegating an
+    // unresolved row after this facade already spent network lookups would
+    // effectively reset the per-listing cap (3 here + up to 3 there). Only
+    // delegate unresolved rows when the exact stage was cache-only; otherwise
+    // defer broad fallbacks until the next crawl, when the exact misses are
+    // cached and the base layer can use the single fresh network budget.
+    const exactStageUsedNetwork = budgets.listing < listingBudgetBeforeExact;
+    if (placed || (!deferred && !exactStageUsedNetwork)) delegate.push(listing);
   }
 
   if (delegate.length) await geocodeListingsBase(delegate, country);
