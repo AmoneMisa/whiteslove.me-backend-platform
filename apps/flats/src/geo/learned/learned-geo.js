@@ -72,6 +72,9 @@ function identityNumber(value, { building = false } = {}) {
     .trim();
   if (building) normalized = normalized.replace(BUILDING_IDENTITY_PREFIX_RE, '');
   return normalized
+    // NFKC expands `№12` to `No12`, so strip both the original sign and its
+    // normalized ASCII form before building the persistent semantic identity.
+    .replace(/^(?:№|#|no\.?)\s*/iu, '')
     .replace(/[№#\s]/gu, '')
     .replace(/[‐‑‒–—―]/gu, '-')
     .replace(/[^\p{L}\p{N}/-]+/gu, '');
@@ -275,6 +278,7 @@ export async function rememberLearnedGeo(descriptor, coords, provider = {}) {
       boundedText(descriptor.country, 8),
       boundedText(descriptor.region, 255),
       boundedText(descriptor.city, 255),
+      boundedText(descriptor.district, 255),
       descriptor.street,
       boundedText(descriptor.houseNumber, 64),
       boundedText(descriptor.building, 128),
