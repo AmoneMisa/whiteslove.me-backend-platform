@@ -1,4 +1,5 @@
 import {pool} from '../infrastructure/database/pool.js';
+import {copyResolvedSearchGeometry} from '../geo/search-filter-geometry.js';
 import { buildSearchContext } from '../support/postgres-search.js';
 
 const MAP_MAX_POINTS = Math.max(60, Math.min(Number(process.env.MAP_FEED_MAX_POINTS) || 3000, 10000));
@@ -46,14 +47,14 @@ function mapPointFromRow(row) {
  */
 export async function searchPostgresMapPoints({ filters, countries, rates = null, searchMatches = null }) {
   const startedAt = performance.now();
-  const mapFilters = {
+  const mapFilters = copyResolvedSearchGeometry(filters, {
     ...filters,
     includeStats: false,
     statsOnly: false,
     cursor: '',
     offset: 0,
     sort: 'newest',
-  };
+  });
   const context = buildSearchContext({
     filters: mapFilters,
     countries,
