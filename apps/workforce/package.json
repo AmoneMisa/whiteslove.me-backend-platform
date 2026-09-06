@@ -6,7 +6,7 @@
     "test": "node --experimental-transform-types --import ./jobs-worker/alias-loader.mjs --test tests/*.test.mjs jobs-worker/domain-isolation.test.mjs api/api-isolation.test.mjs"
   },
   "dependencies": {
-    "@whiteslove/parsing-lexicon": "^0.6.14",
+    "@whiteslove/parsing-lexicon": "^0.6.15",
     "fast-xml-parser": "5.11.1",
     "pg": "^8.23.0"
   },

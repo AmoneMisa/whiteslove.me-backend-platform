@@ -3,6 +3,7 @@ import test from 'node:test'
 
 import {
   fetchWithSourceExecutionPolicy,
+  mapWithSourceConcurrency,
   sourceRequestSignal,
   STANDARD_SOURCE_EXECUTION_POLICY,
 } from '../src/executionPolicy.ts'
@@ -40,4 +41,19 @@ test('shared source request signal always uses a bounded transport deadline', ()
   const signal = sourceRequestSignal()
   assert.ok(signal instanceof AbortSignal)
   assert.equal(signal.aborted, false)
+})
+
+test('shared source concurrency preserves result order', async () => {
+  let active = 0
+  let peak = 0
+  const result = await mapWithSourceConcurrency([1, 2, 3, 4, 5], async (value) => {
+    active += 1
+    peak = Math.max(peak, active)
+    await new Promise((resolve) => setTimeout(resolve, 2))
+    active -= 1
+    return value * 2
+  }, 2)
+
+  assert.deepEqual(result, [2, 4, 6, 8, 10])
+  assert.equal(peak, 2)
 })

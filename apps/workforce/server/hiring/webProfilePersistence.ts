@@ -4,6 +4,7 @@ import type { CvProfile } from '../../shared/contracts/hiring'
 import type { SourceRun } from '../../shared/hiring/hiringDiagnostics'
 import { cutoffDate } from '../../shared/hiring/webFields'
 import { hiringDbEnabled, loadDbCandidates, saveDbCandidates } from './infrastructure/database'
+import { syncCandidateIndex } from '../utils/hiring/hiringElastic'
 import { withHiringStoreLock } from './infrastructure/storeLock'
 
 const STORE_KEY = 'hiring:store:v4'
@@ -56,9 +57,22 @@ export async function persistWebProfiles(
 
     await useStateStore().set(STORE_KEY, JSON.stringify(kept), 'EX', STORE_TTL_SECONDS)
     const shown = kept.filter(fromSource).length
-    return { stored: kept.length, shown, expired: Math.max(0, beforeRetention - shown) }
+    return {
+      stored: kept.length,
+      shown,
+      expired: Math.max(0, beforeRetention - shown),
+      snapshot: kept,
+    }
+  })
+
+  void syncCandidateIndex(persisted.snapshot).catch((error) => {
+    console.warn('[hiring:elasticsearch] candidate sync failed:', (error as Error).message)
   })
 
   if (hiringDbEnabled()) await saveDbCandidates(profiles, diagnostic)
-  return persisted
+  return {
+    stored: persisted.stored,
+    shown: persisted.shown,
+    expired: persisted.expired,
+  }
 }

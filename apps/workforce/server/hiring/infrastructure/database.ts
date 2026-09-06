@@ -48,6 +48,19 @@ export function hiringDbEnabled(): boolean {
   return Boolean((process.env.HIRING_DATABASE_URL || '').trim())
 }
 
+/** Lightweight readiness probe used by the workforce API container. */
+export async function checkHiringDbReady(): Promise<boolean> {
+  if (!hiringDbEnabled()) return false
+  try {
+    await ensureSchema()
+    await db().query('SELECT 1')
+    return true
+  } catch (error) {
+    console.warn('[hiring:db] readiness probe failed:', (error as Error).message)
+    return false
+  }
+}
+
 function db(): Pool {
   if (!pool) {
     pool = new Pool({

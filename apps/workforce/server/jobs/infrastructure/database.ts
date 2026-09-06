@@ -32,6 +32,19 @@ export function jobsDbEnabled(): boolean {
   return Boolean(databaseUrl())
 }
 
+/** Lightweight readiness probe used by the workforce API container. */
+export async function checkJobsDbReady(): Promise<boolean> {
+  if (!jobsDbEnabled()) return false
+  try {
+    await ensureSchema()
+    await db().query('SELECT 1')
+    return true
+  } catch (error) {
+    console.warn('[jobs:db] readiness probe failed:', (error as Error).message)
+    return false
+  }
+}
+
 function db(): Pool {
   if (!pool) {
     pool = new Pool({

@@ -9,8 +9,10 @@ const ELASTICSEARCH_URL = (
     process.env.ELASTICSEARCH_URL || 'http://flat-finder-elasticsearch:9200'
 ).replace(/\/$/, '')
 
-// v2 adds multi-profession, work-history and availability fields.
-const CANDIDATE_INDEX = process.env.HIRING_ELASTICSEARCH_INDEX || 'candidate-profiles-v2'
+// v3 adds sourceKey/origin fields used by the API source filters. Keep the
+// index version explicit because Elasticsearch mappings are immutable after
+// creation and dynamic:false would otherwise silently drop those fields.
+const CANDIDATE_INDEX = process.env.HIRING_ELASTICSEARCH_INDEX || 'candidate-profiles-v3'
 const REQUEST_TIMEOUT_MS = 10_000
 const BULK_SIZE = 400
 
@@ -58,6 +60,8 @@ function indexDefinition() {
             properties: {
                 id: { type: 'keyword' },
                 source: { type: 'keyword' },
+                sourceKey: { type: 'keyword' },
+                origin: { type: 'keyword' },
                 country: { type: 'keyword' },
                 city: { type: 'keyword', normalizer: 'candidate_keyword', fields: { text: searchableText() } },
                 district: { type: 'keyword', normalizer: 'candidate_keyword', fields: { text: searchableText() } },
@@ -130,6 +134,8 @@ function toDocument(profile: CvProfile, syncToken: string) {
     return {
         id: profile.id,
         source: profile.source,
+        sourceKey: profile.sourceKey || profile.source,
+        origin: profile.origin || 'telegram',
         country: profile.country,
         city: profile.city || '',
         district: profile.district || '',
@@ -155,10 +161,12 @@ function toDocument(profile: CvProfile, syncToken: string) {
     }
 }
 
-export async function syncCandidateIndex(profiles: CvProfile[]): Promise<number> {
+let syncLock: Promise<unknown> = Promise.resolve()
+
+async function syncCandidateIndexNow(profiles: CvProfile[]): Promise<number> {
     if (!profiles.length) return 0
     await ensureCandidateIndex()
-    const syncToken = String(Date.now())
+    const syncToken = `${Date.now()}:${Math.random().toString(36).slice(2)}`
 
     for (let i = 0; i < profiles.length; i += BULK_SIZE) {
         const batch = profiles.slice(i, i + BULK_SIZE)
@@ -188,6 +196,16 @@ export async function syncCandidateIndex(profiles: CvProfile[]): Promise<number>
     return profiles.length
 }
 
+/** Serialize full-snapshot syncs so an older snapshot cannot delete a newer one. */
+export async function syncCandidateIndex(profiles: CvProfile[]): Promise<number> {
+    const operation = syncLock.then(
+        () => syncCandidateIndexNow(profiles),
+        () => syncCandidateIndexNow(profiles),
+    )
+    syncLock = operation.catch(() => {})
+    return operation
+}
+
 export interface CandidateSearchParams {
     query?: string
     countries?: string[]
@@ -204,10 +222,21 @@ export interface CandidateSearchParams {
 
 export async function searchCandidates(
     params: CandidateSearchParams,
-): Promise<{ total: number; hits: { id: string; score: number }[] } | null> {
+): Promise<{ total: number; hits: { id: string; source: string; score: number }[] } | null> {
     const filter: any[] = []
     if (params.countries?.length) filter.push({ terms: { country: params.countries } })
-    if (params.sources?.length) filter.push({ terms: { source: params.sources } })
+    if (params.sources?.length) {
+        filter.push({
+            bool: {
+                should: [
+                    { terms: { source: params.sources } },
+                    { terms: { sourceKey: params.sources } },
+                    { terms: { origin: params.sources } },
+                ],
+                minimum_should_match: 1,
+            },
+        })
+    }
     if (params.seniority) filter.push({ term: { seniority: params.seniority } })
     if (params.remote != null) filter.push({ term: { remote: params.remote } })
     if (params.city) {
@@ -300,8 +329,9 @@ export async function searchCandidates(
             total: result?.hits?.total?.value ?? 0,
             hits: (result?.hits?.hits || []).map((hit: any) => ({
                 id: hit?._source?.id,
+                source: hit?._source?.source,
                 score: hit?._score ?? 0,
-            })).filter((hit: any) => hit.id),
+            })).filter((hit: any) => hit.id && hit.source),
         }
     } catch (error) {
         console.warn('[hiring:elasticsearch] search failed:', (error as Error).message)

@@ -15,11 +15,10 @@ function cards(html: string): string[] {
 }
 
 export async function crawlNovaRobota(): Promise<{ profiles: CvProfile[]; fetched: number }> {
-  const maxPages = Math.max(1, Math.min(10, Number(process.env.HIRING_NOVAROBOTA_MAX_PAGES) || 5))
   const byUrl = new Map<string, CvProfile>()
   let fetched = 0
 
-  for (let page = 1; page <= maxPages; page++) {
+  for (let page = 1; ; page++) {
     const pageUrl = page === 1
       ? 'https://novarobota.ua/resume'
       : `https://novarobota.ua/resume?page=${page}`

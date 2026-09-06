@@ -3,8 +3,6 @@ import { emptyWebCursor, type WebCursor } from '../../../../shared/hiring/hiring
 import { candidateBlocks, mergeSameCandidate, type WebCvAdapter } from './common'
 import { fetchHiringWebPage } from './http'
 
-const DEFAULT_MAX_PAGES = 5
-
 export interface WebAdapterRun {
   profiles: CvProfile[]
   fetched: number
@@ -47,8 +45,6 @@ export async function crawlWebAdapter(
     cursor: { ...cursor }, newestActivityAt: null, oldestActivityAt: null, reachedCursor: false,
   }
 
-  const maxPages = Math.max(1, Math.min(20, Number(process.env.HIRING_WEB_CV_MAX_PAGES) || DEFAULT_MAX_PAGES))
-  const backfillPages = Math.max(1, Math.min(10, Number(process.env.HIRING_WEB_CV_BACKFILL_PAGES) || DEFAULT_MAX_PAGES - 1))
   let newestSeen: CvProfile | null = null
   let reachedKnown = false
 
@@ -93,8 +89,7 @@ export async function crawlWebAdapter(
     return { blocks: blocks.length, recent: recentOnPage }
   }
 
-  const incrementalPages = cursor.lastSeenProfileId ? maxPages : 1
-  for (let page = 1; page <= incrementalPages && !reachedKnown; page++) {
+  for (let page = 1; !reachedKnown && (page === 1 || Boolean(cursor.lastSeenProfileId)); page++) {
     const result = await readPage(page, { stopAtCursor: true, trackNewest: true })
     if (!result.blocks || !result.recent) break
   }
@@ -104,7 +99,7 @@ export async function crawlWebAdapter(
   if (!bootstrapComplete) {
     const startPage = nextBackfillPage
     let lastPage = startPage - 1
-    for (let page = startPage; page < startPage + backfillPages; page++) {
+    for (let page = startPage; ; page++) {
       lastPage = page
       const result = await readPage(page, { stopAtCursor: false, trackNewest: false })
       if (!result.blocks || !result.recent) {

@@ -34,6 +34,17 @@ const hiringTransportModules = [
   '../server/hiring/sources/secondary/http.ts',
 ]
 
+const hiringCrawlerModules = [
+  '../server/hiring/sources/web/crawler.ts',
+  '../server/hiring/sources/web/uzJobs.ts',
+  '../server/hiring/sources/secondary/novaRobota.ts',
+  '../server/hiring/sources/secondary/layboard.ts',
+  '../server/hiring/sources/linkedinVoyager.ts',
+  '../server/hiring/sources/linkedInRefresh.ts',
+  '../shared/hiring/sources/ishBorCrawler.ts',
+  '../shared/hiring/sources/uzJobsCrawler.ts',
+]
+
 const forbiddenExecutionPolicy = [
   ['AbortSignal.timeout', /AbortSignal\.timeout\s*\(/u],
   ['Promise.all', /Promise\.all(?:Settled)?\s*\(/u],
@@ -69,6 +80,15 @@ test('hiring transports do not own result/depth caps or local deadlines', async 
   assert.doesNotMatch(social, /\.slice\(0,\s*limit\)/u)
   assert.doesNotMatch(social, /HIRING_SOCIAL_API_URL|QUEUE_INTERNAL_KEY|internal\/social/u)
   assert.match(social, /socialFetcherBaseUrl\(\)\}\/crawl/u)
+})
+
+test('hiring crawlers use shared transport policy and semantic page boundaries', async () => {
+  for (const path of hiringCrawlerModules) {
+    const source = await readFile(new URL(path, import.meta.url), 'utf8')
+    for (const [label, pattern] of forbiddenExecutionPolicy) {
+      assert.doesNotMatch(source, pattern, `${path} contains ${label}; execution policy belongs to crawler-core`)
+    }
+  }
 })
 
 test('shared crawler traversal is semantic rather than count/page bounded', async () => {

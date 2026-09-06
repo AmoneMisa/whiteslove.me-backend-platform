@@ -13,7 +13,7 @@ import { withProfessionExperience } from '../utils/hiring/hiringExperience'
 import { listWebSources } from '../hiring/sources/webCvRefresh'
 import { listUzJobsSources } from '../hiring/sources/uzJobsRefresh'
 import { getHiringWebDiagnostics } from '../../shared/hiring/hiringDiagnostics'
-import { loadDbSourceRuns } from '../utils/hiring/hiringDb'
+import { hiringDbEnabled, loadDbSourceRuns, queryDbCandidates } from '../hiring/infrastructure/database'
 import { convertCurrency, getRates, loadRates } from '../utils/support/currency'
 import { buildHiringStatistics } from '../../shared/hiringStatistics'
 import type { CvProfile } from '~~/shared/contracts/hiring'
@@ -38,7 +38,6 @@ import {
   collapseHiringProfessionFilterValues,
   expandHiringProfessionFilters,
 } from '../../shared/hiringProfessionGroups'
-import { hiringDbEnabled, queryDbCandidates } from '../hiring/infrastructure/database'
 
 const PAGE_MAX = 60
 
@@ -534,7 +533,7 @@ export default defineEventHandler(async (event) => {
     storedByUrl.set(profile.url || profile.id, profile)
   }
   const profiles = normalizedSnapshot([...storedByUrl.values()])
-  const byId = new Map(profiles.map((profile) => [profile.id, profile]))
+  const byId = new Map(profiles.map((profile) => [`${profile.source}:${profile.id}`, profile]))
 
   const query = (params.get('query') || '').trim()
   const needsMemoryFilters = Boolean(
@@ -567,15 +566,15 @@ export default defineEventHandler(async (event) => {
       from: offset,
       size: limit,
     })
-    if (result) {
+    const resolvedHits = result?.hits.map(({ id, source, score }) => {
+      const profile = byId.get(`${source}:${id}`)
+      return profile ? { ...profile, score } : null
+    }).filter((profile): profile is CvProfile => profile != null) || []
+    const staleIndex = Boolean(result && result.hits.length > 0 && resolvedHits.length !== result.hits.length)
+    if (result && !staleIndex) {
       engine = 'elasticsearch'
       count = result.total
-      page = result.hits
-        .map(({ id, score }) => {
-          const profile = byId.get(id)
-          return profile ? { ...profile, score } : null
-        })
-        .filter((profile): profile is CvProfile => profile != null)
+      page = resolvedHits
       statisticsProfiles = profiles.filter((profile) => matchesFilters(profile, params))
     }
   }
