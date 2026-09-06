@@ -12,6 +12,16 @@ function hasGeoFilter(filters) {
   );
 }
 
+function normalizedMetroNames(filters) {
+  const values = Array.isArray(filters?.metros)
+    ? filters.metros
+    : String(filters?.metro || '').split(',');
+  return [...new Set(values
+    .map((value) => String(value).trim())
+    .filter(Boolean))]
+    .sort((left, right) => left.localeCompare(right));
+}
+
 /**
  * Resolve geographic membership in PostgreSQL before the normal search/count/
  * map query. The returned key set is joined by the existing authoritative
@@ -79,11 +89,28 @@ export async function applyPostgresGeoGate({filters, countries, searchMatches = 
  * metro clauses before the downstream query so they cannot contradict the
  * coordinate-first decision or accidentally turn a multi-station CSV into one
  * station name.
+ *
+ * `geoScope` is deliberately retained as inert semantic metadata. The SQL core
+ * ignores it, while postgres-cursor-scope includes it in the cursor hash. A
+ * cursor issued for Novza/800m therefore cannot be reused for a different
+ * district/station/radius/arc and skip into the wrong result set.
  */
 export function withoutLegacyGeoFilters(filters) {
   if (!hasGeoFilter(filters)) return filters;
+  const geoScope = {
+    district: String(filters?.district || '').trim(),
+    metros: normalizedMetroNames(filters),
+    metroMaxM: filters?.metroMaxM ?? null,
+    metroArc: filters?.metroArc == null
+      ? null
+      : {
+          from: filters.metroArc.from ?? null,
+          to: filters.metroArc.to ?? null,
+        },
+  };
   return {
     ...filters,
+    geoScope,
     district: '',
     metro: '',
     metros: [],
@@ -92,4 +119,4 @@ export function withoutLegacyGeoFilters(filters) {
   };
 }
 
-export const __postgresGeoGateTest = {hasGeoFilter, keyOf};
+export const __postgresGeoGateTest = {hasGeoFilter, keyOf, normalizedMetroNames};
