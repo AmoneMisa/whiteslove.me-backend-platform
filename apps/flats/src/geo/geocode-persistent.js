@@ -94,6 +94,25 @@ function isStrongerPlacement(candidate, current) {
   return precisionRank(candidate.locationPrecision) < precisionRank(current?.locationPrecision);
 }
 
+function placementProbe(listing) {
+  return {
+    ...listing,
+    lat: null,
+    lng: null,
+    locationSource: null,
+    locationAccuracyM: null,
+    locationExtentM: null,
+    locationPrecision: null,
+    locationApproximate: null,
+    locationCanonical: null,
+    locationRole: null,
+    locationProvider: null,
+    locationProviderId: null,
+    locationProviderType: null,
+    locationGeoEntityId: null,
+  };
+}
+
 function rememberSourceCoordinate(listing, original) {
   listing.sourceCoordinateRefined = true;
   listing.sourceCoordinateLat ??= Number(original.lat);
@@ -220,25 +239,29 @@ async function tryExactCandidate(listing, country, candidate, budget) {
 }
 
 async function refineSourceCoordinateFromExactAddress(listing, country, candidates, budget) {
-  if (!listing?.street || !listing?.houseNumber || reverseGeneratedAddress(listing)) return false;
+  if (!listing?.street || !listing?.houseNumber || reverseGeneratedAddress(listing)) {
+    return { refined: false, deferred: false };
+  }
 
   const original = { ...listing, lat: Number(listing.lat), lng: Number(listing.lng) };
   const exactCandidates = candidates.filter((item) => item.source === 'address');
+  let deferred = false;
   for (const candidate of exactCandidates) {
-    const probe = { ...listing, lat: null, lng: null, locationSource: null, locationAccuracyM: null };
+    const probe = placementProbe(listing);
     const result = await tryExactCandidate(probe, country, candidate, budget);
+    deferred ||= result.deferred;
     if (!result.placed) continue;
     if (!isStrongerPlacement(probe, listing)) continue;
 
     copyPlacement(listing, probe, original);
-    return true;
+    return { refined: true, deferred };
   }
-  return false;
+  return { refined: false, deferred };
 }
 
 function refineSourceCoordinateFromCatalog(listing, country) {
   const original = { ...listing, lat: Number(listing.lat), lng: Number(listing.lng) };
-  const probe = { ...listing, lat: null, lng: null };
+  const probe = placementProbe(listing);
   if (!applyGeoCatalogExactAnchor(probe, country)) return false;
   if (!isStrongerPlacement(probe, listing)) return false;
   copyPlacement(listing, probe, original);
@@ -255,16 +278,18 @@ async function refineSourceCoordinateFromExactEntities(listing, country, candida
     .sort((a, b) =>
       (EXACT_CANDIDATE_PRIORITY[a.source] ?? 999) - (EXACT_CANDIDATE_PRIORITY[b.source] ?? 999),
     );
+  let deferred = false;
 
   for (const candidate of exactCandidates) {
-    const probe = { ...listing, lat: null, lng: null, locationSource: null, locationAccuracyM: null };
+    const probe = placementProbe(listing);
     const result = await tryExactCandidate(probe, country, candidate, budget);
+    deferred ||= result.deferred;
     if (!result.placed) continue;
     if (!isStrongerPlacement(probe, listing)) continue;
     copyPlacement(listing, probe, original);
-    return true;
+    return { refined: true, deferred };
   }
-  return false;
+  return { refined: false, deferred };
 }
 
 export async function geocodeListingsPersistent(listings, country) {
@@ -287,11 +312,14 @@ export async function geocodeListingsPersistent(listings, country) {
 
     const candidates = geocodeCandidates(listing, country);
     if (hasCoordinates(listing)) {
-      if (await refineSourceCoordinateFromExactAddress(listing, country, candidates, budget)) continue;
+      const addressRefinement = await refineSourceCoordinateFromExactAddress(listing, country, candidates, budget);
+      if (addressRefinement.refined || addressRefinement.deferred) continue;
+
       if (refineSourceCoordinateFromCatalog(listing, country)) {
         packageResolved.add(listing);
         continue;
       }
+
       await refineSourceCoordinateFromExactEntities(listing, country, candidates, budget);
       continue;
     }
@@ -397,4 +425,5 @@ export const __geocodePersistentTest = {
   precisionRank,
   isStrongerPlacement,
   structuredInputFor,
+  placementProbe,
 };
