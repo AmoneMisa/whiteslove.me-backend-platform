@@ -7,6 +7,7 @@ import {
   structuredAddressSearchParams,
 } from '../src/geo/nominatim-structured.js';
 import { __geocodePersistentTest } from '../src/geo/geocode-persistent.js';
+import { __geocodeFacadeTest } from '../src/geo/geocode.js';
 
 test('unqualified source coordinates stay broad and approximate', () => {
   const listing = makeListing({
@@ -25,6 +26,26 @@ test('unqualified source coordinates stay broad and approximate', () => {
   assert.equal(listing.locationPrecision, 'broad');
   assert.equal(listing.locationApproximate, true);
   assert.equal(listing.locationAccuracyM, null);
+});
+
+test('missing coordinates are not mislabeled as a source point', () => {
+  const listing = makeListing({
+    id: 'no-source-point',
+    source: 'olx',
+    country: 'UZ',
+    title: 'Квартира без координат',
+    description: '',
+    city: 'Tashkent',
+    lat: null,
+    lng: null,
+  });
+
+  assert.equal(listing.lat, null);
+  assert.equal(listing.lng, null);
+  assert.equal(listing.locationSource, null);
+  assert.equal(listing.locationProvider, null);
+  assert.equal(listing.locationPrecision, null);
+  assert.equal(listing.locationApproximate, null);
 });
 
 test('explicit upstream coordinate precision is preserved', () => {
@@ -101,4 +122,34 @@ test('precision ranking follows the audit hierarchy for point-like evidence', ()
     ),
     false,
   );
+});
+
+test('direct geocoder orders exact evidence before any broad fallback', () => {
+  const candidates = __geocodeFacadeTest.exactCandidates({
+    city: 'Tashkent',
+    district: 'Chilanzar',
+    address: 'Muqimiy kochasi 12',
+    street: 'Muqimiy kochasi',
+    houseNumber: '12',
+    residenceComplex: 'Assalom Sohil',
+    metro: 'Novza',
+    nearby: [],
+    nearbyShops: [],
+    locationEntities: [
+      { type: 'poi', name: 'Korzinka', role: 'primary' },
+    ],
+  }, {
+    code: 'UZ',
+    name: 'Uzbekistan',
+    cities: ['Tashkent'],
+  });
+
+  const sourceOrder = [...new Set(candidates.map((candidate) => candidate.source))];
+  assert.deepEqual(sourceOrder, [
+    'address',
+    'residentialComplex',
+    'poi',
+    'metro',
+    'street',
+  ]);
 });
