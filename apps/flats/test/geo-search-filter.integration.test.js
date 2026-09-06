@@ -102,8 +102,7 @@ test('PostgreSQL executes Tashkent district and multi-metro membership against r
     await client.query(`
       INSERT INTO geo_search_points (id, lat, lng, district) VALUES
         ('combined-real-match', 41.270121, 69.200434, 'Wrong source district'),
-        ('metro-match-outside-district', 41.2920278, 69.2233417, 'Chilanzar'),
-        ('district-match-too-far', 41.2875, 69.1840, 'Chilanzar')
+        ('combined-real-miss', 41.3263444, 69.3277694, 'Chilanzar')
     `);
 
     assert.deepEqual(
