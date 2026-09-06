@@ -29,9 +29,9 @@ const DEFAULT_ACCURACY_M = Object.freeze({
   district: 2500,
 });
 
-const STREET_IDENTITY_NOISE_RE = /\b(?:street|st|strada|str|road|rd|avenue|ave|улица|ул|вулиця|вул|kocha|kochasi|кўча|көше)\b/giu;
-const RESIDENTIAL_IDENTITY_NOISE_RE = /\b(?:жк|жилой\s+комплекс|житловий\s+комплекс|residential\s+complex|turar\s+joy\s+majmuasi)\b/giu;
-const METRO_IDENTITY_NOISE_RE = /\b(?:metro|метро|станция|станція|station)\b/giu;
+const STREET_IDENTITY_NOISE_RE = /(?<![\p{L}\p{N}])(?:street|st|strada|str|road|rd|avenue|ave|улица|ул|вулиця|вул|kocha|kochasi|кўча|көше)(?![\p{L}\p{N}])/giu;
+const RESIDENTIAL_IDENTITY_NOISE_RE = /(?<![\p{L}\p{N}])(?:жк|жилой\s+комплекс|житловий\s+комплекс|residential\s+complex|turar\s+joy\s+majmuasi)(?![\p{L}\p{N}])/giu;
+const METRO_IDENTITY_NOISE_RE = /(?<![\p{L}\p{N}])(?:metro|метро|станция|станція|station)(?![\p{L}\p{N}])/giu;
 const BUILDING_IDENTITY_PREFIX_RE = /^(?:корп(?:ус)?\.?|building|bldg\.?|bloc|corp|korpus)\s*/iu;
 
 function text(value) {
@@ -275,7 +275,6 @@ export async function rememberLearnedGeo(descriptor, coords, provider = {}) {
       boundedText(descriptor.country, 8),
       boundedText(descriptor.region, 255),
       boundedText(descriptor.city, 255),
-      boundedText(descriptor.district, 255),
       descriptor.street,
       boundedText(descriptor.houseNumber, 64),
       boundedText(descriptor.building, 128),
