@@ -1,12 +1,22 @@
 import { cacheGet, cacheSet } from '../support/cache.js';
 import { canonicalCityName } from './countries.js';
+import { geocodePhotonPoint, supportsPhotonExpectation } from './photon-client.js';
 
-const NOMINATIM_URL = 'https://nominatim.openstreetmap.org/search';
+const NOMINATIM_URL = String(
+  process.env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org/search',
+).replace(/\/$/u, '');
 const USER_AGENT = 'flat-finder/1.0 (housing aggregator; contact: admin@whiteslove.me)';
 const HIT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const MISS_TTL_MS = 24 * 60 * 60 * 1000;
 const ERROR_TTL_MS = 60 * 1000;
-const MIN_INTERVAL_MS = 1100;
+// The public Nominatim policy is stricter for recurring/background scripts than
+// for occasional interactive lookups. Keep the public default below 4 req/min;
+// self-hosted deployments may explicitly lower the interval with env config.
+const PUBLIC_NOMINATIM = /^https:\/\/nominatim\.openstreetmap\.org(?:\/|$)/iu.test(NOMINATIM_URL);
+const MIN_INTERVAL_MS = Math.max(
+  PUBLIC_NOMINATIM ? 15_500 : 250,
+  Number(process.env.NOMINATIM_MIN_INTERVAL_MS) || (PUBLIC_NOMINATIM ? 15_500 : 1100),
+);
 
 const STREET_KEYS = Object.freeze([
   'road', 'pedestrian', 'residential', 'living_street', 'footway',
@@ -150,7 +160,7 @@ export function nominatimCacheKey(query, countryCode, expectation = {}) {
   const country = countryCode ? `${countryCode.toLowerCase()}:` : '';
   const normalizedQuery = String(query ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
   const effectiveExpectation = expectationForQuery(query, expectation);
-  return `geo:v6:${country}${expectationCachePart(effectiveExpectation)}:${normalizedQuery}`;
+  return `geo:v7:${country}${expectationCachePart(effectiveExpectation)}:${normalizedQuery}`;
 }
 
 export async function cachedNominatimPoint(query, countryCode, expectation = {}) {
@@ -373,9 +383,21 @@ export function selectNominatimBbox(data, countryCode = null, expectedCity = nul
 }
 
 export async function fetchNominatimPoint(query, countryCode, expectation = {}) {
-  await throttle();
   const effectiveExpectation = expectationForQuery(query, expectation);
   const key = nominatimCacheKey(query, countryCode, effectiveExpectation);
+
+  // Photon is a free/keyless OSM-backed search endpoint and is tried first for
+  // named entities/streets. Exact building addresses stay on Nominatim because
+  // our structured house+street proof is stricter than Photon metadata permits.
+  if (supportsPhotonExpectation(effectiveExpectation)) {
+    const photon = await geocodePhotonPoint(query, countryCode, effectiveExpectation);
+    if (photon) {
+      await cacheSet(key, { coords: photon }, HIT_TTL_MS);
+      return photon;
+    }
+  }
+
+  await throttle();
   try {
     const params = new URLSearchParams({
       q: query,
