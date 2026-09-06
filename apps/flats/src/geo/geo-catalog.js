@@ -54,8 +54,8 @@ const DEFAULT_ACCURACY_M = Object.freeze({
 });
 
 // Required point-like precedence from GEO_ACCURACY_AUDIT.md:
-// verified residential complex > verified primary POI > verified primary metro
-// > bare street. Street+house is handled before this catalog layer.
+// verified residential complex > verified PRIMARY POI > verified PRIMARY metro
+// > directly stated bare street. Street+house is handled before this layer.
 const EXACT_TYPE_PRIORITY = Object.freeze({
   residential_complex: 10,
   poi: 20,
@@ -72,10 +72,11 @@ const BROAD_TYPE_PRIORITY = Object.freeze({
   district: 90,
 });
 
-const NEARBY_TYPE_PRIORITY = Object.freeze({
+const REFERENCE_TYPE_PRIORITY = Object.freeze({
   residential_complex: 10,
   poi: 20,
   metro: 30,
+  street: 35,
   microdistrict: 40,
   mahalla: 50,
   local_area: 60,
@@ -141,7 +142,10 @@ function apply(listing, entity, input = {}) {
   if (!entity?.center || !Number.isFinite(entity.center.lat) || !Number.isFinite(entity.center.lng)) return false;
   const role = normalizedRole(input.role);
   const intrinsicAccuracyM = entity.accuracyM ?? DEFAULT_ACCURACY_M[entity.type] ?? 1000;
-  const relationshipAccuracyM = role === 'nearby' ? 900 : 0;
+  // A lower-context reference is useful, but it must never advertise the same
+  // certainty as a primary property anchor merely because its canonical point
+  // is exact. The uncertainty describes the property relative to the anchor.
+  const relationshipAccuracyM = role === 'nearby' ? 900 : (role === 'mentioned' ? 1000 : 0);
 
   listing.lat = entity.center.lat;
   listing.lng = entity.center.lng;
@@ -174,6 +178,25 @@ function uniqueInputs(inputs) {
   });
 }
 
+function exactInputAllowed(input) {
+  if (!input || input.role === 'nearby') return false;
+  if (input.type === 'poi' || input.type === 'metro') return input.role === 'primary';
+  // A parser-promoted residenceComplex/street field is direct property-location
+  // evidence even when the lexical entity has no explicit role. Entity-only
+  // mentions, however, need `primary` to enter the exact tier.
+  if (input.origin === 'field') return true;
+  return input.role === 'primary';
+}
+
+function referenceInputAllowed(input) {
+  if (!input) return false;
+  if (input.role === 'nearby') return true;
+  if (input.role !== 'mentioned') return false;
+  // `mentioned` is deliberately lower-context. POI/metro are the motivating
+  // cases, but entity-only RC/street mentions follow the same safe fallback.
+  return ['residential_complex', 'poi', 'metro', 'street'].includes(input.type);
+}
+
 export function applyGeoCatalogExactAnchor(listing, country) {
   if (!listing || hasCoordinates(listing)) return false;
   const { countryCode, city } = canonicalContext(listing, country);
@@ -184,26 +207,30 @@ export function applyGeoCatalogExactAnchor(listing, country) {
       type: 'residential_complex',
       canonical: listing.residenceComplex,
       role: roleFor(listing, 'residential_complex', listing.residenceComplex),
+      origin: 'field',
     },
     {
       type: 'street',
       canonical: listing.street,
       role: roleFor(listing, 'street', listing.street),
+      origin: 'field',
     },
     ...(Array.isArray(listing.locationEntities) ? listing.locationEntities : [])
       .map((entity) => ({
         type: entityType(entity?.type),
         canonical: entity?.name,
         role: normalizedRole(entity?.role),
+        origin: 'entity',
       }))
       .filter((input) => Object.hasOwn(EXACT_TYPE_PRIORITY, input.type)),
     {
       type: 'metro',
       canonical: listing.metro,
       role: roleFor(listing, 'metro', listing.metro),
+      origin: 'field',
     },
   ]
-    .filter((input) => input.role !== 'nearby')
+    .filter(exactInputAllowed)
     .sort((a, b) => EXACT_TYPE_PRIORITY[a.type] - EXACT_TYPE_PRIORITY[b.type]);
 
   for (const input of uniqueInputs(inputs)) {
@@ -262,22 +289,53 @@ export function applyGeoCatalogBroadAnchor(listing, country) {
   return false;
 }
 
+/**
+ * Lower-context point fallback. Historical callers know this as "nearby", but
+ * it also accepts an unqualified `mentioned` POI/metro/entity. That distinction
+ * is retained in `locationRole`; neither form is allowed back into the exact
+ * primary-anchor tier.
+ */
 export function applyGeoCatalogNearbyAnchor(listing, country) {
   if (!listing || hasCoordinates(listing)) return false;
   const { countryCode, city } = canonicalContext(listing, country);
   if (!countryCode || !city) return false;
 
-  const inputs = (Array.isArray(listing.locationEntities) ? listing.locationEntities : [])
+  const entityInputs = (Array.isArray(listing.locationEntities) ? listing.locationEntities : [])
     .map((entity) => ({
       type: entityType(entity?.type),
       canonical: entity?.name,
       role: normalizedRole(entity?.role),
-    }))
-    .filter((input) => input.role === 'nearby' && Object.hasOwn(NEARBY_TYPE_PRIORITY, input.type))
-    .sort((a, b) => NEARBY_TYPE_PRIORITY[a.type] - NEARBY_TYPE_PRIORITY[b.type]);
+      origin: 'entity',
+    }));
+
+  const fieldInputs = [
+    {
+      type: 'residential_complex',
+      canonical: listing.residenceComplex,
+      role: roleFor(listing, 'residential_complex', listing.residenceComplex),
+      origin: 'field',
+    },
+    {
+      type: 'metro',
+      canonical: listing.metro,
+      role: roleFor(listing, 'metro', listing.metro),
+      origin: 'field',
+    },
+    {
+      type: 'street',
+      canonical: listing.street,
+      role: roleFor(listing, 'street', listing.street),
+      origin: 'field',
+    },
+  ];
+
+  const inputs = [...entityInputs, ...fieldInputs]
+    .filter((input) => Object.hasOwn(REFERENCE_TYPE_PRIORITY, input.type))
+    .filter(referenceInputAllowed)
+    .sort((a, b) => REFERENCE_TYPE_PRIORITY[a.type] - REFERENCE_TYPE_PRIORITY[b.type]);
 
   if (listing.landmark) {
-    inputs.push({ type: 'poi', canonical: listing.landmark, role: 'nearby' });
+    inputs.push({ type: 'poi', canonical: listing.landmark, role: 'nearby', origin: 'field' });
   }
 
   for (const input of uniqueInputs(inputs)) {
@@ -294,3 +352,8 @@ export function applyGeoCatalogCityFallback(listing, country) {
   const entity = resolve(countryCode, city, 'city', city);
   return Boolean(entity && apply(listing, entity, { type: 'city', canonical: city, role: 'mentioned' }));
 }
+
+export const __geoCatalogPriorityTest = {
+  exactInputAllowed,
+  referenceInputAllowed,
+};
