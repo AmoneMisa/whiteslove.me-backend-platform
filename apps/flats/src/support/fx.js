@@ -29,10 +29,15 @@ export function toUsd(amount, currency, rates) {
 }
 
 export async function getRates() {
-  // Feed requests always have usable rates; only one background refresh runs.
+  const hadLiveCache = cache.at > 0;
   if (!refreshPromise && Date.now() >= nextRefreshAt) {
     nextRefreshAt = Date.now() + RETRY_MS;
     refreshPromise = refreshRates().finally(() => { refreshPromise = null; });
+  }
+  // The first request benefits from live rates when the provider is available;
+  // subsequent requests keep serving the last known table while a refresh runs.
+  if (!hadLiveCache && refreshPromise) {
+    await refreshPromise;
   }
   return cache;
 }

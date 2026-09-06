@@ -170,7 +170,12 @@ export async function geocodeListings(listings, country) {
     // Placed rows are delegated so the mature reverse/nearby annotation stages
     // still run. Proven exact misses are cached, so the base exact loop becomes
     // a no-network no-op before it reaches spatial/broad fallbacks.
-    if (placed || !deferred) delegate.push(listing);
+    // When the exact stage consumed the per-listing budget, do not hand the
+    // row to the historical fallback stage: it would start a second budget
+    // and issue extra uncached Nominatim requests for weaker candidates.
+    if (placed || (!deferred && budgets.run > 0 && budgets.listing > 0)) {
+      delegate.push(listing);
+    }
   }
 
   if (delegate.length) await geocodeListingsBase(delegate, country);

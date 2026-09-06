@@ -264,15 +264,21 @@ export function scheduleListingsVision(listings) {
   for (const listing of listings) {
     const images = listingImages(listing);
     if (!images.length) continue;
-    const key = `${listing.country}:${listingKey(listing)}`;
-    if (antiFakeRunning.has(key)) continue;
-    const original = copyEnrichmentSnapshot(listing);
-    antiFakeRunning.add(key);
-    void detectExactDuplicatePhotos(original, images)
-      .then(result => persistMerged({...original, antiFake: result, duplicatePhotoRisk: result.risk,
-        exactDuplicatePhoto: result.exactDuplicatePhoto}, original))
-      .catch(error => console.warn(`[flats:antifake] ${key}: ${error.message}`))
-      .finally(() => antiFakeRunning.delete(key));
+    const fingerprint = visionFingerprint(images);
+    const antiFakeComplete = listing.antiFake?.fingerprint === fingerprint
+      && listing.antiFake.status === 'completed';
+    if (!antiFakeComplete) {
+      const key = `${listing.country}:${listingKey(listing)}`;
+      if (!antiFakeRunning.has(key)) {
+        const original = copyEnrichmentSnapshot(listing);
+        antiFakeRunning.add(key);
+        void detectExactDuplicatePhotos(original, images)
+          .then(result => persistMerged({...original, antiFake: {...result, fingerprint, status: 'completed'}, duplicatePhotoRisk: result.risk,
+            exactDuplicatePhoto: result.exactDuplicatePhoto}, original))
+          .catch(error => console.warn(`[flats:antifake] ${key}: ${error.message}`))
+          .finally(() => antiFakeRunning.delete(key));
+      }
+    }
   }
   if (!aiWorkerEnabled()) return 0;
 
@@ -289,6 +295,7 @@ export function scheduleListingsVision(listings) {
     if (!images.length) continue;
     const fingerprint = visionFingerprint(images);
     const id = listingKey(listing);
+    const original = copyEnrichmentSnapshot(listing);
 
     const acceptedQueue = scheduleVisionAnalysis({
       id,

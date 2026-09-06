@@ -1,6 +1,7 @@
 // Background scanner: periodically finds new listings matching each enabled
-// mobile preset and pushes a notification, with durable delivery dedup so a
-// crash/restart mid-scan never double-sends. HTTP surface lives in
+// mobile preset and pushes a notification, with durable delivery claims that
+// prevent concurrent duplicate sends. External push delivery is at-least-once
+// across a crash between FCM acknowledgement and database commit. HTTP surface lives in
 // mobile-subscription-routes.js; filter matching lives in mobile-preset-search.js.
 import {createHash, randomUUID} from 'node:crypto';
 import {pool} from '../infrastructure/database/pool.js';
@@ -85,15 +86,16 @@ async function primeSeen(subscription, items) {
   }
 }
 
-async function fetchMatches(subscription) {
+async function fetchMatches(subscription, cursor = null) {
   const {filters, countries} = mobilePresetSearch(subscription.filters || {});
+  filters.cursor = cursor || '';
   let rates = null;
   try {
     rates = (await getRates()).rates;
   } catch {}
   const searchMatches = await applyPostgresGeoGate({filters, countries});
   const result = await searchPostgresListings({filters: withoutLegacyGeoFilters(filters), countries, rates, searchMatches});
-  return result.listings || [];
+  return {listings: result.listings || [], nextCursor: result.nextCursor || null};
 }
 
 async function seenItemKeys(subscriptionId, keys) {
@@ -226,14 +228,29 @@ function notificationText(subscription, item) {
 }
 
 async function scanSubscription(subscription) {
-  const items = await fetchMatches(subscription);
+  const items = [];
+  let cursor = null;
+  let alreadySeen = new Set();
+  do {
+    const page = await fetchMatches(subscription, cursor);
+    items.push(...page.listings);
+    const pageKeys = page.listings.map(listingKey).filter(Boolean);
+    const pageSeen = await seenItemKeys(subscription.id, pageKeys);
+    for (const key of pageSeen) alreadySeen.add(key);
+    const unseen = items.reduce((count, item) => {
+      const key = listingKey(item);
+      return count + (key && !alreadySeen.has(key) ? 1 : 0);
+    }, 0);
+    cursor = unseen >= MAX_NOTIFICATIONS_PER_SCAN ? null : page.nextCursor;
+  } while (cursor);
+
   if (!subscription.initialized) {
     await primeSeen(subscription, items);
     return 0;
   }
 
   const itemKeys = items.map(listingKey).filter(Boolean);
-  const alreadySeen = await seenItemKeys(subscription.id, itemKeys);
+  alreadySeen = await seenItemKeys(subscription.id, itemKeys);
   const seenAfterScan = new Set();
   let sent = 0;
 

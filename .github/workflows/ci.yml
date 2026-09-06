@@ -87,16 +87,43 @@ jobs:
     if: needs.changes.outputs.flats == 'true'
     runs-on: ubuntu-latest
     environment: Production
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: flatfinder
+          POSTGRES_USER: flatfinder
+          POSTGRES_PASSWORD: flatfinder
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U flatfinder -d flatfinder"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with: { node-version: 24, cache: npm, cache-dependency-path: apps/flats/package-lock.json }
       - run: npm ci
         working-directory: apps/flats
+      - run: npm run migrate
+        working-directory: apps/flats
+        env:
+          PGHOST: 127.0.0.1
+          POSTGRES_DB: flatfinder
+          POSTGRES_USER: flatfinder
+          POSTGRES_PASSWORD: flatfinder
       - run: npm test
         working-directory: apps/flats
         env:
           GEO_CATALOG_DECRYPTION_KEY: ${{ secrets.GEO_CATALOG_DECRYPTION_KEY }}
+          PGHOST: 127.0.0.1
+          POSTGRES_DB: flatfinder
+          POSTGRES_USER: flatfinder
+          POSTGRES_PASSWORD: flatfinder
+          TEST_POSTGRES_URL: postgresql://flatfinder:flatfinder@127.0.0.1:5432/flatfinder
+          TEST_POSTGRES_SEARCH: '1'
       - run: docker build apps/flats
       - run: docker build services/olx-fetcher
 

@@ -363,10 +363,19 @@ async function processQueueTaskInner(task) {
     );
 
     const nextTask = nextOlxTask(task, pageResult, page);
+    const pageLimitReached = page >= OLX_QUEUE_MAX_PAGES
+      && !pageResult.pastCutoff
+      && pageResult.rawCount > 0;
     const persisted = await persist(pageResult.listings, task);
 
+    if (pageLimitReached) {
+      throw new Error(
+        `OLX crawl incomplete: page limit ${OLX_QUEUE_MAX_PAGES} reached before cutoff`,
+      );
+    }
+
     let reconciliation = null;
-    if (!nextTask && !task.citySlug && task.crawlGeneration) {
+    if (!nextTask && !pageLimitReached && !task.citySlug && task.crawlGeneration) {
       reconciliation = await reconcileAuthoritativeOlxSegment({
         country,
         segment,
@@ -392,6 +401,7 @@ async function processQueueTaskInner(task) {
       newestKnownAt: pageResult.newestKnownAt,
       unknownDateCount: pageResult.unknownDateCount,
       repairedCoordinates: rejected.length,
+      incomplete: pageLimitReached,
       nextTasks: nextTask ? [nextTask] : [],
       reconciliation: reconciliation
         ? {

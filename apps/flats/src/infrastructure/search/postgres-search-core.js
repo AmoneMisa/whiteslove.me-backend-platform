@@ -56,7 +56,10 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
   };
 
   const matchRows = normalizeMatchRows(searchMatches);
-  const elasticsearchAuthoritative = searchMatches != null;
+  // A bounded Elasticsearch traversal is only a ranking aid. If it reaches
+  // its safety bound, fall back to PostgreSQL's complete text predicate so a
+  // structured filter never silently drops matches beyond the ES window.
+  const elasticsearchAuthoritative = searchMatches != null && searchMatches.truncated !== true;
   let from = 'FROM listings l';
   let rankSelect = 'NULL::integer AS search_rank';
   if (matchRows.length) {
