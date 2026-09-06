@@ -1,6 +1,8 @@
 import {resolvedSearchGeometry} from '../../geo/search-filter-geometry.js';
 
 const EARTH_RADIUS_M = 6_371_008.8;
+const RAD_TO_DEG = 180 / Math.PI;
+const DEG_TO_RAD = Math.PI / 180;
 
 function finite(value) {
   const number = Number(value);
@@ -12,6 +14,11 @@ function normalizedBearing(value) {
   if (number == null) return null;
   const wrapped = number % 360;
   return wrapped < 0 ? wrapped + 360 : wrapped;
+}
+
+function normalizeLongitude(value) {
+  const wrapped = ((Number(value) + 180) % 360 + 360) % 360 - 180;
+  return Object.is(wrapped, -0) ? 0 : wrapped;
 }
 
 function metroNames(filters) {
@@ -82,6 +89,73 @@ function boundaryPredicate(alias, boundary, add) {
   return null;
 }
 
+/**
+ * Exact spherical bounding box for a station-radius cap. This is only a cheap
+ * prefilter: Haversine below remains the authoritative membership predicate.
+ * Because the bounds are a superset of the circle they can safely use the
+ * `(country, city, lat, lng)` read-model index without dropping edge matches.
+ */
+function stationRadiusBounds(station, maxM) {
+  const lat = finite(station?.center?.lat);
+  const lng = finite(station?.center?.lng);
+  const distanceM = finite(maxM);
+  if (lat == null || lng == null || distanceM == null || distanceM <= 0) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+
+  const angular = distanceM / EARTH_RADIUS_M;
+  // A radius at least half the Earth's circumference has no useful bbox.
+  if (!Number.isFinite(angular) || angular >= Math.PI) return null;
+
+  const latRad = lat * DEG_TO_RAD;
+  const minLatRad = Math.max(-Math.PI / 2, latRad - angular);
+  const maxLatRad = Math.min(Math.PI / 2, latRad + angular);
+  const bounds = {
+    minLat: minLatRad * RAD_TO_DEG,
+    maxLat: maxLatRad * RAD_TO_DEG,
+    minLng: -180,
+    maxLng: 180,
+    wrapsLongitude: false,
+    fullLongitude: false,
+  };
+
+  // Any circle touching a pole contains every longitude at that end of the
+  // latitude band, so longitude cannot safely narrow the candidate set.
+  if (minLatRad <= -Math.PI / 2 || maxLatRad >= Math.PI / 2) {
+    bounds.fullLongitude = true;
+    return bounds;
+  }
+
+  const denominator = Math.cos(latRad);
+  const ratio = Math.sin(angular) / denominator;
+  if (!Number.isFinite(ratio) || Math.abs(ratio) >= 1) {
+    bounds.fullLongitude = true;
+    return bounds;
+  }
+
+  const deltaLng = Math.asin(Math.abs(ratio)) * RAD_TO_DEG;
+  bounds.minLng = normalizeLongitude(lng - deltaLng);
+  bounds.maxLng = normalizeLongitude(lng + deltaLng);
+  bounds.wrapsLongitude = bounds.minLng > bounds.maxLng;
+  return bounds;
+}
+
+function stationRadiusBboxSql(alias, station, maxM, add) {
+  const bounds = stationRadiusBounds(station, maxM);
+  if (!bounds) return null;
+
+  const clauses = [
+    `${alias}.lat BETWEEN ${add(bounds.minLat)} AND ${add(bounds.maxLat)}`,
+  ];
+  if (!bounds.fullLongitude) {
+    if (bounds.wrapsLongitude) {
+      clauses.push(`(${alias}.lng >= ${add(bounds.minLng)} OR ${alias}.lng <= ${add(bounds.maxLng)})`);
+    } else {
+      clauses.push(`${alias}.lng BETWEEN ${add(bounds.minLng)} AND ${add(bounds.maxLng)}`);
+    }
+  }
+  return `(${clauses.join(' AND ')})`;
+}
+
 function distanceSql(alias, station, add) {
   const lat = add(Number(station.center.lat));
   const lng = add(Number(station.center.lng));
@@ -117,6 +191,8 @@ function stationSpatialPredicate(alias, station, filters, add) {
   const clauses = [usableCoordinateSql(alias)];
   const maxM = finite(filters?.metroMaxM);
   if (maxM != null && maxM > 0) {
+    const bbox = stationRadiusBboxSql(alias, station, maxM, add);
+    if (bbox) clauses.push(bbox);
     clauses.push(`${distanceSql(alias, station, add)} <= ${add(maxM)}`);
   }
   const arc = arcFromFilters(filters);
@@ -203,5 +279,7 @@ export const __postgresGeoFilterTest = {
   ringPolygonText,
   boundaryPredicate,
   arcFromFilters,
+  stationRadiusBounds,
+  stationRadiusBboxSql,
   stationSpatialPredicate,
 };
