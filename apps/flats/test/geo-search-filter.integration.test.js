@@ -93,6 +93,26 @@ test('PostgreSQL executes Tashkent district and multi-metro membership against r
 
     await client.query('TRUNCATE geo_search_points');
 
+    const northArc = resolvedFilters({
+      metro: 'Новза',
+      metros: ['Новза'],
+      metroMaxM: 800,
+      metroArc: {from: 340, to: 20},
+    });
+    await client.query(`
+      INSERT INTO geo_search_points (id, lat, lng, district) VALUES
+        ('north-of-novza', 41.2960, 69.2233417, 'Chilanzar'),
+        ('east-of-novza', 41.2920278, 69.2280, 'Chilanzar'),
+        ('north-too-far', 41.3010, 69.2233417, 'Chilanzar')
+    `);
+
+    assert.deepEqual(
+      await selectIds(client, northArc.filters),
+      ['north-of-novza'],
+    );
+
+    await client.query('TRUNCATE geo_search_points');
+
     const combined = resolvedFilters({
       district: 'Чиланзар',
       metro: 'Новза,Чиланзар,Алмазар',
