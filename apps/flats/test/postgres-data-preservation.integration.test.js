@@ -27,7 +27,7 @@ function input(id, overrides = {}) {
   };
 }
 
-test('upsert preserves absent normalized keys but honors explicit replacements', {skip: !enabled}, async () => {
+test('upsert preserves absent normalized keys and temporary empty photo snapshots', {skip: !enabled}, async () => {
   await assertDatabaseReady();
   const id = 'data-preservation-test-1';
 
@@ -41,11 +41,18 @@ test('upsert preserves absent normalized keys but honors explicit replacements',
       vision: {provider: 'test', derivedFields: ['parking']},
       locationAccuracyM: 25,
       futureContractField: {version: 1},
+      photo: 'https://images.example.test/one.jpg',
+      photos: [
+        'https://images.example.test/one.jpg',
+        'https://images.example.test/two.jpg',
+      ],
     })]);
 
     await upsertListings([input(id, {
       title: 'Fresh source title',
       price: 550,
+      photo: null,
+      photos: [],
     })]);
 
     let result = await pool.query(`
@@ -62,8 +69,15 @@ test('upsert preserves absent normalized keys but honors explicit replacements',
     });
     assert.equal(result.rows[0]?.data?.locationAccuracyM, 25);
     assert.deepEqual(result.rows[0]?.data?.futureContractField, {version: 1});
+    assert.equal(result.rows[0]?.data?.photo, 'https://images.example.test/one.jpg');
+    assert.deepEqual(result.rows[0]?.data?.photos, [
+      'https://images.example.test/one.jpg',
+      'https://images.example.test/two.jpg',
+    ]);
 
     await upsertListings([input(id, {
+      photo: 'https://images.example.test/new.jpg',
+      photos: ['https://images.example.test/new.jpg'],
       vision: null,
       locationAccuracyM: null,
       futureContractField: null,
@@ -75,6 +89,8 @@ test('upsert preserves absent normalized keys but honors explicit replacements',
       WHERE source = 'olx' AND country = 'UZ' AND source_id = $1
     `, [id]);
 
+    assert.equal(result.rows[0]?.data?.photo, 'https://images.example.test/new.jpg');
+    assert.deepEqual(result.rows[0]?.data?.photos, ['https://images.example.test/new.jpg']);
     assert.equal(result.rows[0]?.data?.vision, null);
     assert.equal(result.rows[0]?.data?.locationAccuracyM, null);
     assert.equal(result.rows[0]?.data?.futureContractField, null);
