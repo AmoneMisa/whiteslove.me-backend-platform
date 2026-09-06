@@ -12,6 +12,7 @@ import {installCatalogRoutes} from './routes/catalog-routes.js';
 import {installMediaRoutes} from './routes/media-routes.js';
 import {checkRate} from './support/request-rate-limit.js';
 import {registerMobileSubscriptionRoutes} from './mobile/mobile-subscriptions.js';
+import {registerMobileSavedStateRoutes} from './mobile/mobile-saved-state.js';
 
 export function createApp() {
   const app = express();
@@ -44,6 +45,7 @@ export function createApp() {
   installCatalogRoutes(app);
   installMediaRoutes(app);
   registerMobileSubscriptionRoutes(app);
+  registerMobileSavedStateRoutes(app);
 
   return app;
 }
