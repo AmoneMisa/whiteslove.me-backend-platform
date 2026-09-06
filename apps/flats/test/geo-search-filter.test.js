@@ -102,7 +102,7 @@ test('general listing count/page/map context applies geo predicates directly in 
   assert.match(sql, /point\(l\.lng, l\.lat\)/);
   assert.match(sql, /ACOS/);
   assert.match(sql, /ATAN2/);
-  assert.doesNotMatch(sql, /LOWER\(l\.district\) =/);
+  assert.match(sql, /NOT \(l\.lat IS NOT NULL[\s\S]*LOWER\(l\.district\) =/);
   assert.doesNotMatch(sql, /LOWER\(l\.metro\) =/);
 });
 
@@ -120,7 +120,7 @@ test('canonical feed applies the same geo predicates before count and pagination
   assert.match(sql, /point\(m\.lng, m\.lat\)/);
   assert.match(sql, /ACOS/);
   assert.match(sql, /ATAN2/);
-  assert.doesNotMatch(sql, /LOWER\(m\.district\) =/);
+  assert.match(sql, /NOT \(m\.lat IS NOT NULL[\s\S]*LOWER\(m\.district\) =/);
   assert.doesNotMatch(sql, /LOWER\(m\.metro\) =/);
 });
 

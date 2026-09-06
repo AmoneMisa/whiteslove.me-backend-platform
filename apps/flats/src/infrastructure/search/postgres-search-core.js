@@ -1,4 +1,5 @@
 import { pool } from '../database/pool.js';
+import {appendPostgresGeoFilters} from './postgres-geo-filter.js';
 
 const MAX_AGE_DAYS = 14;
 const CURSOR_VERSION = 1;
@@ -199,7 +200,7 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
   if (filters.commissionPercentMax != null) where.push(`l.commission_percent <= ${add(Number(filters.commissionPercentMax))}`);
 
   if (filters.city) where.push(`l.city = ${add(String(filters.city))}`);
-  if (filters.district) where.push(`LOWER(l.district) = ${add(String(filters.district).toLowerCase())}`);
+  appendPostgresGeoFilters({where, filters, alias: 'l', add});
   if (filters.microdistrict) {
     const p = add(String(filters.microdistrict).trim().toLowerCase());
     where.push(`EXISTS (
@@ -227,10 +228,6 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
         AND term.term_type IN ('area', 'local_area', 'development_area', 'informal_area')
     )`);
   }
-  if (filters.metro) where.push(`LOWER(l.metro) = ${add(String(filters.metro).toLowerCase())}`);
-
-  if (filters.metroMaxM != null) where.push(`l.metro_distance_m <= ${add(Number(filters.metroMaxM))}`);
-
   if (filters.nearbyKind || filters.nearbyMaxM != null) {
     const placeChecks = ['place.listing_id = l.id'];
     if (filters.nearbyKind) placeChecks.push(`place.kind = ${add(String(filters.nearbyKind).trim().toLowerCase())}`);

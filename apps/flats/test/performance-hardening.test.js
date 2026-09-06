@@ -15,10 +15,10 @@ test('hot listing filters use typed columns and normalized relations', async () 
     'l.total_floors',
     'l.building_year',
     'l.commission_percent',
-    'l.metro_distance_m',
   ]) {
     assert.match(search, new RegExp(column.replace('.', '\\.')));
   }
+  assert.match(search, /appendPostgresGeoFilters/u);
   assert.match(search, /FROM listing_location_terms term/u);
   assert.match(search, /FROM listing_nearby_places place/u);
   assert.match(search, /l\.lat BETWEEN/u);

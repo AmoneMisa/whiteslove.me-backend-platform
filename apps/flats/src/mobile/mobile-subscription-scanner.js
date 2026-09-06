@@ -9,7 +9,6 @@ import {getRates} from '../support/fx.js';
 import {mobilePushConfigured, sendMobilePush} from './mobile-fcm.js';
 import {searchPostgresListings} from '../support/postgres-search-fast.js';
 import {mobilePresetSearch} from './mobile-preset-search.js';
-import {applyPostgresGeoGate, withoutLegacyGeoFilters} from '../infrastructure/search/postgres-geo-gate.js';
 
 const SCHEMA = 'subscriptions';
 const SCANNER_ADVISORY_LOCK = 742_102;
@@ -93,8 +92,7 @@ async function fetchMatches(subscription, cursor = null) {
   try {
     rates = (await getRates()).rates;
   } catch {}
-  const searchMatches = await applyPostgresGeoGate({filters, countries});
-  const result = await searchPostgresListings({filters: withoutLegacyGeoFilters(filters), countries, rates, searchMatches});
+  const result = await searchPostgresListings({filters, countries, rates, searchMatches: null});
   return {listings: result.listings || [], nextCursor: result.nextCursor || null};
 }
 

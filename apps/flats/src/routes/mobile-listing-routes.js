@@ -2,7 +2,6 @@ import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
 
 import {COUNTRY_CODES} from '../geo/countries.js';
 import {attachResolvedSearchGeometry} from '../geo/search-filter-geometry.js';
-import {applyPostgresGeoGate, withoutLegacyGeoFilters} from '../infrastructure/search/postgres-geo-gate.js';
 import {getRates} from '../support/fx.js';
 import {parseListingFilters} from './listing-routes.js';
 import {attachMarketComparisons} from '../geo/market-comparison.js';
@@ -64,17 +63,11 @@ export function installMobileListingRoutes(app) {
     } catch {}
 
     try {
-      const searchMatches = await applyPostgresGeoGate({
+      const result = await searchPostgresListings({
         filters,
         countries: codes,
-        searchMatches: null,
-      });
-      const databaseFilters = withoutLegacyGeoFilters(filters);
-      const result = await searchPostgresListings({
-        filters: databaseFilters,
-        countries: codes,
         rates: fxRates,
-        searchMatches,
+        searchMatches: null,
       });
       return res.json({
         count: result.count,

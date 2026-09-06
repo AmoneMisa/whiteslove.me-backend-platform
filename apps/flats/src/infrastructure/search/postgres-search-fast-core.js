@@ -1,4 +1,5 @@
 import {pool} from '../database/pool.js';
+import {appendPostgresGeoFilters} from './postgres-geo-filter.js';
 // This module owns two things: the exact single-listing lookup below, and the
 // filter contract (canUseFastFeedPath / buildMemberWhere) that the canonical
 // feed in ../../support/postgres-canonical-feed.js reads listing_public_feed_members
@@ -155,8 +156,6 @@ export function buildMemberWhere({filters, countries, maxAgeDays, rates}) {
   if (filters.totalFloorsMax != null) where.push(`m.total_floors <= ${add(Number(filters.totalFloorsMax))}`);
   if (filters.yearMin != null) where.push(`m.building_year >= ${add(Number(filters.yearMin))}`);
   if (filters.yearMax != null) where.push(`m.building_year <= ${add(Number(filters.yearMax))}`);
-  if (filters.metroMaxM != null) where.push(`m.metro_distance_m <= ${add(Number(filters.metroMaxM))}`);
-
   if (filters.pricePerSqmMin != null || filters.pricePerSqmMax != null) {
     where.push('m.price IS NOT NULL AND m.area_sqm IS NOT NULL AND m.area_sqm > 0');
     const perSqm = convertPrices ? `(${priceUsdExpr} / m.area_sqm)` : '(m.price / m.area_sqm)';
@@ -205,8 +204,7 @@ export function buildMemberWhere({filters, countries, maxAgeDays, rates}) {
   }
 
   if (filters.city) where.push(`m.city = ${add(String(filters.city))}`);
-  if (filters.district) where.push(`LOWER(m.district) = ${add(String(filters.district).toLowerCase())}`);
-  if (filters.metro) where.push(`LOWER(m.metro) = ${add(String(filters.metro).toLowerCase())}`);
+  appendPostgresGeoFilters({where, filters, alias: 'm', add});
 
   if (filters.microdistrict) {
     const value = add(String(filters.microdistrict).trim().toLowerCase());
