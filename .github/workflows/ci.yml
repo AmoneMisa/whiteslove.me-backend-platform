@@ -3,7 +3,7 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [master]
+    branches: [master, develop]
 
 permissions:
   contents: read
@@ -36,6 +36,7 @@ jobs:
               - 'apps/flats/**'
               - 'services/olx-fetcher/**'
               - 'services/olx-router/**'
+              - '.github/workflows/ci.yml'
             social:
               - 'services/social-fetcher/**'
             vacancies:
