@@ -46,7 +46,10 @@ function normalizeListingPhotos(partial, listing) {
 }
 
 function sourceCoordinateMetadata(partial, listing) {
-  const hasCoordinates = Number.isFinite(Number(listing?.lat)) && Number.isFinite(Number(listing?.lng));
+  const hasCoordinates = listing?.lat != null
+    && listing?.lng != null
+    && Number.isFinite(Number(listing.lat))
+    && Number.isFinite(Number(listing.lng));
   if (!hasCoordinates) {
     return {
       locationSource: partial?.locationSource ?? listing?.locationSource ?? null,
