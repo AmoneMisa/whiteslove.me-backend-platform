@@ -14,7 +14,8 @@
     "lint:fix": "eslint src test --fix",
     "test": "node --test",
     "migrate": "node src/migrate.js",
-    "reindex": "node src/reindex.js"
+    "reindex": "node src/reindex.js",
+    "backfill:residential-coordinates": "node src/backfill-residential-coordinates.js"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.1",
