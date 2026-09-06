@@ -1,6 +1,10 @@
 import { cacheGet, cacheSet } from '../support/cache.js';
 import { canonicalCityName } from './countries.js';
-import { geocodePhotonPoint, supportsPhotonExpectation } from './photon-client.js';
+import {
+  cachedPhotonPoint,
+  fetchPhotonPoint,
+  supportsPhotonExpectation,
+} from './photon-client.js';
 
 const NOMINATIM_URL = String(
   process.env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org/search',
@@ -70,7 +74,7 @@ const CYRILLIC_FOLD = Object.freeze({
   і: 'i', ї: 'yi', є: 'ye', ґ: 'g', ў: 'o', қ: 'q', ғ: 'g', ҳ: 'h',
   ә: 'a', ң: 'ng', ө: 'o', ұ: 'u', ү: 'u', һ: 'h',
 });
-const STREET_NOISE_RE = /\b(?:street|st|strada|str|road|rd|avenue|ave|улица|ул|вулиця|вул|kocha|kochasi|кўча|көше)\b/giu;
+const STREET_NOISE_RE = /(?<![\p{L}\p{N}])(?:street|st|strada|str|road|rd|avenue|ave|улица|ул|вулиця|вул|kocha|kochasi|кўча|көше)(?![\p{L}\p{N}])/giu;
 const QUERY_BUILDING_RE = /(?:корп(?:ус)?\.?|building|bldg\.?|bloc|corp|korpus)\s*([\p{L}\p{N}/-]{1,16})/iu;
 
 let lastCallAt = 0;
@@ -131,6 +135,8 @@ function normalizeHouseNumber(value) {
   return String(value ?? '')
     .normalize('NFKC')
     .toLocaleLowerCase()
+    .trim()
+    .replace(/^(?:№|#|no\.?)\s*/iu, '')
     .replace(/\s+/gu, '')
     .replace(/[№#]/gu, '')
     .replace(/(?:корп(?:ус)?|корпус|building|bldg|bloc|corp)/gu, 'к')
@@ -386,14 +392,20 @@ export async function fetchNominatimPoint(query, countryCode, expectation = {}) 
   const effectiveExpectation = expectationForQuery(query, expectation);
   const key = nominatimCacheKey(query, countryCode, effectiveExpectation);
 
-  // Photon is a free/keyless OSM-backed search endpoint and is tried first for
-  // named entities/streets. Exact building addresses stay on Nominatim because
-  // our structured house+street proof is stricter than Photon metadata permits.
+  // Keep a single external request inside one geocoding budget slot. For
+  // named entities/streets, a previously unseen query goes to Photon first.
+  // A strict Photon miss is cached there; only a later pass may spend its one
+  // request on Nominatim. Exact building addresses stay on Nominatim directly.
   if (supportsPhotonExpectation(effectiveExpectation)) {
-    const photon = await geocodePhotonPoint(query, countryCode, effectiveExpectation);
-    if (photon) {
-      await cacheSet(key, { coords: photon }, HIT_TTL_MS);
-      return photon;
+    const cachedPhoton = await cachedPhotonPoint(query, countryCode, effectiveExpectation);
+    if (cachedPhoton === undefined) {
+      const photon = await fetchPhotonPoint(query, countryCode, effectiveExpectation);
+      if (photon) await cacheSet(key, { coords: photon }, HIT_TTL_MS);
+      return photon || null;
+    }
+    if (cachedPhoton) {
+      await cacheSet(key, { coords: cachedPhoton }, HIT_TTL_MS);
+      return cachedPhoton;
     }
   }
 
