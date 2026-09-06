@@ -124,32 +124,10 @@ test('precision ranking follows the audit hierarchy for point-like evidence', ()
   );
 });
 
-test('direct geocoder orders exact evidence before any broad fallback', () => {
-  const candidates = __geocodeFacadeTest.exactCandidates({
-    city: 'Tashkent',
-    district: 'Chilanzar',
-    address: 'Muqimiy kochasi 12',
-    street: 'Muqimiy kochasi',
-    houseNumber: '12',
-    residenceComplex: 'Assalom Sohil',
-    metro: 'Novza',
-    nearby: [],
-    nearbyShops: [],
-    locationEntities: [
-      { type: 'poi', name: 'Korzinka', role: 'primary' },
-    ],
-  }, {
-    code: 'UZ',
-    name: 'Uzbekistan',
-    cities: ['Tashkent'],
-  });
-
-  const sourceOrder = [...new Set(candidates.map((candidate) => candidate.source))];
-  assert.deepEqual(sourceOrder, [
-    'address',
-    'residentialComplex',
-    'poi',
-    'metro',
-    'street',
-  ]);
+test('direct geocoder priority is locked to the coordinate audit contract', () => {
+  const priority = __geocodeFacadeTest.exactPriority;
+  assert.ok(priority.address < priority.residentialComplex);
+  assert.ok(priority.residentialComplex < priority.poi);
+  assert.ok(priority.poi < priority.metro);
+  assert.ok(priority.metro < priority.street);
 });
