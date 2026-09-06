@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseListingFilters} from '../src/routes/listing-routes.js';
+import {attachResolvedSearchGeometry} from '../src/geo/search-filter-geometry.js';
 import {__postgresGeoFilterTest} from '../src/infrastructure/search/postgres-geo-filter.js';
 import {buildSearchContext} from '../src/infrastructure/search/postgres-search-core.js';
 import {buildMemberWhere} from '../src/infrastructure/search/postgres-search-fast-core.js';
@@ -26,7 +27,7 @@ function withResolvedGeometry(filters) {
       country: 'UZ',
       city: 'Tashkent',
       district: {
-        id: 'district:chilanzar',
+        id: 'uz:tashkent:chilanzar',
         canonicalName: 'Chilanzar',
         boundary: {
           type: 'Polygon',
@@ -53,6 +54,44 @@ test('listing filter parser preserves multi-metro union and directional arc', ()
   assert.equal(filters.metro, 'Novza,Chilonzor');
   assert.equal(filters.metroMaxM, 800);
   assert.deepEqual(filters.metroArc, {from: 340, to: 20});
+});
+
+test('Tashkent Russian district and metro labels resolve to canonical geo entities', () => {
+  const filters = parseListingFilters({
+    city: 'Ташкент',
+    district: 'Чиланзар',
+    metro: 'Новза,Чиланзар,Алмазар',
+    metroMaxM: '800',
+  });
+  // HTTP country selection is already canonical; city canonicalization occurs in
+  // the route before this resolver. Mirror that boundary here explicitly.
+  filters.city = 'Tashkent';
+  const geometry = attachResolvedSearchGeometry(filters, ['UZ']);
+
+  assert.equal(geometry.district?.id, 'uz:tashkent:chilanzar');
+  assert.equal(geometry.district?.canonicalName, 'Chilanzar');
+  assert.equal(geometry.district?.boundary?.type, 'Polygon');
+  assert.deepEqual(
+    geometry.metros.map((station) => station.canonicalName),
+    ['Novza', 'Chilonzor', 'Olmazor'],
+  );
+  assert.deepEqual(
+    geometry.metros.map((station) => station.id),
+    [
+      'uz:tashkent:metro:novza',
+      'uz:tashkent:metro:chilonzor',
+      'uz:tashkent:metro:olmazor',
+    ],
+  );
+  assert.equal(geometry.unresolvedMetros.length, 0);
+  for (const station of geometry.metros) {
+    assert.ok(Number.isFinite(station.center?.lat));
+    assert.ok(Number.isFinite(station.center?.lng));
+  }
+  // The public/legacy names are rewritten to canonical values only after all
+  // aliases have been resolved, so downstream SQL and cursor scope are stable.
+  assert.equal(filters.district, 'Chilanzar');
+  assert.equal(filters.metro, 'Novza,Chilonzor,Olmazor');
 });
 
 test('district boundary SQL uses polygon containment and subtracts GeoJSON holes', () => {
