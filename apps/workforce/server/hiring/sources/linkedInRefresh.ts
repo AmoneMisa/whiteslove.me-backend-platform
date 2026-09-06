@@ -1,5 +1,6 @@
 import { extractCandidateContacts } from '@whiteslove/parsing-lexicon/hiring-candidate-fields'
 import { detectCandidateRemotePreference } from '@whiteslove/parsing-lexicon/hiring-semantics'
+import { fetchWithSourceExecutionPolicy, LINKEDIN_SIDECAR_EXECUTION_POLICY } from '../../../packages/crawler-core/src/executionPolicy.ts'
 import { recordWebDiagnostic, type WebSourceDiagnostic } from '../../../shared/hiring/hiringDiagnostics'
 import { SHARED_CANDIDATE_INTENT_RE, SHARED_EMPLOYER_INTENT_RE } from '../../utils/hiring/hiringLexicon'
 import { normalizeCandidate } from '../../utils/hiring/hiringNormalize'
@@ -12,7 +13,6 @@ import {
   type LinkedInVoyagerCandidate,
 } from './linkedinVoyager'
 
-const REQUEST_TIMEOUT_MS = 180_000
 const DEFAULT_LIMIT = 24
 
 type LinkedInCountry = 'UZ' | 'KZ' | 'KG' | 'UA' | 'RO'
@@ -210,12 +210,11 @@ async function fetchTargetViaWorker(target: LinkedInTarget): Promise<{ profiles:
   if (!endpoint) throw new Error('HIRING_SOCIAL_API_URL is not configured')
   if (internalKey.length < 16) throw new Error('QUEUE_INTERNAL_KEY is not configured')
 
-  const response = await fetch(endpoint, {
+  const response = await fetchWithSourceExecutionPolicy(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-queue-key': internalKey },
     body: JSON.stringify({ source: 'linkedin', mode: 'candidates', query: target.query, scope: target.scope || 'both', limit: target.limit || DEFAULT_LIMIT }),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-  })
+  }, fetch, LINKEDIN_SIDECAR_EXECUTION_POLICY)
   const body = (await response.json().catch(() => ({}))) as LinkedInResponse
   if (!response.ok || body.ok === false) throw new Error(body.error || `LinkedIn candidate fetcher -> HTTP ${response.status}`)
 

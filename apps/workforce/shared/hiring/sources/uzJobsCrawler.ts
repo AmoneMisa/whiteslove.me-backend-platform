@@ -1,12 +1,13 @@
 import type { WebCursor } from '../hiringCursors'
 import { cutoffDate } from '../webFields'
 import { UZJOBS_SOURCE_KEY, uzJobsIndexPageUrl } from './uzJobsSource'
+import { fetchWithSourceExecutionPolicy } from '../../../packages/crawler-core/src/executionPolicy.ts'
 
-const REQUEST_TIMEOUT_MS = 25_000
-const MAX_BACKFILL_PAGES = 60
-const DEFAULT_BACKFILL_PAGES = 40
-const MAX_INDEX_PAGE = 260
-const FETCH_CONCURRENCY = 4
+// The previous implementation marked a cursor complete immediately after
+// page 260. Treat that exact sentinel as an incomplete legacy cursor once so
+// deployments already carrying it can finish the semantic walk.
+const LEGACY_CAP_SENTINEL_PAGE = 261
+
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/126.0 Safari/537.36'
@@ -26,13 +27,12 @@ export interface UzJobsCrawlResult<T extends UzJobsCrawlProfile> {
 
 async function fetchPage(page: number): Promise<string> {
   const url = uzJobsIndexPageUrl(page)
-  const response = await fetch(url, {
+  const response = await fetchWithSourceExecutionPolicy(url, {
     headers: {
       'User-Agent': UA,
       Accept: 'text/html,application/xhtml+xml',
       'Accept-Language': 'ru,en;q=0.8',
     },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
   if (!response.ok) throw new Error(`${new URL(url).host} -> ${response.status}`)
 
@@ -50,68 +50,43 @@ export async function crawlUzJobsPages<T extends UzJobsCrawlProfile>(
   cursor: WebCursor,
   parsePage: (html: string) => T[],
 ): Promise<UzJobsCrawlResult<T>> {
-  const backfillPages = Math.max(1, Math.min(
-    MAX_BACKFILL_PAGES,
-    Number(process.env.HIRING_UZJOBS_BACKFILL_PAGES) || DEFAULT_BACKFILL_PAGES,
-  ))
-  const savedBackfillPage = Math.max(2, cursor.backfillPage || 2)
-
-  // Older production cursors could be marked complete after a page with no
-  // recent rows. Only a cursor beyond the hard cap proves the current crawler
-  // reached the directory end/cap.
-  const legacyPrematureComplete = cursor.bootstrapComplete && savedBackfillPage <= MAX_INDEX_PAGE
-  const backfillStart = savedBackfillPage
-  let bootstrapComplete = cursor.bootstrapComplete && !legacyPrematureComplete
-  if (backfillStart > MAX_INDEX_PAGE) bootstrapComplete = true
-
-  const historicalPages = bootstrapComplete
-    ? []
-    : Array.from(
-      { length: Math.min(backfillPages, MAX_INDEX_PAGE - backfillStart + 1) },
-      (_, index) => backfillStart + index,
-    )
-  const pages = bootstrapComplete ? [1] : [1, ...historicalPages]
+  const legacyCapCursor = cursor.bootstrapComplete && cursor.backfillPage === LEGACY_CAP_SENTINEL_PAGE
+  const backfillStart = legacyCapCursor ? 2 : Math.max(2, cursor.backfillPage || 2)
+  let bootstrapComplete = cursor.bootstrapComplete && !legacyCapCursor
   const byId = new Map<string, T>()
   let fetched = 0
   let pagesRead = 0
   let lastHistoricalPage = backfillStart - 1
-  let reachedDirectoryEnd = false
 
-  for (let offset = 0; offset < pages.length; offset += FETCH_CONCURRENCY) {
-    const batch = pages.slice(offset, offset + FETCH_CONCURRENCY)
-    const results = await Promise.all(batch.map(async (page) => ({
-      page,
-      parsed: parsePage(await fetchPage(page)),
-    })))
+  const readPage = async (page: number): Promise<boolean> => {
+    const parsed = parsePage(await fetchPage(page))
+    pagesRead += 1
+    fetched += parsed.length
+    if (page > 1) lastHistoricalPage = page
 
-    for (const { page, parsed } of results) {
-      pagesRead += 1
-      fetched += parsed.length
-      if (page > 1) lastHistoricalPage = page
+    // Empty pagination is the only reliable end-of-directory signal. Last
+    // visit dates are interleaved, so an old page cannot terminate backfill.
+    if (!parsed.length) return false
 
-      // Empty pagination is the only reliable end-of-directory signal. Last
-      // visit dates are interleaved, so an old page cannot terminate backfill.
-      if (!parsed.length) {
-        if (page > 1) {
-          bootstrapComplete = true
-          reachedDirectoryEnd = true
-        }
-        continue
-      }
-
-      const recent = parsed.filter((profile) => {
-        const time = Date.parse(profile.activityAt || '')
-        return Number.isFinite(time)
-          && time >= cutoffDate().getTime()
-          && time <= Date.now() + 48 * 60 * 60 * 1000
-      })
-      for (const profile of recent) byId.set(profile.id, profile)
-    }
-
-    if (reachedDirectoryEnd) break
+    const recent = parsed.filter((profile) => {
+      const time = Date.parse(profile.activityAt || '')
+      return Number.isFinite(time)
+        && time >= cutoffDate().getTime()
+        && time <= Date.now() + 48 * 60 * 60 * 1000
+    })
+    for (const profile of recent) byId.set(profile.id, profile)
+    return true
   }
 
-  if (!bootstrapComplete && lastHistoricalPage >= MAX_INDEX_PAGE) bootstrapComplete = true
+  await readPage(1)
+  if (!bootstrapComplete) {
+    for (let page = backfillStart; ; page += 1) {
+      if (!await readPage(page)) {
+        bootstrapComplete = true
+        break
+      }
+    }
+  }
 
   const profiles = [...byId.values()]
   const newest = [...profiles]
@@ -127,9 +102,7 @@ export async function crawlUzJobsPages<T extends UzJobsCrawlProfile>(
       lastSeenProfileId: newest?.id.replace(`web-${UZJOBS_SOURCE_KEY}-`, '') || cursor.lastSeenProfileId,
       lastSeenUrl: newest?.url || cursor.lastSeenUrl,
       lastSeenUpdatedAt: newest?.activityAt || cursor.lastSeenUpdatedAt,
-      backfillPage: bootstrapComplete
-        ? MAX_INDEX_PAGE + 1
-        : Math.max(2, lastHistoricalPage),
+      backfillPage: Math.max(2, lastHistoricalPage + 1),
       bootstrapComplete,
       lastSuccessAt: new Date().toISOString(),
     },

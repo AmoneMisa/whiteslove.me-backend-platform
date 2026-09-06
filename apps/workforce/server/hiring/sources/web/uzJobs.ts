@@ -5,8 +5,6 @@ import { buildWebProfile, type CandidateBlock, type WebCvAdapter } from './commo
 import { webProfileId, type WebAdapterRun } from './crawler'
 import { fetchHiringWebPage } from './http'
 
-const DEFAULT_MAX_PAGES = 5
-
 function resumeRole(lines: string[]): string {
   const roleLine = lines.find((line) => line.includes(' / ') && !/field of activity|position/i.test(line))
   if (!roleLine) return ''
@@ -95,8 +93,6 @@ export async function crawlUzJobs(
     reachedCursor: false,
   }
   const byUrl = new Map<string, CvProfile>()
-  const maxPages = Math.max(1, Math.min(20, Number(process.env.HIRING_WEB_CV_MAX_PAGES) || DEFAULT_MAX_PAGES))
-  const backfillPages = Math.max(1, Math.min(10, Number(process.env.HIRING_WEB_CV_BACKFILL_PAGES) || DEFAULT_MAX_PAGES - 1))
   let newestSeen: CvProfile | null = null
   let reachedKnown = false
 
@@ -143,8 +139,7 @@ export async function crawlUzJobs(
     return { rows: rows.length, recent: recentOnPage }
   }
 
-  const incrementalPages = cursor.lastSeenProfileId ? maxPages : 1
-  for (let page = 1; page <= incrementalPages && !reachedKnown; page++) {
+  for (let page = 1; !reachedKnown && (page === 1 || Boolean(cursor.lastSeenProfileId)); page++) {
     const result = await readPage(page, true, true)
     if (!result.rows || !result.recent) break
   }
@@ -154,7 +149,7 @@ export async function crawlUzJobs(
   if (!bootstrapComplete) {
     const startPage = nextBackfillPage
     let lastPage = startPage - 1
-    for (let page = startPage; page < startPage + backfillPages; page++) {
+    for (let page = startPage; ; page++) {
       lastPage = page
       const result = await readPage(page, false, false)
       if (!result.rows || !result.recent) {

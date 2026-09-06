@@ -10,6 +10,7 @@ import {
   type AiExtractionResult,
 } from '../../utils/support/aiWorker'
 import { hiringDbEnabled, loadDbCandidates, saveDbCandidates } from '../infrastructure/database'
+import { syncCandidateIndex } from '../../utils/hiring/hiringElastic'
 import { withHiringStoreLock } from '../infrastructure/storeLock'
 import type { CandidateEmploymentType, CvProfile } from '../../../shared/contracts/hiring'
 import type { SourceRun } from '../../../shared/hiring/hiringDiagnostics'
@@ -210,6 +211,9 @@ async function persistStore(input: StoredProfile[]) {
   } catch (error) {
     console.error('[hiring] failed to persist store:', (error as Error).message)
   }
+  void syncCandidateIndex(list).catch((error) => {
+    console.warn('[hiring:elasticsearch] candidate sync failed:', (error as Error).message)
+  })
 }
 
 async function loadStored(): Promise<StoredProfile[]> {

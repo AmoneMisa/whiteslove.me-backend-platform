@@ -540,7 +540,7 @@ services:
       HIRING_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://whiteslove:change-me@platform-postgres:5432/whiteslove}
       HIRING_DB_SCHEMA: hiring
       ELASTICSEARCH_URL: http://platform-elasticsearch:9200
-      HIRING_ELASTICSEARCH_INDEX: candidate-profiles-v1
+      HIRING_ELASTICSEARCH_INDEX: candidate-profiles-v3
       SITE_STATE_DIR: /var/app/state/workforce
     volumes:
       - workforce-state:/var/app/state

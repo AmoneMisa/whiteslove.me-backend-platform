@@ -2,10 +2,8 @@ import type { WebCursor } from '../hiringCursors'
 import { absoluteHttpUrl } from '../../htmlText'
 import { htmlText } from '../webFields'
 import { ISHBOR_SOURCE_KEY } from './ishBorSource'
+import { fetchWithSourceExecutionPolicy } from '../../../packages/crawler-core/src/executionPolicy.ts'
 
-const REQUEST_TIMEOUT_MS = 25_000
-const MAX_PAGES = 3
-const DETAIL_BATCH = 6
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/126.0 Safari/537.36'
@@ -29,13 +27,12 @@ function absoluteUrl(raw: string, base: string): string {
 }
 
 async function fetchHtml(url: string): Promise<string> {
-  const response = await fetch(url, {
+  const response = await fetchWithSourceExecutionPolicy(url, {
     headers: {
       'User-Agent': UA,
       Accept: 'text/html,application/xhtml+xml',
       'Accept-Language': 'ru,en;q=0.8',
     },
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   })
   if (!response.ok) throw new Error(`${new URL(url).host} -> ${response.status}`)
   return response.text()
@@ -64,63 +61,51 @@ export async function crawlIshBorPages<T>(
   assembleProfile: (summary: IshBorSummary, detailHtml: string) => T | null,
 ): Promise<{ profiles: T[]; fetched: number; cursor: WebCursor }> {
   const all = new Map<string, IshBorSummary & { page: number }>()
-  const backfillPages = Math.max(1, Math.min(
-    10,
-    Number(process.env.HIRING_ISHBOR_BACKFILL_PAGES)
-      || Math.max(1, (Number(process.env.HIRING_ISHBOR_MAX_PAGES) || MAX_PAGES) - 1),
-  ))
   const backfillStart = Math.max(2, cursor.backfillPage || 1)
-  const pages = cursor.bootstrapComplete
-    ? [1]
-    : [1, ...Array.from({ length: backfillPages }, (_, index) => backfillStart + index)]
   let bootstrapComplete = cursor.bootstrapComplete
   let lastHistoricalPage = backfillStart - 1
 
-  for (const page of pages) {
+  const readPage = async (page: number) => {
     const url = page === 1
       ? 'https://ish-bor.uz/ru/ishchilar'
       : `https://ish-bor.uz/ru/ishchilar?page=${page}`
     const summaries = listSummaries(await fetchHtml(url))
     if (page > 1) lastHistoricalPage = page
-    if (!summaries.length) {
-      // A sparse/old page is not proof that newer profiles cannot exist below it.
-      // Only the board returning no rows closes the historical walk.
-      if (page > 1) bootstrapComplete = true
-      break
-    }
     summaries.forEach((item) => all.set(item.url, { ...item, page }))
+    return summaries.length
+  }
+
+  await readPage(1)
+  if (!cursor.bootstrapComplete) {
+    for (let page = backfillStart; ; page += 1) {
+      const count = await readPage(page)
+      if (!count) {
+        bootstrapComplete = true
+        break
+      }
+    }
   }
 
   const summaries = [...all.values()]
   const profiles: T[] = []
   let earliestFailedHistoricalPage: number | null = null
-  for (let offset = 0; offset < summaries.length; offset += DETAIL_BATCH) {
-    const batch = summaries.slice(offset, offset + DETAIL_BATCH)
-    const results = await Promise.allSettled(
-      batch.map(async (summary) => ({
-        page: summary.page,
-        profile: assembleProfile(summary, await fetchHtml(summary.url)),
-      })),
-    )
-    results.forEach((result, index) => {
-      if (result.status === 'fulfilled') {
-        if (result.value.profile) profiles.push(result.value.profile)
-        return
-      }
-      const page = batch[index]!.page
-      if (page > 1) {
+  for (const summary of summaries) {
+    try {
+      const profile = assembleProfile(summary, await fetchHtml(summary.url))
+      if (profile) profiles.push(profile)
+    } catch {
+      if (summary.page > 1) {
         earliestFailedHistoricalPage = earliestFailedHistoricalPage == null
-          ? page
-          : Math.min(earliestFailedHistoricalPage, page)
+          ? summary.page
+          : Math.min(earliestFailedHistoricalPage, summary.page)
       }
-    })
+    }
   }
 
   const newest = summaries.find((summary) => summary.page === 1)
-  const nextBackfillPage = bootstrapComplete
-    ? Math.max(2, cursor.backfillPage || 1)
-    : earliestFailedHistoricalPage
-      ?? Math.max(backfillStart + 1, lastHistoricalPage + 1)
+  if (earliestFailedHistoricalPage != null) bootstrapComplete = false
+  const nextBackfillPage = earliestFailedHistoricalPage
+    ?? Math.max(2, lastHistoricalPage + 1)
 
   return {
     profiles,

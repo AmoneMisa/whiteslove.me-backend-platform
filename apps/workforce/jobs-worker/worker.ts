@@ -71,7 +71,6 @@ function installJobBrowserFallback() {
   const endpoint = String(process.env.JOB_BROWSER_FETCHER_URL || '').trim().replace(/\/+$/, '')
   if (!endpoint) return
 
-  const fallbackStatuses = new Set([403, 429])
   const failureStatuses = new Set([403, 429, 500, 502, 503, 504])
   const hosts = new Set([
     'flagma.uz',
@@ -157,7 +156,7 @@ function installJobBrowserFallback() {
     let primaryError: unknown
     try {
       primaryResponse = await originalFetch(input, init)
-      if (!fallbackStatuses.has(primaryResponse.status)) {
+      if (!failureStatuses.has(primaryResponse.status)) {
         const contentType = primaryResponse.headers.get('content-type') || ''
         if (!contentType.includes('html')) return primaryResponse
         const html = await primaryResponse.clone().text().catch(() => '')

@@ -17,3 +17,11 @@ test('CV API owns candidate feed and metadata routes', () => {
   assert.match(source, /hiring-meta\.get/)
   assert.match(source, /WORKFORCE_API_DOMAIN must be vacancies or cv/)
 })
+
+test('API separates liveness from database readiness', () => {
+  assert.match(source, /url\.pathname === '\/health'/)
+  assert.match(source, /url\.pathname === '\/ready'/)
+  assert.match(source, /checkJobsDbReady\(\)/)
+  assert.match(source, /checkHiringDbReady\(\)/)
+  assert.match(source, /ok \? 200 : 503/)
+})

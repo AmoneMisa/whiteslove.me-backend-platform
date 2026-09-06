@@ -110,15 +110,13 @@ test('web candidate cursor identities support hh hashes and UzJobs ids', () => {
 
 test('IshBor historical crawl continues past an old sparse page', async () => {
   const originalFetch = globalThis.fetch
-  const originalBackfill = process.env.HIRING_ISHBOR_BACKFILL_PAGES
-  process.env.HIRING_ISHBOR_BACKFILL_PAGES = '2'
-
   const listing = (id) => `<article><a href="/ru/ishchilar/id/${id}">Candidate ${id}</a></article>`
   globalThis.fetch = async (input) => {
     const url = String(input)
     if (url === 'https://ish-bor.uz/ru/ishchilar') return new Response(listing(101))
     if (url === 'https://ish-bor.uz/ru/ishchilar?page=2') return new Response(listing(201))
     if (url === 'https://ish-bor.uz/ru/ishchilar?page=3') return new Response(listing(301))
+    if (url === 'https://ish-bor.uz/ru/ishchilar?page=4') return new Response('')
     if (url.endsWith('/id/201')) return new Response('old profile')
     if (url.endsWith('/id/101') || url.endsWith('/id/301')) return new Response('recent profile')
     throw new Error(`unexpected fetch ${url}`)
@@ -131,25 +129,21 @@ test('IshBor historical crawl continues past an old sparse page', async () => {
     )
 
     assert.equal(run.profiles.length, 2)
-    assert.equal(run.cursor.bootstrapComplete, false)
-    assert.equal(run.cursor.backfillPage, 4)
+    assert.equal(run.cursor.bootstrapComplete, true)
+    assert.equal(run.cursor.backfillPage, 5)
   } finally {
     globalThis.fetch = originalFetch
-    if (originalBackfill === undefined) delete process.env.HIRING_ISHBOR_BACKFILL_PAGES
-    else process.env.HIRING_ISHBOR_BACKFILL_PAGES = originalBackfill
   }
 })
 
 test('IshBor retries a historical page when one of its detail requests fails', async () => {
   const originalFetch = globalThis.fetch
-  const originalBackfill = process.env.HIRING_ISHBOR_BACKFILL_PAGES
-  process.env.HIRING_ISHBOR_BACKFILL_PAGES = '1'
-
   const listing = (id) => `<article><a href="/ru/ishchilar/id/${id}">Candidate ${id}</a></article>`
   globalThis.fetch = async (input) => {
     const url = String(input)
     if (url === 'https://ish-bor.uz/ru/ishchilar') return new Response(listing(101))
     if (url === 'https://ish-bor.uz/ru/ishchilar?page=2') return new Response(listing(201))
+    if (url === 'https://ish-bor.uz/ru/ishchilar?page=3') return new Response('')
     if (url.endsWith('/id/101')) return new Response('recent profile')
     if (url.endsWith('/id/201')) throw new Error('temporary detail failure')
     throw new Error(`unexpected fetch ${url}`)
@@ -165,7 +159,5 @@ test('IshBor retries a historical page when one of its detail requests fails', a
     assert.equal(run.cursor.backfillPage, 2)
   } finally {
     globalThis.fetch = originalFetch
-    if (originalBackfill === undefined) delete process.env.HIRING_ISHBOR_BACKFILL_PAGES
-    else process.env.HIRING_ISHBOR_BACKFILL_PAGES = originalBackfill
   }
 })

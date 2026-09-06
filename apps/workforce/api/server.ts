@@ -41,9 +41,19 @@ const server = createServer(async (req, res) => {
   })
   const url = new URL(request.url)
 
-  if (url.pathname === '/health' || url.pathname === '/ready') {
+  if (url.pathname === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.end(JSON.stringify({ ok: true, domain }))
+    return
+  }
+
+  if (url.pathname === '/ready') {
+    const ready = domain === 'vacancies'
+      ? (await import('../server/jobs/infrastructure/database')).checkJobsDbReady()
+      : (await import('../server/hiring/infrastructure/database')).checkHiringDbReady()
+    const ok = await ready
+    res.writeHead(ok ? 200 : 503, { 'Content-Type': 'application/json' })
+    res.end(JSON.stringify({ ok, domain }))
     return
   }
 

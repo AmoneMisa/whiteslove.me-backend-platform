@@ -1,3 +1,9 @@
+import {
+  fetchWithSourceExecutionPolicy,
+  LINKEDIN_VOYAGER_EXECUTION_POLICY,
+  mapWithSourceConcurrency,
+} from '../../../packages/crawler-core/src/executionPolicy.ts'
+
 const LINKEDIN_BASE_URL = 'https://www.linkedin.com'
 const VOYAGER_BASE_URL = `${LINKEDIN_BASE_URL}/voyager/api`
 const DEFAULT_PEOPLE_QUERY_ID = 'voyagerSearchDashClusters.66adc6056cf4138949ca5dcb31bb1749'
@@ -5,14 +11,7 @@ const DEFAULT_COMPANY_QUERY_ID = 'voyagerSearchDashClusters.02af3bc8bc85a169bb76
 const DEFAULT_GEO_QUERY_ID = 'voyagerSearchDashReusableTypeahead.57a4fa1dd92d3266ed968fdbab2d7bf5'
 const DEFAULT_PROFILE_DECORATION_ID = 'com.linkedin.voyager.dash.deco.identity.profile.TopCardComplete-138'
 const DEFAULT_COMPONENTS_QUERY_ID = 'voyagerIdentityDashProfileComponents.277ba7d7b9afffb04683953cede751fb'
-const REQUEST_TIMEOUT_MS = Math.max(
-  5_000,
-  Math.min(30_000, Number(process.env.HIRING_LINKEDIN_VOYAGER_TIMEOUT_MS) || 12_000),
-)
-const ENRICH_CONCURRENCY = Math.max(
-  1,
-  Math.min(8, Number(process.env.HIRING_LINKEDIN_VOYAGER_CONCURRENCY) || 4),
-)
+
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
   '(KHTML, like Gecko) Chrome/126.0 Safari/537.36'
@@ -108,7 +107,7 @@ async function voyagerJson<T = Record<string, unknown>>(url: string): Promise<T>
   if (!auth) throw new Error('LinkedIn Voyager credentials are not configured')
   health.requests += 1
   try {
-    const response = await fetch(url, {
+    const response = await fetchWithSourceExecutionPolicy(url, {
       headers: {
         Accept: 'application/vnd.linkedin.normalized+json+2.1',
         'Accept-Language': 'en-US,en;q=0.9',
@@ -119,8 +118,7 @@ async function voyagerJson<T = Record<string, unknown>>(url: string): Promise<T>
         'x-li-track': JSON.stringify({ clientVersion: '1.13.31194', mpVersion: '1.13.31194', osName: 'web', timezoneOffset: 0, timezone: 'UTC', deviceFormFactor: 'DESKTOP', mpName: 'voyager-web' }),
         'x-restli-protocol-version': '2.0.0',
       },
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-    })
+    }, fetch, LINKEDIN_VOYAGER_EXECUTION_POLICY)
     if (response.status === 429) health.rateLimited += 1
     if (response.status === 400 || response.status === 401 || response.status === 403) health.authFailures += 1
     if (!response.ok) {
@@ -383,10 +381,8 @@ async function fetchExperiences(candidate: LinkedInVoyagerCandidate): Promise<Li
 
 async function enrichCandidate(base: SearchCandidate): Promise<LinkedInVoyagerCandidate> {
   const candidate = await fetchTopCard(base)
-  const [skills, experiences] = await Promise.all([
-    fetchSkills(candidate),
-    fetchExperiences(candidate),
-  ])
+  const skills = await fetchSkills(candidate)
+  const experiences = await fetchExperiences(candidate)
   return { ...candidate, skills, experiences }
 }
 
@@ -411,10 +407,9 @@ export async function searchLinkedInPeopleReadOnly(input: LinkedInPeopleSearchIn
     if (discovered.length >= limit || offset + count >= page.total) break
   }
 
-  const enriched: LinkedInVoyagerCandidate[] = []
-  for (let offset = 0; offset < discovered.length; offset += ENRICH_CONCURRENCY) {
-    const chunk = discovered.slice(offset, offset + ENRICH_CONCURRENCY)
-    enriched.push(...await Promise.all(chunk.map(enrichCandidate)))
-  }
-  return enriched
+  return mapWithSourceConcurrency(
+    discovered,
+    enrichCandidate,
+    LINKEDIN_VOYAGER_EXECUTION_POLICY.concurrency,
+  )
 }

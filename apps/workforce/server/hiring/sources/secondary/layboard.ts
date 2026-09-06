@@ -34,11 +34,10 @@ function cards(html: string): string[] {
 }
 
 export async function crawlLayboard(): Promise<{ profiles: CvProfile[]; fetched: number }> {
-  const maxPages = Math.max(1, Math.min(8, Number(process.env.HIRING_LAYBOARD_MAX_PAGES) || 3))
   const byUrl = new Map<string, CvProfile>()
   let fetched = 0
 
-  for (let page = 1; page <= maxPages; page++) {
+  for (let page = 1; ; page++) {
     const pageUrl = page === 1
       ? 'https://layboard.com/rezume/kazahstan'
       : `https://layboard.com/rezume/kazahstan?page=${page}`
