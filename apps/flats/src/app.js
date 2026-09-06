@@ -23,6 +23,11 @@ export function createApp() {
   app.set('trust proxy', 1);
 
   app.use(cors());
+  // Saved listing snapshots contain the original normalized listing payload and
+  // can legitimately exceed Express' ~100 KB default during one-time migration.
+  // Keep the larger parser narrowly scoped; all other JSON endpoints retain the
+  // default body limit.
+  app.use('/api/mobile/saved-state', express.json({limit: '1mb'}));
   app.use(express.json());
 
   // A custom-source request can enqueue external fetch work in the PostgreSQL
