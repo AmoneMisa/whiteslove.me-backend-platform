@@ -2,7 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {parseListingFilters} from '../src/routes/listing-routes.js';
 import {__postgresGeoFilterTest} from '../src/infrastructure/search/postgres-geo-filter.js';
-import {withoutLegacyGeoFilters} from '../src/infrastructure/search/postgres-geo-gate.js';
+import {buildSearchContext} from '../src/infrastructure/search/postgres-search-core.js';
+import {buildMemberWhere} from '../src/infrastructure/search/postgres-search-fast-core.js';
+import {canonicalListingFilters} from '../src/listing/listing-filter-canonical.js';
 import {searchCursorScope} from '../src/support/postgres-cursor-scope.js';
 
 function collector() {
@@ -14,6 +16,31 @@ function collector() {
       return `$${params.length}`;
     },
   };
+}
+
+function withResolvedGeometry(filters) {
+  Object.defineProperty(filters, '_resolvedSearchGeometry', {
+    enumerable: false,
+    configurable: true,
+    value: Object.freeze({
+      country: 'UZ',
+      city: 'Tashkent',
+      district: {
+        id: 'district:chilanzar',
+        canonicalName: 'Chilanzar',
+        boundary: {
+          type: 'Polygon',
+          coordinates: [[[69, 41], [70, 41], [70, 42], [69, 42], [69, 41]]],
+        },
+      },
+      metros: Object.freeze([
+        {requested: 'Novza', canonicalName: 'Novza', center: {lat: 41.292, lng: 69.223}},
+        {requested: 'Chilonzor', canonicalName: 'Chilonzor', center: {lat: 41.275, lng: 69.204}},
+      ]),
+      unresolvedMetros: Object.freeze([]),
+    }),
+  });
+  return filters;
 }
 
 test('listing filter parser preserves multi-metro union and directional arc', () => {
@@ -61,30 +88,51 @@ test('metro spatial SQL is selected-station Haversine plus wrap-safe bearing arc
   assert.ok(params.includes(20));
 });
 
-test('legacy geo clauses are removed after DB gate while semantic geo scope remains', () => {
-  const original = {
+test('general listing count/page/map context applies geo predicates directly in SQL', () => {
+  const filters = withResolvedGeometry({
     city: 'Tashkent',
     district: 'Chilanzar',
     metro: 'Novza,Chilonzor',
     metros: ['Novza', 'Chilonzor'],
-    metroMaxM: 500,
-    metroArc: {from: 270, to: 90},
-    priceMax: 500,
-  };
-  const stripped = withoutLegacyGeoFilters(original);
-  assert.equal(stripped.district, '');
-  assert.equal(stripped.metro, '');
-  assert.deepEqual(stripped.metros, []);
-  assert.equal(stripped.metroMaxM, null);
-  assert.equal(stripped.metroArc, null);
-  assert.deepEqual(stripped.geoScope, {
-    district: 'Chilanzar',
-    metros: ['Chilonzor', 'Novza'],
-    metroMaxM: 500,
-    metroArc: {from: 270, to: 90},
+    metroMaxM: 800,
+    metroArc: {from: 340, to: 20},
   });
-  assert.equal(stripped.city, 'Tashkent');
-  assert.equal(stripped.priceMax, 500);
+  const context = buildSearchContext({filters, countries: ['UZ'], rates: null, searchMatches: null});
+  const sql = context.where.join('\n');
+  assert.match(sql, /point\(l\.lng, l\.lat\)/);
+  assert.match(sql, /ACOS/);
+  assert.match(sql, /ATAN2/);
+  assert.doesNotMatch(sql, /LOWER\(l\.district\) =/);
+  assert.doesNotMatch(sql, /LOWER\(l\.metro\) =/);
+});
+
+test('canonical feed applies the same geo predicates before count and pagination', () => {
+  const filters = withResolvedGeometry({
+    city: 'Tashkent',
+    district: 'Chilanzar',
+    metro: 'Novza,Chilonzor',
+    metros: ['Novza', 'Chilonzor'],
+    metroMaxM: 800,
+    metroArc: {from: 340, to: 20},
+  });
+  const context = buildMemberWhere({filters, countries: ['UZ'], maxAgeDays: 14, rates: null});
+  const sql = context.where;
+  assert.match(sql, /point\(m\.lng, m\.lat\)/);
+  assert.match(sql, /ACOS/);
+  assert.match(sql, /ATAN2/);
+  assert.doesNotMatch(sql, /LOWER\(m\.district\) =/);
+  assert.doesNotMatch(sql, /LOWER\(m\.metro\) =/);
+});
+
+test('resolved geometry survives canonical filter copies', () => {
+  const filters = withResolvedGeometry({
+    dealType: 'longRent',
+    roomOnly: true,
+    district: 'Chilanzar',
+  });
+  const canonical = canonicalListingFilters(filters);
+  assert.equal(canonical.dealType, 'roomRent');
+  assert.equal(canonical._resolvedSearchGeometry, filters._resolvedSearchGeometry);
 });
 
 test('cursor scope changes when geographic membership changes', () => {
@@ -97,17 +145,9 @@ test('cursor scope changes when geographic membership changes', () => {
     metroArc: {from: 340, to: 20},
     sort: 'newest',
   };
-  const novza = searchCursorScope(withoutLegacyGeoFilters(base), ['UZ']);
-  const chilonzor = searchCursorScope(withoutLegacyGeoFilters({
-    ...base,
-    metro: 'Chilonzor',
-    metros: ['Chilonzor'],
-  }), ['UZ']);
-  const largerRadius = searchCursorScope(withoutLegacyGeoFilters({
-    ...base,
-    metroMaxM: 1200,
-  }), ['UZ']);
-
+  const novza = searchCursorScope(base, ['UZ']);
+  const chilonzor = searchCursorScope({...base, metro: 'Chilonzor', metros: ['Chilonzor']}, ['UZ']);
+  const largerRadius = searchCursorScope({...base, metroMaxM: 1200}, ['UZ']);
   assert.notEqual(novza, chilonzor);
   assert.notEqual(novza, largerRadius);
 });
