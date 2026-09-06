@@ -1,5 +1,6 @@
 import {COUNTRY_CODES} from '../geo/countries.js';
 import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
+import {attachResolvedSearchGeometry} from '../geo/search-filter-geometry.js';
 import {getRates} from '../support/fx.js';
 import {refreshAll} from '../scheduling/scheduler.js';
 import {searchPostgresListings} from '../support/postgres-search-fast.js';
@@ -43,6 +44,20 @@ export function parseListingFilters(q) {
         .filter((s) => /^https?:\/\//i.test(s)),
     ),
   ].slice(0, 10);
+  const metros = [
+    ...new Set(
+      String(q.metro || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const metroArcParts = String(q.metroArc || '')
+    .split(',')
+    .map((value) => Number(value.trim()));
+  const metroArc = metroArcParts.length === 2 && metroArcParts.every(Number.isFinite)
+    ? {from: metroArcParts[0], to: metroArcParts[1]}
+    : null;
   const offset = Math.max(0, Math.trunc(num(q.offset) ?? 0));
   const limit = Math.max(
     1,
@@ -125,7 +140,9 @@ export function parseListingFilters(q) {
     microdistrict: q.microdistrict ? String(q.microdistrict) : '',
     quartal: q.quartal ? String(q.quartal) : '',
     area: q.area ? String(q.area) : '',
-    metro: q.metro ? String(q.metro) : '',
+    metro: metros.join(','),
+    metros,
+    metroArc,
     query: q.query ? String(q.query) : '',
     listingId: q.listingId ? String(q.listingId) : '',
     pets: bool(q.pets),
@@ -275,6 +292,7 @@ export function installListingRoutes(app) {
     const filters = parseListingFilters(req.query);
     const codes = resolveCountries(req.query);
     canonicalizeCityFilter(filters, codes);
+    attachResolvedSearchGeometry(filters, codes);
 
     let custom = {warming: false, sourceErrors: []};
     if (filters.customSources.length) {
