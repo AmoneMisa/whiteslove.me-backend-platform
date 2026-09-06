@@ -11,5 +11,6 @@ test('verified exact address outranks an unqualified marketplace source pin', ()
   // weaker marker merely because the two points are far apart.
   assert.doesNotMatch(source, /SOURCE_COORD_EXACT_MAX_DISTANCE_M/);
   assert.match(source, /sourceCoordinateDistanceM = Math\.round\(discrepancyM\)/);
-  assert.match(source, /applyCandidate\(listing, candidate, probe/);
+  assert.match(source, /isStrongerPlacement\(probe, listing\)/);
+  assert.match(source, /copyPlacement\(listing, probe, original\)/);
 });

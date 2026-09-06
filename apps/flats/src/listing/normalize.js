@@ -45,6 +45,35 @@ function normalizeListingPhotos(partial, listing) {
   };
 }
 
+function sourceCoordinateMetadata(partial, listing) {
+  const hasCoordinates = listing?.lat != null
+    && listing?.lng != null
+    && Number.isFinite(Number(listing.lat))
+    && Number.isFinite(Number(listing.lng));
+  if (!hasCoordinates) {
+    return {
+      locationSource: partial?.locationSource ?? listing?.locationSource ?? null,
+      locationProvider: partial?.locationProvider ?? listing?.locationProvider ?? null,
+      locationPrecision: partial?.locationPrecision ?? listing?.locationPrecision ?? null,
+      locationAccuracyM: partial?.locationAccuracyM ?? listing?.locationAccuracyM ?? null,
+      locationApproximate: partial?.locationApproximate ?? listing?.locationApproximate ?? null,
+    };
+  }
+
+  // A marketplace/JSON-LD point is real source evidence, but unless that source
+  // explicitly declares its precision it is not assumed to be the surveyed
+  // building entrance. This lets the persistent resolver upgrade it with a
+  // proved street+house, canonical complex, primary POI/metro or other stronger
+  // evidence without discarding its original coordinate from the audit trail.
+  return {
+    locationSource: partial?.locationSource ?? listing?.locationSource ?? 'sourceCoordinates',
+    locationProvider: partial?.locationProvider ?? listing?.locationProvider ?? partial?.source ?? null,
+    locationPrecision: partial?.locationPrecision ?? listing?.locationPrecision ?? 'broad',
+    locationAccuracyM: partial?.locationAccuracyM ?? listing?.locationAccuracyM ?? null,
+    locationApproximate: partial?.locationApproximate ?? listing?.locationApproximate ?? true,
+  };
+}
+
 export function makeListing(partial) {
   const listing = makeLegacyListing(partial);
   const text = `${partial?.title ?? ''}\n${partial?.description ?? ''}`;
@@ -52,6 +81,7 @@ export function makeListing(partial) {
   const fields = parseHousingListingFields(text, { country });
   const parsedPrice = parseHousingPrice(text, partial?.currency || listing.currency || '');
   const normalizedPhotos = normalizeListingPhotos(partial, listing);
+  const coordinateMetadata = sourceCoordinateMetadata(partial, listing);
 
   const amenities = [...new Set([
     ...(Array.isArray(listing.amenities) ? listing.amenities : []),
@@ -75,6 +105,7 @@ export function makeListing(partial) {
 
   return {
     ...listing,
+    ...coordinateMetadata,
     address,
     photo: normalizedPhotos.photo,
     photos: normalizedPhotos.photos,

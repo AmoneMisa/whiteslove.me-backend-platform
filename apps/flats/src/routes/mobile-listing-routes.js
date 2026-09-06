@@ -1,6 +1,8 @@
 import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
 
 import {COUNTRY_CODES} from '../geo/countries.js';
+import {attachResolvedSearchGeometry} from '../geo/search-filter-geometry.js';
+import {applyPostgresGeoGate, withoutLegacyGeoFilters} from '../infrastructure/search/postgres-geo-gate.js';
 import {getRates} from '../support/fx.js';
 import {parseListingFilters} from './listing-routes.js';
 import {attachMarketComparisons} from '../geo/market-comparison.js';
@@ -50,6 +52,7 @@ export function installMobileListingRoutes(app) {
     const filters = parseListingFilters(req.query);
     const codes = resolveCountries(req.query);
     canonicalizeCityFilter(filters, codes);
+    attachResolvedSearchGeometry(filters, codes);
 
     if (filters.query || filters.customSources.length || filters.includeStats || filters.statsOnly || filters.mapOnly) {
       return res.status(400).json({error: 'mobile structured feed only'});
@@ -61,11 +64,17 @@ export function installMobileListingRoutes(app) {
     } catch {}
 
     try {
-      const result = await searchPostgresListings({
+      const searchMatches = await applyPostgresGeoGate({
         filters,
         countries: codes,
-        rates: fxRates,
         searchMatches: null,
+      });
+      const databaseFilters = withoutLegacyGeoFilters(filters);
+      const result = await searchPostgresListings({
+        filters: databaseFilters,
+        countries: codes,
+        rates: fxRates,
+        searchMatches,
       });
       return res.json({
         count: result.count,

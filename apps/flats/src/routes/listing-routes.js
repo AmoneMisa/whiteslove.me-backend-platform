@@ -1,5 +1,7 @@
 import {COUNTRY_CODES} from '../geo/countries.js';
 import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
+import {attachResolvedSearchGeometry} from '../geo/search-filter-geometry.js';
+import {applyPostgresGeoGate, withoutLegacyGeoFilters} from '../infrastructure/search/postgres-geo-gate.js';
 import {getRates} from '../support/fx.js';
 import {refreshAll} from '../scheduling/scheduler.js';
 import {searchPostgresListings} from '../support/postgres-search-fast.js';
@@ -43,6 +45,20 @@ export function parseListingFilters(q) {
         .filter((s) => /^https?:\/\//i.test(s)),
     ),
   ].slice(0, 10);
+  const metros = [
+    ...new Set(
+      String(q.metro || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const metroArcParts = String(q.metroArc || '')
+    .split(',')
+    .map((value) => Number(value.trim()));
+  const metroArc = metroArcParts.length === 2 && metroArcParts.every(Number.isFinite)
+    ? {from: metroArcParts[0], to: metroArcParts[1]}
+    : null;
   const offset = Math.max(0, Math.trunc(num(q.offset) ?? 0));
   const limit = Math.max(
     1,
@@ -125,7 +141,9 @@ export function parseListingFilters(q) {
     microdistrict: q.microdistrict ? String(q.microdistrict) : '',
     quartal: q.quartal ? String(q.quartal) : '',
     area: q.area ? String(q.area) : '',
-    metro: q.metro ? String(q.metro) : '',
+    metro: metros.join(','),
+    metros,
+    metroArc,
     query: q.query ? String(q.query) : '',
     listingId: q.listingId ? String(q.listingId) : '',
     pets: bool(q.pets),
@@ -166,7 +184,7 @@ async function tryPostgresSearch({filters, codes, force}) {
   }
 
   let searchError = null;
-  const searchMatches = filters.query
+  let searchMatches = filters.query
     ? await searchListingMatches(filters.query, {
         countries: codes,
         sources: filters.sources,
@@ -177,6 +195,13 @@ async function tryPostgresSearch({filters, codes, force}) {
       })
     : null;
 
+  searchMatches = await applyPostgresGeoGate({
+    filters,
+    countries: codes,
+    searchMatches,
+  });
+  const databaseFilters = withoutLegacyGeoFilters(filters);
+
   let fxRates = null;
   try {
     fxRates = (await getRates()).rates;
@@ -184,7 +209,7 @@ async function tryPostgresSearch({filters, codes, force}) {
 
   if (filters.mapOnly) {
     const result = await searchPostgresMapPoints({
-      filters,
+      filters: databaseFilters,
       countries: codes,
       rates: fxRates,
       searchMatches,
@@ -201,8 +226,8 @@ async function tryPostgresSearch({filters, codes, force}) {
       searchEngine: filters.query
         ? (searchMatches ? 'elasticsearch+postgres' : 'postgres-fallback')
         : 'postgres',
-      searchIndexedMatches: searchMatches?.total ?? null,
-      searchTruncated: searchMatches?.truncated ?? false,
+      searchIndexedMatches: filters.query ? searchMatches?.total ?? null : null,
+      searchTruncated: filters.query ? searchMatches?.truncated ?? false : false,
       queryMs: result.queryMs,
       mapPoints: result.points,
       mapPointsTruncated: result.truncated,
@@ -214,7 +239,7 @@ async function tryPostgresSearch({filters, codes, force}) {
   }
 
   const result = await searchPostgresListings({
-    filters,
+    filters: databaseFilters,
     countries: codes,
     rates: fxRates,
     searchMatches,
@@ -251,8 +276,8 @@ async function tryPostgresSearch({filters, codes, force}) {
     searchEngine: filters.query
       ? (searchMatches ? 'elasticsearch+postgres' : 'postgres-fallback')
       : 'postgres',
-    searchIndexedMatches: searchMatches?.total ?? null,
-    searchTruncated: searchMatches?.truncated ?? false,
+    searchIndexedMatches: filters.query ? searchMatches?.total ?? null : null,
+    searchTruncated: filters.query ? searchMatches?.truncated ?? false : false,
     queryMs: result.queryMs,
     countMs: result.countMs ?? null,
     pageMs: result.pageMs ?? null,
@@ -275,6 +300,7 @@ export function installListingRoutes(app) {
     const filters = parseListingFilters(req.query);
     const codes = resolveCountries(req.query);
     canonicalizeCityFilter(filters, codes);
+    attachResolvedSearchGeometry(filters, codes);
 
     let custom = {warming: false, sourceErrors: []};
     if (filters.customSources.length) {
