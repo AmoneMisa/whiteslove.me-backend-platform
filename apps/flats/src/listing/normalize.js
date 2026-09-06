@@ -17,12 +17,41 @@ function consumerAddress(address, text, country) {
   return text.match(UA_EXPLICIT_STREET_RE)?.[1]?.trim() || null;
 }
 
+function normalizePhotoValue(value) {
+  let raw = value;
+  if (value && typeof value === 'object') {
+    raw = value.link ?? value.url ?? value.src ?? value.imageUrl ?? null;
+  }
+  if (typeof raw !== 'string') return null;
+  const photo = raw.trim();
+  if (!photo) return null;
+  return photo
+    .replaceAll('{width}', '800')
+    .replaceAll('{height}', '600');
+}
+
+function normalizeListingPhotos(partial, listing) {
+  const candidates = Array.isArray(partial?.photos)
+    ? partial.photos
+    : (Array.isArray(listing?.photos) ? listing.photos : []);
+  const photos = [...new Set(candidates.map(normalizePhotoValue).filter(Boolean))];
+  const single = normalizePhotoValue(partial?.photo) ?? normalizePhotoValue(listing?.photo);
+
+  if (single && !photos.includes(single)) photos.unshift(single);
+
+  return {
+    photo: photos[0] ?? single ?? null,
+    photos: photos.length ? photos : (single ? [single] : []),
+  };
+}
+
 export function makeListing(partial) {
   const listing = makeLegacyListing(partial);
   const text = `${partial?.title ?? ''}\n${partial?.description ?? ''}`;
   const country = String(partial?.country || listing.country || '').toUpperCase();
   const fields = parseHousingListingFields(text, { country });
   const parsedPrice = parseHousingPrice(text, partial?.currency || listing.currency || '');
+  const normalizedPhotos = normalizeListingPhotos(partial, listing);
 
   const amenities = [...new Set([
     ...(Array.isArray(listing.amenities) ? listing.amenities : []),
@@ -47,6 +76,8 @@ export function makeListing(partial) {
   return {
     ...listing,
     address,
+    photo: normalizedPhotos.photo,
+    photos: normalizedPhotos.photos,
     price: partial?.price != null ? listing.price : (parsedPrice.amount ?? listing.price),
     currency: partial?.price != null && partial?.currency
       ? listing.currency
