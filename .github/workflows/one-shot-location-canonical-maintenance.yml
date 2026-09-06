@@ -1,0 +1,74 @@
+name: One-shot UZ canonical geography maintenance
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/one-shot-location-canonical-maintenance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Canonicalize UZ geography, refresh residential anchors and reindex
+        uses: appleboy/ssh-action@v1.2.1
+        with:
+          host: ${{ vars.SERVER_HOST }}
+          username: ${{ vars.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            cd /opt/backend
+
+            EXPECTED_SHA='887a60c86905f6a1a4ae98c3946bc8e67ba9f58c'
+            ACTUAL_SHA="$(git rev-parse HEAD)"
+            echo "Production checkout: ${ACTUAL_SHA}"
+            test "${ACTUAL_SHA}" = "${EXPECTED_SHA}"
+
+            echo '--- Canonical geography dry run (UZ) ---'
+            docker compose exec -T flats-api npm run backfill:location-canonicals -- --country=UZ --batch-size=250 --preview=50
+
+            echo '--- Canonical geography apply (UZ) ---'
+            docker compose exec -T flats-api npm run backfill:location-canonicals -- --country=UZ --batch-size=250 --preview=50 --apply
+
+            echo '--- Canonical geography control dry run (UZ) ---'
+            docker compose exec -T flats-api npm run backfill:location-canonicals -- --country=UZ --batch-size=250 --preview=20
+
+            echo '--- Residential coordinate dry run (UZ) ---'
+            docker compose exec -T flats-api npm run backfill:residential-coordinates -- --country=UZ --batch-size=250 --preview=50
+
+            echo '--- Residential coordinate apply (UZ) ---'
+            docker compose exec -T flats-api npm run backfill:residential-coordinates -- --country=UZ --batch-size=250 --preview=50 --apply
+
+            echo '--- Residential coordinate control dry run (UZ) ---'
+            docker compose exec -T flats-api npm run backfill:residential-coordinates -- --country=UZ --batch-size=250 --preview=20
+
+            echo '--- Listing 6965161 after maintenance ---'
+            docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+            SELECT
+              id,
+              city,
+              district,
+              metro,
+              residence_complex,
+              data->>'residenceComplex' AS data_residence_complex,
+              data->>'sourceResidenceComplex' AS source_residence_complex,
+              data->>'lat' AS lat,
+              data->>'lng' AS lng,
+              data->>'locationCanonical' AS location_canonical,
+              data->>'locationGeoEntityId' AS location_geo_entity_id,
+              data->>'locationSource' AS location_source,
+              data->>'locationProvider' AS location_provider
+            FROM flats.listings
+            WHERE id = '6965161';
+            SQL
+
+            echo '--- Elasticsearch reindex ---'
+            docker compose exec -T flats-api npm run reindex
+
+            echo '--- Maintenance complete ---'
