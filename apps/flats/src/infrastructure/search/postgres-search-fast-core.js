@@ -316,7 +316,7 @@ async function searchExactListing({filters, countries}) {
       AND l.listing_kind <> 'propertyWanted'
       AND l.listing_status NOT IN ('sold', 'rented', 'closed', 'outdated')
       AND NOT l.commercial
-      AND (l.created_at IS NULL OR l.created_at >= NOW() - ($4::double precision * INTERVAL '1 day'))
+      AND COALESCE(l.created_at, l.first_seen_at) >= NOW() - ($4::double precision * INTERVAL '1 day')
     LIMIT 1
   `, [filters.sources[0], countries[0], String(filters.listingId), ageDays]);
   const row = query.result.rows[0];

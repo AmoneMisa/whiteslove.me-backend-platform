@@ -15,7 +15,10 @@ const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 // succeeds. Covers the currencies this project deals with.
 const FALLBACK = { USD: 1, EUR: 0.92, RON: 4.57, UAH: 41.5, KZT: 470, UZS: 12600 };
 
-let cache = { at: 0, base: 'USD', rates: null };
+const RETRY_MS = 60_000;
+let cache = { at: 0, base: 'USD', rates: {...FALLBACK} };
+let nextRefreshAt = 0;
+let refreshPromise = null;
 
 // Convert an amount in `currency` to USD using rates (units per 1 USD).
 // Returns null when the amount is missing or the currency has no known rate.
@@ -26,18 +29,35 @@ export function toUsd(amount, currency, rates) {
 }
 
 export async function getRates() {
-  if (cache.rates && Date.now() - cache.at < TTL_MS) return cache;
+  const hadLiveCache = cache.at > 0;
+  if (!refreshPromise && Date.now() >= nextRefreshAt) {
+    nextRefreshAt = Date.now() + RETRY_MS;
+    refreshPromise = refreshRates().finally(() => { refreshPromise = null; });
+  }
+  // The first request benefits from live rates when the provider is available;
+  // subsequent requests keep serving the last known table while a refresh runs.
+  if (!hadLiveCache && refreshPromise) {
+    await refreshPromise;
+  }
+  return cache;
+}
+
+async function refreshRates() {
   try {
     const res = await fetch(RATES_URL, { signal: AbortSignal.timeout(10_000) });
     if (!res.ok) throw new Error(`fx HTTP ${res.status}`);
     const json = await res.json();
-    if (json.result !== 'success' || !json.rates) throw new Error('fx unexpected payload');
+    if (json.result !== 'success' || json.base_code !== 'USD' || json.rates?.USD !== 1
+      || !Object.values(json.rates).every(rate => Number.isFinite(rate) && rate > 0)) {
+      throw new Error('fx unexpected payload');
+    }
     cache = { at: Date.now(), base: json.base_code ?? 'USD', rates: json.rates };
+    nextRefreshAt = Date.now() + TTL_MS;
   } catch (err) {
     console.warn(`[fx] live rates unavailable, using fallback: ${err.message}`);
     // Keep a stale-but-real cache if we already have one; otherwise seed the
     // fallback so callers always get a usable table.
-    if (!cache.rates) cache = { at: Date.now(), base: 'USD', rates: { ...FALLBACK } };
+    nextRefreshAt = Date.now() + RETRY_MS;
   }
   return cache;
 }

@@ -11,6 +11,8 @@ export const pool = new Pool({
   max: Number(process.env.PG_POOL_MAX) || 10,
   idleTimeoutMillis: 30_000,
   connectionTimeoutMillis: 10_000,
+  statement_timeout: Math.max(1000, Number(process.env.PG_STATEMENT_TIMEOUT_MS) || 30_000),
+  lock_timeout: Math.max(1000, Number(process.env.PG_LOCK_TIMEOUT_MS) || 5000),
 });
 
 pool.on('error', (error) => {

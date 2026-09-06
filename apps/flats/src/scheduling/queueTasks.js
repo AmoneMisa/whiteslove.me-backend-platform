@@ -9,13 +9,13 @@ import { scrapeCustomUrl } from '../scrapers/custom.js';
 import { telegramHousingChannels } from '../sources/telegram-housing-sources.js';
 import { throttle } from '../support/ratelimit.js';
 import { upsertListings } from '../infrastructure/database/listingRepository.js';
+import {readEnrichmentSnapshots, updateListingEnrichment} from '../infrastructure/database/listingEnrichmentRepository.js';
 import { indexListings } from '../infrastructure/search/elasticsearch.js';
 import { executeQueueTaskOnce } from '../infrastructure/queue/queueTaskDedup.js';
 import { geocodeListingsPersistent } from '../geo/geocode-persistent.js';
 import { rejectOutOfAreaCoordinates } from '../geo/coordinate-validation.js';
 import { reconcileAuthoritativeOlxSegment } from '../sources/crawl-reconciliation.js';
 import { olxSegmentDealType } from '../geo/olx-segment.js';
-import { deactivateMissingCustomSourceListings } from '../infrastructure/database/customSourceRepository.js';
 import { scheduleListingsVision } from '../listing/vision-enrichment.js';
 import { scheduleListingsAi } from '../listing/ai-enrichment.js';
 
@@ -267,8 +267,9 @@ async function persist(listings, task) {
     );
   }
 
-  scheduleListingsVision(listings);
-  if (config) scheduleListingsAi(listings, config, (merged) => persistAiMerged(merged, config, task));
+  const snapshots = await readEnrichmentSnapshots(listings);
+  scheduleListingsVision(snapshots);
+  if (config) scheduleListingsAi(snapshots, config, (merged, original) => persistAiMerged(merged, original, config, task));
 
   return { saved, indexed };
 }
@@ -279,7 +280,7 @@ async function persist(listings, task) {
  * useful if the listing is placed again — and only when it still has no point,
  * so a resolved coordinate is never re-derived from weaker evidence.
  */
-async function persistAiMerged(merged, config, task) {
+async function persistAiMerged(merged, original, config, task) {
   try {
     const filledGeography = (merged?.ai?.derivedFields || []).some(
       (field) => field === 'district' || field === 'kvartal',
@@ -289,8 +290,8 @@ async function persistAiMerged(merged, config, task) {
       await geocodeListingsPersistent([merged], config);
     }
 
-    await upsertListings([merged]);
-    await indexListings([merged]);
+    const stored = await updateListingEnrichment(original, merged);
+    if (stored) await indexListings([stored]);
   } catch (error) {
     console.warn(
       `[queue:${task?.type}] AI enrichment persistence failed: ${error?.message ?? error}`,
@@ -362,10 +363,19 @@ async function processQueueTaskInner(task) {
     );
 
     const nextTask = nextOlxTask(task, pageResult, page);
+    const pageLimitReached = page >= OLX_QUEUE_MAX_PAGES
+      && !pageResult.pastCutoff
+      && pageResult.rawCount > 0;
     const persisted = await persist(pageResult.listings, task);
 
+    if (pageLimitReached) {
+      throw new Error(
+        `OLX crawl incomplete: page limit ${OLX_QUEUE_MAX_PAGES} reached before cutoff`,
+      );
+    }
+
     let reconciliation = null;
-    if (!nextTask && !task.citySlug && task.crawlGeneration) {
+    if (!nextTask && !pageLimitReached && !task.citySlug && task.crawlGeneration) {
       reconciliation = await reconcileAuthoritativeOlxSegment({
         country,
         segment,
@@ -391,6 +401,7 @@ async function processQueueTaskInner(task) {
       newestKnownAt: pageResult.newestKnownAt,
       unknownDateCount: pageResult.unknownDateCount,
       repairedCoordinates: rejected.length,
+      incomplete: pageLimitReached,
       nextTasks: nextTask ? [nextTask] : [],
       reconciliation: reconciliation
         ? {
@@ -439,7 +450,6 @@ async function processQueueTaskInner(task) {
       throw new Error('Missing custom source URL');
     }
 
-    const crawlStartedAt = new Date().toISOString();
     const fetchedListings = await scrapeCustomUrl(sourceUrl, COUNTRIES[country]);
     const ownerFiltered = enforceOwnerOnlyListings(fetchedListings, task);
     const listings = ownerFiltered.map((listing) => ({
@@ -452,11 +462,9 @@ async function processQueueTaskInner(task) {
       dealType: listing.dealType || task.dealType || null,
     }));
     const persisted = await persist(listings, task);
-    const deactivated = await deactivateMissingCustomSourceListings({
-      country,
-      sourceUrl,
-      crawlStartedAt,
-    });
+    // A catalog page is not an authoritative snapshot of the whole source.
+    // Missing records expire through the normal listing lifecycle instead.
+    const deactivated = 0;
 
     return {
       ok: true,

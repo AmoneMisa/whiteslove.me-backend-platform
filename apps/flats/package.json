@@ -15,6 +15,7 @@
     "test": "node --test",
     "migrate": "node src/migrate.js",
     "reindex": "node src/reindex.js",
+    "backfill:residential-coordinates": "node src/backfill-residential-coordinates.js",
     "regeocode": "node src/regeocode.js"
   },
   "dependencies": {

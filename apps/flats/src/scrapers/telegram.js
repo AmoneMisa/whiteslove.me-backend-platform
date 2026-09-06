@@ -199,13 +199,23 @@ async function fetchWorkerPage(channel, beforeId, deadline) {
 
 const TG_MAX_PAGES = 8;
 
+class TelegramIncompleteError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'TelegramIncompleteError';
+    this.incomplete = true;
+  }
+}
+
 export async function fetchChannel(channelConfig, country, _filters = {}, deadline = Infinity) {
   const channel = channelConfig.name;
   const listings = [];
   let beforeId = 0;
 
   for (let page = 0; page < TG_MAX_PAGES; page++) {
-    if (Date.now() >= deadline) break;
+    if (Date.now() >= deadline) {
+      throw new TelegramIncompleteError(`Telegram channel @${channel} exceeded its crawl deadline`);
+    }
 
     const {messages, minId} = await fetchWorkerPage(channel, beforeId, deadline);
     if (!messages.length && minId === null) break;
@@ -225,6 +235,12 @@ export async function fetchChannel(channelConfig, country, _filters = {}, deadli
     if (minId === null || minId === beforeId) break;
     if (oldestTs && Date.now() - oldestTs > MAX_AGE_MS) break;
     beforeId = minId;
+
+    if (page === TG_MAX_PAGES - 1) {
+      throw new TelegramIncompleteError(
+        `Telegram channel @${channel} exceeded the ${TG_MAX_PAGES}-page crawl limit`,
+      );
+    }
   }
 
   return listings;
@@ -236,6 +252,7 @@ async function fetchChannelWithRetry(channelConfig, country, filters, deadline =
       const result = await fetchChannel(channelConfig, country, filters, deadline);
       if (result.length > 0 || attempt === 1) return result;
     } catch (err) {
+      if (err?.incomplete) throw err;
       if (attempt === 1) {
         console.warn(`[telegram] @${channelConfig.name}: ${err?.message ?? err}`);
         return [];
@@ -284,6 +301,7 @@ export async function scrapeTelegram(country, filters) {
   const CONCURRENCY = 4;
   const deadline = Date.now() + TG_BUDGET_MS;
   const listings = [];
+  let incomplete = false;
 
   for (let index = 0; index < channels.length; index += CONCURRENCY) {
     if (Date.now() >= deadline) break;
@@ -295,9 +313,14 @@ export async function scrapeTelegram(country, filters) {
 
     for (const result of results) {
       if (result.status === 'fulfilled') listings.push(...result.value);
+      else {
+        incomplete = true;
+        console.warn(`[telegram] incomplete channel crawl: ${result.reason?.message ?? result.reason}`);
+      }
     }
   }
 
+  if (incomplete) throw new TelegramIncompleteError('Telegram crawl incomplete; retry required');
   return {
     listings,
     complete,

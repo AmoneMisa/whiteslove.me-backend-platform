@@ -301,12 +301,12 @@ services:
       OLX_FETCHER_URL: http://flats-olx-router:4021
       SOCIAL_FETCHER_URL: http://social-fetcher:4040
       PHOTO_CACHE_DIR: /var/cache/flat-photos
+      VISION_PHOTO_BASE_URL: http://flats-api:4000
       PHOTO_CACHE_MAX_MB: ${PHOTO_CACHE_MAX_MB:-512}
     volumes:
       - flats-photo-cache:/var/cache/flat-photos
     depends_on:
       flats-migrate: { condition: service_completed_successfully }
-      platform-elasticsearch: { condition: service_healthy }
     networks: [ platform ]
     ports:
       - "127.0.0.1:${FLATS_API_HOST_PORT:-4000}:4000"
@@ -344,9 +344,10 @@ services:
       QUEUE_POLL_SECONDS: ${FLATS_QUEUE_POLL_SECONDS:-1}
       QUEUE_MAX_ATTEMPTS: ${FLATS_QUEUE_MAX_ATTEMPTS:-5}
       QUEUE_TASK_LEASE_SECONDS: ${FLATS_QUEUE_TASK_LEASE_SECONDS:-300}
+      VISION_PHOTO_BASE_URL: http://flats-api:4000
+      PG_STATEMENT_TIMEOUT_MS: ${FLATS_WORKER_STATEMENT_TIMEOUT_MS:-120000}
     depends_on:
       flats-migrate: { condition: service_completed_successfully }
-      platform-elasticsearch: { condition: service_healthy }
       flats-olx-router: { condition: service_healthy }
       social-fetcher: { condition: service_healthy }
     networks: [ platform ]

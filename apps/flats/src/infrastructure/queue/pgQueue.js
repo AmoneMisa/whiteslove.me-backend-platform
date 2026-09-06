@@ -291,6 +291,19 @@ export async function claimTask({
   };
 }
 
+export async function renewTaskLease({id, lockToken, leaseMs = DEFAULT_LEASE_MS}) {
+  const result = await pool.query(
+    `
+      UPDATE crawl_tasks
+      SET locked_until = NOW() + ($3::bigint * INTERVAL '1 millisecond'), updated_at = NOW()
+      WHERE id = $1 AND status = 'running' AND lock_token = $2::uuid
+      RETURNING locked_until
+    `,
+    [id, lockToken, Math.max(60_000, Number(leaseMs) || DEFAULT_LEASE_MS)],
+  );
+  return result.rowCount > 0;
+}
+
 export async function completeTask({ id, lockToken, result }) {
   const client = await pool.connect();
   try {

@@ -292,6 +292,46 @@ async function refineSourceCoordinateFromExactEntities(listing, country, candida
   return { refined: false, deferred };
 }
 
+function sourceCoordinateIsStrongerThanComplex(listing) {
+  if (listing?.locationApproximate === false) return true;
+  if (String(listing?.locationPrecision || '').toLowerCase() === 'building') return true;
+  return listing?.locationSource === 'address';
+}
+
+export function refineSourceCoordinateFromGeoCatalogResidentialComplex(listing, country) {
+  if (!hasCoordinates(listing) || sourceCoordinateIsStrongerThanComplex(listing)) return false;
+  if (listing.locationSource === 'residentialComplex' && listing.locationProvider === 'geoCatalog') return false;
+
+  const original = { lat: Number(listing.lat), lng: Number(listing.lng) };
+  const probe = {
+    ...listing,
+    lat: null,
+    lng: null,
+    locationSource: null,
+    locationAccuracyM: null,
+    locationExtentM: null,
+    locationPrecision: null,
+    locationApproximate: null,
+    locationCanonical: null,
+    locationRole: null,
+    locationProvider: null,
+    locationProviderId: null,
+    locationProviderType: null,
+    locationGeoEntityId: null,
+  };
+
+  if (!applyGeoCatalogExactAnchor(probe, country)) return false;
+  if (probe.locationSource !== 'residentialComplex' || probe.locationRole === 'nearby') return false;
+
+  const discrepancyM = distanceM(original, probe);
+  if (!Number.isFinite(discrepancyM)) return false;
+
+  Object.assign(listing, probe);
+  listing.sourceCoordinateRefined = true;
+  listing.sourceCoordinateDistanceM = Math.round(discrepancyM);
+  return true;
+}
+
 export async function geocodeListingsPersistent(listings, country) {
   if (!Array.isArray(listings) || !country) return listings;
 

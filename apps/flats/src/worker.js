@@ -9,6 +9,7 @@ import {
   dispatchGenerationIfIdle,
   failTask,
   pruneQueueHistory,
+  renewTaskLease,
 } from './infrastructure/queue/pgQueue.js';
 import {claimCustomSourceTask} from './sources/custom-source-queue.js';
 import {buildCrawlPlan, QUEUE_SHARDS} from './scheduling/queuePlan.js';
@@ -133,6 +134,15 @@ async function failClaim(task, error) {
 }
 
 async function executeClaim(task, label) {
+  const leaseMs = Math.max(60_000, Number(process.env.QUEUE_TASK_LEASE_SECONDS || 300) * 1000);
+  const renewTimer = setInterval(() => {
+    renewTaskLease({id: task.id, lockToken: task.lockToken, leaseMs}).then((renewed) => {
+      if (!renewed) console.warn(`[flat:worker:${label}] task lease lost id=${task.id}`);
+    }).catch((error) => {
+      console.warn(`[flat:worker:${label}] task lease renewal failed id=${task.id}: ${error?.message ?? error}`);
+    });
+  }, Math.max(10_000, Math.floor(leaseMs / 3)));
+  renewTimer.unref?.();
   try {
     const result = await processQueueTask(task.payload || {});
     const outcome = await completeTask({
@@ -150,6 +160,8 @@ async function executeClaim(task, label) {
     );
   } catch (error) {
     await failClaim(task, error);
+  } finally {
+    clearInterval(renewTimer);
   }
 }
 

@@ -16,6 +16,8 @@
 
 import dns from 'node:dns/promises';
 import net from 'node:net';
+import http from 'node:http';
+import https from 'node:https';
 import { makeListing } from '../listing/normalize.js';
 import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
 import { fetchChannel } from './telegram.js';
@@ -87,7 +89,62 @@ async function assertSafeUrl(raw) {
   if (addrs.some(isPrivateIp)) {
     throw new SourceError('URL resolves to a private address');
   }
+  Object.defineProperty(u, '__validatedAddress', {
+    configurable: true,
+    value: addrs[0],
+  });
   return u;
+}
+
+function requestSource(u, timeoutMs) {
+  const transport = u.protocol === 'https:' ? https : http;
+  const address = u.__validatedAddress;
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (error, response) => {
+      if (settled) return;
+      settled = true;
+      if (error) reject(error);
+      else resolve(response);
+    };
+    const request = transport.request({
+      protocol: u.protocol,
+      hostname: u.hostname,
+      port: u.port || undefined,
+      path: `${u.pathname}${u.search}`,
+      method: 'GET',
+      headers: {
+        'User-Agent': BROWSER_UA,
+        Accept: 'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en,ru;q=0.8',
+        'Accept-Encoding': 'identity',
+      },
+      servername: u.hostname,
+      lookup: (_host, _options, callback) => callback(
+        null,
+        address,
+        net.isIPv6(address) ? 6 : 4,
+      ),
+    }, (response) => {
+      const chunks = [];
+      let total = 0;
+      response.on('data', (chunk) => {
+        if (total >= MAX_BYTES) return;
+        const value = Buffer.from(chunk).subarray(0, MAX_BYTES - total);
+        total += value.length;
+        chunks.push(value);
+      });
+      response.on('end', () => finish(null, {
+        status: response.statusCode || 0,
+        headers: response.headers,
+        text: Buffer.concat(chunks).toString('utf8'),
+      }));
+      response.on('error', (error) => finish(error));
+    });
+    request.setTimeout(timeoutMs, () => request.destroy(new Error('Source timed out')));
+    request.on('error', (error) => finish(error));
+    request.end();
+  });
 }
 
 async function fetchText(u, timeoutMs = FETCH_TIMEOUT_MS) {
@@ -100,26 +157,18 @@ async function fetchText(u, timeoutMs = FETCH_TIMEOUT_MS) {
     if (remainingMs <= 0) throw new SourceError('Source timed out');
 
     try {
-      res = await fetch(current.href, {
-        headers: {
-          'User-Agent': BROWSER_UA,
-          Accept: 'text/html,application/xhtml+xml,application/xml,application/json;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'en,ru;q=0.8',
-        },
-        // Never let fetch follow a redirect before we validate its destination.
-        redirect: 'manual',
-        signal: AbortSignal.timeout(remainingMs),
-      });
+      current = await assertSafeUrl(current.href);
+      res = await requestSource(current, remainingMs);
     } catch (e) {
-      if (e.name === 'TimeoutError') throw new SourceError('Source timed out');
+      if (e?.message === 'Source timed out') throw new SourceError('Source timed out');
       throw new SourceError('Could not reach source');
     }
 
     if ([301, 302, 303, 307, 308].includes(res.status)) {
-      const location = res.headers.get('location');
-      try {
-        await res.body?.cancel?.();
-      } catch {}
+      // The node client is already manual, equivalent to fetch's redirect: 'manual'.
+      const location = typeof res.headers.get === 'function'
+        ? res.headers.get('location')
+        : res.headers.location;
       if (!location) throw new SourceError('Source returned an invalid redirect');
       if (redirectCount >= MAX_REDIRECTS) {
         throw new SourceError('Source redirected too many times');
@@ -134,28 +183,12 @@ async function fetchText(u, timeoutMs = FETCH_TIMEOUT_MS) {
   if (res.status === 401 || res.status === 403) {
     throw new SourceError('Source blocked automated access');
   }
-  if (!res.ok) throw new SourceError(`Source returned HTTP ${res.status}`);
+  if (res.status < 200 || res.status >= 300) {
+    throw new SourceError(`Source returned HTTP ${res.status}`);
+  }
 
   // Read with a byte cap so a huge page can't blow up memory.
-  const reader = res.body?.getReader?.();
-  if (!reader) return (await res.text()).slice(0, MAX_BYTES);
-  const chunks = [];
-  let total = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    total += value.length;
-    chunks.push(value);
-    if (total >= MAX_BYTES) {
-      try {
-        await reader.cancel();
-      } catch {
-        // ignore
-      }
-      break;
-    }
-  }
-  return Buffer.concat(chunks.map((c) => Buffer.from(c))).toString('utf8');
+  return res.text;
 }
 
 // ---- extraction ------------------------------------------------------------
@@ -487,7 +520,7 @@ async function scrapeTelegramUrl(u, country) {
   const seg = u.pathname.split('/').filter(Boolean);
   const channel = seg[0] === 's' ? seg[1] : seg[0];
   if (!channel) throw new SourceError('Not a Telegram channel URL');
-  const listings = await fetchChannel(channel, country).catch(() => []);
+  const listings = await fetchChannel({name: channel}, country);
   if (!listings.length) {
     throw new SourceError('No readable listings — the channel is private or empty');
   }
