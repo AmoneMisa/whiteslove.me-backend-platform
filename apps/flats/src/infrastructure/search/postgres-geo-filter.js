@@ -164,9 +164,15 @@ function appendMetroWhere({where, filters, alias, add, geometry}) {
 
   // A legacy/unresolved station can preserve the old name+nearest-distance
   // fallback only when no directional wedge was requested. We cannot safely
-  // invent a bearing without a canonical station coordinate.
-  const resolvedRequested = new Set(resolved.map((station) => String(station.requested || '').toLocaleLowerCase()));
-  const unresolved = names.filter((name) => !resolvedRequested.has(name.toLocaleLowerCase()));
+  // invent a bearing without a canonical station coordinate. Include both the
+  // caller's alias and the canonical name in the resolved set because the HTTP
+  // boundary canonicalizes filters after resolution.
+  const resolvedNames = new Set(
+    resolved.flatMap((station) => [station.requested, station.canonicalName])
+      .map((name) => String(name || '').trim().toLocaleLowerCase())
+      .filter(Boolean),
+  );
+  const unresolved = names.filter((name) => !resolvedNames.has(name.toLocaleLowerCase()));
   if (!arc && unresolved.length) {
     const namePredicate = `LOWER(${alias}.metro) = ANY(${add(unresolved.map((name) => name.toLocaleLowerCase()))}::text[])`;
     if (maxM != null && maxM > 0) {
