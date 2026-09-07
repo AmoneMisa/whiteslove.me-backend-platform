@@ -10,9 +10,10 @@ import {
 } from './catalog-presentation.js';
 import {getAvailableListingLocations} from '../infrastructure/database/listingRepository.js';
 import {
-  deleteGeoCityProjectionNotIn,
+  deleteGeoCityProjectionNotInCountry,
   upsertGeoCityOptions,
   upsertGeoCityZones,
+  verifyGeoCityProjection,
   withGeoSnapshotBuildLock,
 } from '../infrastructure/database/geoSnapshotRepository.js';
 
@@ -40,12 +41,13 @@ function ensureLocation(locations, city) {
   return locations[city];
 }
 
-async function collectCountryLocations(countryCode) {
+async function collectCountryLocations(countryCode, {strict = false} = {}) {
   const locations = cloneLocations(countryCode);
   const cities = new Set([
     ...(COUNTRIES[countryCode]?.crawlCities || []),
     ...Object.keys(locations),
   ]);
+  let dynamicAvailable = true;
 
   try {
     const rows = await getAvailableListingLocations(countryCode);
@@ -58,13 +60,18 @@ async function collectCountryLocations(countryCode) {
       if (district) location.districts.push(district);
     }
   } catch (error) {
-    console.warn(
-      `[geo-snapshot] ${countryCode} dynamic locations unavailable: ${error?.message ?? error}`,
-    );
+    dynamicAvailable = false;
+    const message = `[geo-snapshot] ${countryCode} dynamic locations unavailable: ${error?.message ?? error}`;
+    if (strict) throw new Error(message, {cause: error});
+    console.warn(message);
   }
 
   for (const city of cities) ensureLocation(locations, city);
-  return {cities: [...cities].sort((a, b) => a.localeCompare(b, 'uk')), locations};
+  return {
+    cities: [...cities].sort((a, b) => a.localeCompare(b, 'uk')),
+    locations,
+    dynamicAvailable,
+  };
 }
 
 function contentHash(kind, data) {
@@ -73,15 +80,28 @@ function contentHash(kind, data) {
     .digest('hex');
 }
 
-async function buildAllSnapshots() {
+async function buildAllSnapshots({strict = false, verify = true} = {}) {
   const locales = snapshotLocales();
   const keep = [];
+  const countryInputs = new Map();
+  const skippedPruneCountries = [];
   let snapshots = 0;
   let cities = 0;
+  let deletedSnapshots = 0;
+  let deletedOptions = 0;
   const startedAt = performance.now();
 
+  // In strict deployment-prewarm mode, collect every dynamic source before the
+  // first projection write. A transient DB/source failure then fails the gate
+  // without partially pruning an otherwise good production projection.
   for (const country of COUNTRY_CODES) {
-    const input = await collectCountryLocations(country);
+    countryInputs.set(country, await collectCountryLocations(country, {strict}));
+  }
+
+  for (const country of COUNTRY_CODES) {
+    const input = countryInputs.get(country);
+    const countryKeep = [];
+
     for (const city of input.cities) {
       const baseLocation = input.locations[city] || {districts: [], metro: []};
       const canonicalZones = mapZonesFor(country, city, baseLocation.districts);
@@ -106,7 +126,10 @@ async function buildAllSnapshots() {
           options,
           sourceHash: contentHash('options', options),
         });
-        keep.push({country, city, locale});
+
+        const key = {country, city, locale};
+        keep.push(key);
+        countryKeep.push(key);
         snapshots += 1;
       }
 
@@ -114,22 +137,46 @@ async function buildAllSnapshots() {
       // keeps queue lease renewals and other worker timers responsive.
       await new Promise((resolve) => setImmediate(resolve));
     }
+
+    if (input.dynamicAvailable) {
+      const deleted = await deleteGeoCityProjectionNotInCountry(country, countryKeep);
+      deletedSnapshots += deleted.snapshots;
+      deletedOptions += deleted.options;
+    } else {
+      // Keep the previous good rows for dynamic/listing-only cities until a
+      // later refresh can read the complete source again.
+      skippedPruneCountries.push(country);
+    }
   }
 
-  const deletedRows = await deleteGeoCityProjectionNotIn(keep);
+  const coverage = verify
+    ? await verifyGeoCityProjection(keep)
+    : {expected: keep.length, snapshots: keep.length, options: keep.length, missing: []};
+
+  if (coverage.missing.length) {
+    const preview = coverage.missing.slice(0, 5);
+    throw new Error(
+      `geo projection verification failed: ${coverage.missing.length} missing rows ` +
+      `${JSON.stringify(preview)}`,
+    );
+  }
+
   return {
     cities,
     snapshots,
-    deleted: deletedRows.snapshots + deletedRows.options,
-    deletedSnapshots: deletedRows.snapshots,
-    deletedOptions: deletedRows.options,
+    deleted: deletedSnapshots + deletedOptions,
+    deletedSnapshots,
+    deletedOptions,
     locales,
+    strict,
+    verified: coverage.expected,
+    skippedPruneCountries,
     durationMs: Math.round(performance.now() - startedAt),
   };
 }
 
-export async function syncGeoCitySnapshots() {
-  const locked = await withGeoSnapshotBuildLock(buildAllSnapshots);
+export async function syncGeoCitySnapshots(options = {}) {
+  const locked = await withGeoSnapshotBuildLock(() => buildAllSnapshots(options));
   if (!locked.locked) return {skipped: true, reason: 'locked'};
   return {skipped: false, ...locked.result};
 }
