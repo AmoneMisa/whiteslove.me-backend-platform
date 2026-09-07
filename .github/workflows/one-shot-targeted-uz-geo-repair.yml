@@ -1,0 +1,246 @@
+name: One-shot targeted UZ geo repair
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/one-shot-targeted-uz-geo-repair.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Repair only audited UZ listings
+        uses: appleboy/ssh-action@v1.2.1
+        with:
+          host: ${{ vars.SERVER_HOST }}
+          username: ${{ vars.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            cd /opt/backend
+
+            EXPECTED_SHA='${{ github.sha }}'
+            VOKZAL_IDS='6714420,8512167,8817511,8817513,8817514,8817515,8912172,8913193,8993401'
+            YANGI_IDS='6965161,6966942'
+            ALL_IDS='6714420,6965161,6966942,8512167,8817511,8817513,8817514,8817515,8912172,8913193,8993401'
+
+            echo "Waiting for production to contain ${EXPECTED_SHA} ..."
+            for attempt in $(seq 1 120); do
+              ACTUAL_SHA="$(git rev-parse HEAD)"
+              if git merge-base --is-ancestor "${EXPECTED_SHA}" "${ACTUAL_SHA}" 2>/dev/null; then
+                break
+              fi
+              if [ "$attempt" -eq 120 ]; then
+                echo "Production checkout never reached ${EXPECTED_SHA}; current=${ACTUAL_SHA}" >&2
+                exit 1
+              fi
+              sleep 5
+            done
+            ACTUAL_SHA="$(git rev-parse HEAD)"
+            echo "Production checkout: ${ACTUAL_SHA}"
+            git merge-base --is-ancestor "${EXPECTED_SHA}" "${ACTUAL_SHA}"
+
+            run_flats() {
+              docker compose exec -T \
+                -e NODE_OPTIONS=--max-old-space-size=384 \
+                flats-api "$@"
+            }
+
+            pg_scalar() {
+              docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" -At'
+            }
+
+            echo '--- Host memory before targeted repair ---'
+            free -h
+            docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}' || true
+
+            # Phase 1 is deliberately read-only. Both target sets must pass
+            # their SQL preflight and their scoped backfill dry-run before the
+            # first UPDATE is allowed to happen.
+            echo '--- Read-only preflight: exact Vokzal target set ---'
+            VOKZAL_ROWS="$(pg_scalar <<'SQL'
+            SELECT count(*)
+            FROM flats.listings
+            WHERE active = TRUE
+              AND country = 'UZ'
+              AND city = 'Samarkand'
+              AND id = ANY(ARRAY[6714420,8512167,8817511,8817513,8817514,8817515,8912172,8913193,8993401]::bigint[])
+              AND data->>'sourceMicrodistrict' = 'Vokzal'
+              AND data->>'microdistrict' IN ('Samarkand Railway Station', 'Vokzal');
+            SQL
+            )"
+            VOKZAL_ROWS="$(printf '%s' "$VOKZAL_ROWS" | tr -d '[:space:]')"
+            test "$VOKZAL_ROWS" = '9'
+
+            CANONICAL_DRY="$(mktemp)"
+            run_flats npm run backfill:location-canonicals -- \
+              --country=UZ --ids="$VOKZAL_IDS" --batch-size=25 --preview=20 \
+              | tee "$CANONICAL_DRY"
+
+            CANONICAL_NEEDS_APPLY=0
+            if grep -Fq '[location-canonical-backfill] scanned=9 refinable=9 applied=0' "$CANONICAL_DRY"; then
+              CANONICAL_NEEDS_APPLY=1
+              for id in $(printf '%s' "$VOKZAL_IDS" | tr ',' ' '); do
+                LINE="$(grep -F "\"dbId\":\"${id}\"" "$CANONICAL_DRY")"
+                test -n "$LINE"
+                printf '%s\n' "$LINE" | grep -Fq '"microdistrict":{"from":"Samarkand Railway Station","to":"Vokzal"}'
+              done
+            elif grep -Fq '[location-canonical-backfill] scanned=9 refinable=0 applied=0' "$CANONICAL_DRY"; then
+              echo 'All nine Vokzal rows are already idempotent.'
+            else
+              echo 'Unexpected Vokzal dry-run state; refusing all writes.' >&2
+              exit 1
+            fi
+
+            echo '--- Read-only preflight: exact Yangi Sergeli target set ---'
+            YANGI_ROWS="$(pg_scalar <<'SQL'
+            SELECT count(*)
+            FROM flats.listings
+            WHERE active = TRUE
+              AND country = 'UZ'
+              AND city = 'Tashkent'
+              AND id = ANY(ARRAY[6965161,6966942]::bigint[])
+              AND residence_complex = 'Yangi Sergeli'
+              AND COALESCE(data->>'residenceComplex', residence_complex) = 'Yangi Sergeli';
+            SQL
+            )"
+            YANGI_ROWS="$(printf '%s' "$YANGI_ROWS" | tr -d '[:space:]')"
+            test "$YANGI_ROWS" = '2'
+
+            RESIDENTIAL_DRY="$(mktemp)"
+            run_flats npm run backfill:residential-coordinates -- \
+              --country=UZ --ids="$YANGI_IDS" --batch-size=25 --preview=10 \
+              | tee "$RESIDENTIAL_DRY"
+
+            RESIDENTIAL_NEEDS_APPLY=0
+            if grep -Fq '[residential-coordinate-backfill] scanned=2 refinable=2 applied=0' "$RESIDENTIAL_DRY"; then
+              RESIDENTIAL_NEEDS_APPLY=1
+              for id in $(printf '%s' "$YANGI_IDS" | tr ',' ' '); do
+                LINE="$(grep -F "\"dbId\":\"${id}\"" "$RESIDENTIAL_DRY")"
+                test -n "$LINE"
+                printf '%s\n' "$LINE" | grep -Fq '"to":{"lat":41.222096,"lng":69.224966}'
+                printf '%s\n' "$LINE" | grep -Fq '"geoEntityId":"uz:tashkent:residential:yangi-sergeli"'
+              done
+            elif grep -Fq '[residential-coordinate-backfill] scanned=2 refinable=0 applied=0' "$RESIDENTIAL_DRY"; then
+              echo 'Both Yangi Sergeli rows are already idempotent.'
+            else
+              echo 'Unexpected Yangi Sergeli dry-run state; refusing all writes.' >&2
+              exit 1
+            fi
+
+            echo '--- Phase 2: scoped writes only after both dry-runs passed ---'
+            if [ "$CANONICAL_NEEDS_APPLY" -eq 1 ]; then
+              CANONICAL_APPLY="$(mktemp)"
+              run_flats npm run backfill:location-canonicals -- \
+                --country=UZ --ids="$VOKZAL_IDS" --batch-size=25 --preview=20 --apply \
+                | tee "$CANONICAL_APPLY"
+              grep -Fq '[location-canonical-backfill] scanned=9 refinable=9 applied=9' "$CANONICAL_APPLY"
+            fi
+
+            CANONICAL_CONTROL="$(mktemp)"
+            run_flats npm run backfill:location-canonicals -- \
+              --country=UZ --ids="$VOKZAL_IDS" --batch-size=25 --preview=20 \
+              | tee "$CANONICAL_CONTROL"
+            grep -Fq '[location-canonical-backfill] scanned=9 refinable=0 applied=0' "$CANONICAL_CONTROL"
+
+            VOKZAL_FIXED="$(pg_scalar <<'SQL'
+            SELECT count(*)
+            FROM flats.listings l
+            WHERE l.active = TRUE
+              AND l.country = 'UZ'
+              AND l.city = 'Samarkand'
+              AND l.id = ANY(ARRAY[6714420,8512167,8817511,8817513,8817514,8817515,8912172,8913193,8993401]::bigint[])
+              AND l.data->>'microdistrict' = 'Vokzal'
+              AND EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(COALESCE(l.data->'locationEntities', '[]'::jsonb)) AS entity
+                WHERE entity->>'type' = 'microdistrict'
+                  AND entity->>'name' = 'Vokzal'
+              )
+              AND NOT EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements(COALESCE(l.data->'locationEntities', '[]'::jsonb)) AS entity
+                WHERE entity->>'type' = 'microdistrict'
+                  AND entity->>'name' = 'Samarkand Railway Station'
+              );
+            SQL
+            )"
+            VOKZAL_FIXED="$(printf '%s' "$VOKZAL_FIXED" | tr -d '[:space:]')"
+            test "$VOKZAL_FIXED" = '9'
+
+            if [ "$RESIDENTIAL_NEEDS_APPLY" -eq 1 ]; then
+              RESIDENTIAL_APPLY="$(mktemp)"
+              run_flats npm run backfill:residential-coordinates -- \
+                --country=UZ --ids="$YANGI_IDS" --batch-size=25 --preview=10 --apply \
+                | tee "$RESIDENTIAL_APPLY"
+              grep -Fq '[residential-coordinate-backfill] scanned=2 refinable=2 applied=2' "$RESIDENTIAL_APPLY"
+            fi
+
+            RESIDENTIAL_CONTROL="$(mktemp)"
+            run_flats npm run backfill:residential-coordinates -- \
+              --country=UZ --ids="$YANGI_IDS" --batch-size=25 --preview=10 \
+              | tee "$RESIDENTIAL_CONTROL"
+            grep -Fq '[residential-coordinate-backfill] scanned=2 refinable=0 applied=0' "$RESIDENTIAL_CONTROL"
+
+            YANGI_FIXED="$(pg_scalar <<'SQL'
+            SELECT count(*)
+            FROM flats.listings
+            WHERE active = TRUE
+              AND country = 'UZ'
+              AND city = 'Tashkent'
+              AND id = ANY(ARRAY[6965161,6966942]::bigint[])
+              AND residence_complex = 'Yangi Sergeli'
+              AND data->>'residenceComplex' = 'Yangi Sergeli'
+              AND (data->>'lat')::double precision = 41.222096
+              AND (data->>'lng')::double precision = 69.224966
+              AND data->>'locationSource' = 'residentialComplex'
+              AND data->>'locationProvider' = 'geoCatalog'
+              AND data->>'locationGeoEntityId' = 'uz:tashkent:residential:yangi-sergeli';
+            SQL
+            )"
+            YANGI_FIXED="$(printf '%s' "$YANGI_FIXED" | tr -d '[:space:]')"
+            test "$YANGI_FIXED" = '2'
+
+            # Full reindex deletes the live index first. Do not use it here:
+            # only the eleven verified rows are refreshed in-place.
+            echo '--- Targeted Elasticsearch update: eleven verified rows ---'
+            REINDEX_LOG="$(mktemp)"
+            run_flats npm run reindex:listings -- --ids="$ALL_IDS" | tee "$REINDEX_LOG"
+            grep -Fq '[targeted-reindex] indexed=11' "$REINDEX_LOG"
+
+            echo '--- Final database verification ---'
+            docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+            SELECT
+              id,
+              source,
+              source_id,
+              city,
+              data->>'microdistrict' AS microdistrict,
+              data->>'sourceMicrodistrict' AS source_microdistrict
+            FROM flats.listings
+            WHERE id = ANY(ARRAY[6714420,8512167,8817511,8817513,8817514,8817515,8912172,8913193,8993401]::bigint[])
+            ORDER BY id;
+
+            SELECT
+              id,
+              source_id,
+              residence_complex,
+              data->>'lat' AS lat,
+              data->>'lng' AS lng,
+              data->>'locationSource' AS location_source,
+              data->>'locationProvider' AS location_provider,
+              data->>'locationGeoEntityId' AS location_geo_entity_id
+            FROM flats.listings
+            WHERE id = ANY(ARRAY[6965161,6966942]::bigint[])
+            ORDER BY id;
+            SQL
+
+            echo '--- Host memory after targeted repair ---'
+            free -h
+            echo '--- Targeted UZ geo repair complete ---'
