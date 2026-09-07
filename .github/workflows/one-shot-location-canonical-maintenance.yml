@@ -25,26 +25,29 @@ jobs:
             set -euo pipefail
             cd /opt/backend
 
-            EXPECTED_SHA='${{ github.sha }}'
-            echo "Waiting for production checkout ${EXPECTED_SHA} ..."
-            for attempt in $(seq 1 120); do
-              ACTUAL_SHA="$(git rev-parse HEAD)"
-              if [ "${ACTUAL_SHA}" = "${EXPECTED_SHA}" ]; then
-                break
-              fi
-              if [ "$attempt" -eq 120 ]; then
-                echo "Production checkout did not reach ${EXPECTED_SHA}; current=${ACTUAL_SHA}" >&2
-                exit 1
-              fi
-              sleep 5
-            done
-
+            # The previous production deploy already contains the type-safe
+            # canonicalization code. This workflow-only follow-up is not itself
+            # deployed, so require that code commit (or a descendant), rather
+            # than requiring the workflow commit to be the server checkout.
+            REQUIRED_CODE_SHA='88b62ff0abdf7a82bbf41e163db4242e9250f24b'
             ACTUAL_SHA="$(git rev-parse HEAD)"
             echo "Production checkout: ${ACTUAL_SHA}"
-            test "${ACTUAL_SHA}" = "${EXPECTED_SHA}"
+            git merge-base --is-ancestor "${REQUIRED_CODE_SHA}" "${ACTUAL_SHA}"
 
+            echo '--- Host memory before audit ---'
+            free -h
+            docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}' || true
+
+            # The first audit attempt was killed by the host (exit 137) while a
+            # 250-row batch duplicated large listing JSON inside the live API
+            # container. Keep the audit read-only, reduce the batch by 10x and
+            # cap the maintenance Node heap so it cannot pressure production.
             echo '--- Canonical geography dry run (UZ) ---'
-            docker compose exec -T flats-api npm run backfill:location-canonicals -- --country=UZ --batch-size=250 --preview=100
+            docker compose exec -T \
+              -e NODE_OPTIONS=--max-old-space-size=384 \
+              flats-api \
+              npm run backfill:location-canonicals -- \
+              --country=UZ --batch-size=25 --preview=100
 
             echo '--- Cross-type regression audit (Samarkand/Vokzal) ---'
             docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
@@ -70,7 +73,11 @@ jobs:
             SQL
 
             echo '--- Residential coordinate dry run (UZ) ---'
-            docker compose exec -T flats-api npm run backfill:residential-coordinates -- --country=UZ --batch-size=250 --preview=100
+            docker compose exec -T \
+              -e NODE_OPTIONS=--max-old-space-size=384 \
+              flats-api \
+              npm run backfill:residential-coordinates -- \
+              --country=UZ --batch-size=25 --preview=100
 
             echo '--- Listing 6965161 audit ---'
             docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
@@ -94,4 +101,6 @@ jobs:
             ORDER BY id ASC;
             SQL
 
+            echo '--- Host memory after audit ---'
+            free -h
             echo '--- Audit complete: no database writes and no reindex were performed ---'
