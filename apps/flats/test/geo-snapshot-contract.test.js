@@ -15,6 +15,10 @@ const snapshotSyncSource = readFileSync(
   new URL('../src/geo/geo-city-snapshot-sync.js', import.meta.url),
   'utf8',
 );
+const projectionWriterSource = readFileSync(
+  new URL('../src/infrastructure/database/geoProjectionWriter.js', import.meta.url),
+  'utf8',
+);
 const strictSyncCliSource = readFileSync(
   new URL('../src/sync-geo-snapshots.js', import.meta.url),
   'utf8',
@@ -45,12 +49,24 @@ test('catalog request path reads persisted geo projection instead of rebuilding 
   assert.match(catalogRoutesSource, /Geo snapshot is warming/);
 });
 
-test('worker snapshot builder owns expensive geo construction and writes both projections', () => {
+test('worker snapshot builder owns expensive geo construction and writes one atomic projection', () => {
   assert.match(snapshotSyncSource, /mapZonesFor/);
   assert.match(snapshotSyncSource, /getAvailableListingLocations/);
-  assert.match(snapshotSyncSource, /upsertGeoCityZones/);
-  assert.match(snapshotSyncSource, /upsertGeoCityOptions/);
+  assert.match(snapshotSyncSource, /upsertGeoCityProjection/);
+  assert.doesNotMatch(snapshotSyncSource, /upsertGeoCityZones/);
+  assert.doesNotMatch(snapshotSyncSource, /upsertGeoCityOptions/);
   assert.match(snapshotSyncSource, /setImmediate/);
+});
+
+test('city map and selector rows are updated atomically and verified by content hash', () => {
+  assert.match(projectionWriterSource, /WITH zones_upsert AS/);
+  assert.match(projectionWriterSource, /options_upsert AS/);
+  assert.match(projectionWriterSource, /CROSS JOIN options_upsert/);
+  assert.match(projectionWriterSource, /snapshot\.source_hash = expected\.zones_hash/);
+  assert.match(projectionWriterSource, /option_row\.source_hash = expected\.options_hash/);
+  assert.match(snapshotSyncSource, /verifyGeoCityProjectionVersions/);
+  assert.match(snapshotSyncSource, /zonesHash/);
+  assert.match(snapshotSyncSource, /optionsHash/);
 });
 
 test('background geo refresh never prunes a country after incomplete dynamic collection', () => {
@@ -65,7 +81,7 @@ test('deployment geo prewarm is strict and verifies both read models', () => {
   assert.match(strictSyncCliSource, /strict:\s*true/);
   assert.match(strictSyncCliSource, /verify:\s*true/);
   assert.match(strictSyncCliSource, /prewarm skipped/);
-  assert.match(snapshotSyncSource, /verifyGeoCityProjection/);
+  assert.match(snapshotSyncSource, /verifyGeoCityProjectionVersions/);
   assert.match(snapshotSyncSource, /projection verification failed/);
 });
 
@@ -104,7 +120,7 @@ test('flats deploy prewarms geo before api cutover and smoke-checks Tashkent', (
   assert.match(deploySource, /api\/countries\?locale=ru/);
   assert.match(deploySource, /api\/district-zones\?country=UZ/);
 
-  const migrateAt = deploySource.indexOf("flats phase 1/5: migrate schema");
+  const migrateAt = deploySource.indexOf('flats phase 1/5: migrate schema');
   const prewarmAt = deploySource.indexOf('flats phase 2/5: strict geo prewarm');
   const apiAt = deploySource.indexOf('flats phase 3/5: cut over flats-api');
   const smokeAt = deploySource.indexOf('flats phase 4/5: smoke materialized geo endpoints');
