@@ -11,11 +11,12 @@ import {
 import {getAvailableListingLocations} from '../infrastructure/database/listingRepository.js';
 import {
   deleteGeoCityProjectionNotInCountry,
-  upsertGeoCityOptions,
-  upsertGeoCityZones,
-  verifyGeoCityProjection,
   withGeoSnapshotBuildLock,
 } from '../infrastructure/database/geoSnapshotRepository.js';
+import {
+  upsertGeoCityProjection,
+  verifyGeoCityProjectionVersions,
+} from '../infrastructure/database/geoProjectionWriter.js';
 
 const SNAPSHOT_SCHEMA_VERSION = 2;
 
@@ -111,23 +112,23 @@ async function buildAllSnapshots({strict = false, verify = true} = {}) {
       for (const locale of locales) {
         const zones = localizedMapZones(canonicalZones, locale, country, city);
         const options = localizedLocationOptions(canonicalOptions, locale, country, city);
+        const zonesHash = contentHash('zones', zones);
+        const optionsHash = contentHash('options', options);
 
-        await upsertGeoCityZones({
+        // Map geometry and selector arrays are one logical read-model version.
+        // Persist both in one atomic PostgreSQL statement so readers can never
+        // observe a half-updated city/locale pair.
+        await upsertGeoCityProjection({
           country,
           city,
           locale,
           zones,
-          sourceHash: contentHash('zones', zones),
-        });
-        await upsertGeoCityOptions({
-          country,
-          city,
-          locale,
+          zonesSourceHash: zonesHash,
           options,
-          sourceHash: contentHash('options', options),
+          optionsSourceHash: optionsHash,
         });
 
-        const key = {country, city, locale};
+        const key = {country, city, locale, zonesHash, optionsHash};
         keep.push(key);
         countryKeep.push(key);
         snapshots += 1;
@@ -150,13 +151,13 @@ async function buildAllSnapshots({strict = false, verify = true} = {}) {
   }
 
   const coverage = verify
-    ? await verifyGeoCityProjection(keep)
+    ? await verifyGeoCityProjectionVersions(keep)
     : {expected: keep.length, snapshots: keep.length, options: keep.length, missing: []};
 
   if (coverage.missing.length) {
     const preview = coverage.missing.slice(0, 5);
     throw new Error(
-      `geo projection verification failed: ${coverage.missing.length} missing rows ` +
+      `geo projection verification failed: ${coverage.missing.length} missing/stale rows ` +
       `${JSON.stringify(preview)}`,
     );
   }
