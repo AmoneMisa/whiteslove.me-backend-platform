@@ -93,7 +93,7 @@ export function makeListing(partial) {
   const country = parseCanonicalCountryCode(partial.country) || '';
   const propertyType = partial.propertyType === 'house' ? 'house' : 'flat';
   const listingFields = parseHousingListingFields(combined, {country});
-  const housingStructured = parseHousingStructuredContext(combined);
+  const housingStructured = parseHousingStructuredContext(combined, {country});
   const byAgency = partial.byAgency != null
     ? Boolean(partial.byAgency)
     : housingStructured.seller.type === 'agency';
@@ -128,10 +128,11 @@ export function makeListing(partial) {
     TJS: 90_000,
     RUB: 700_000,
   };
+  // Price is only a fallback when text/source semantics did not classify the
+  // deal. It must never overwrite explicit long- or short-rent intent.
   if (
     partial.dealType == null &&
-    dealType !== 'sale' &&
-    dealType !== 'shortRent' &&
+    parsedDealType == null &&
     partial.price != null
   ) {
     const floor = SALE_FLOOR[String(partial.currency ?? '').toUpperCase()];
