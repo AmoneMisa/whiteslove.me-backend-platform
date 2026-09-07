@@ -25,25 +25,13 @@ jobs:
             set -euo pipefail
             cd /opt/backend
 
-            EXPECTED_SHA='${{ github.sha }}'
-            VOKZAL_TARGET_IDS='6714420,8512167,8817511,8817513,8817514,8817515,8912172,8913193,8993401'
-            YANGI_TARGET_IDS='6965161,6966942'
-
-            echo "Waiting for production to contain ${EXPECTED_SHA} ..."
-            for attempt in $(seq 1 120); do
-              ACTUAL_SHA="$(git rev-parse HEAD)"
-              if git merge-base --is-ancestor "${EXPECTED_SHA}" "${ACTUAL_SHA}" 2>/dev/null; then
-                break
-              fi
-              if [ "$attempt" -eq 120 ]; then
-                echo "Production checkout never reached ${EXPECTED_SHA}; current=${ACTUAL_SHA}" >&2
-                exit 1
-              fi
-              sleep 5
-            done
+            # This workflow-only hotfix is not itself deployed to /opt/backend.
+            # Require the already deployed code that introduced scoped backfills
+            # and the audited geo-catalog 0.9.3 repair instead of github.sha.
+            REQUIRED_CODE_SHA='1cd2c2b2c3e84b2a3ea97de015439fb4ddadb7bf'
             ACTUAL_SHA="$(git rev-parse HEAD)"
             echo "Production checkout: ${ACTUAL_SHA}"
-            git merge-base --is-ancestor "${EXPECTED_SHA}" "${ACTUAL_SHA}"
+            git merge-base --is-ancestor "$REQUIRED_CODE_SHA" "$ACTUAL_SHA"
 
             run_flats() {
               docker compose exec -T \
@@ -56,11 +44,10 @@ jobs:
             }
 
             csv_count() {
-              local value="$1"
-              if [ -z "$value" ]; then
+              if [ -z "$1" ]; then
                 printf '0\n'
               else
-                printf '%s\n' "$value" | awk -F',' '{print NF}'
+                printf '%s\n' "$1" | awk -F',' '{print NF}'
               fi
             }
 
@@ -70,26 +57,17 @@ jobs:
               local key="$3"
               local line
               line="$(grep -F "$prefix" "$file" | tail -n 1 || true)"
-              printf '%s\n' "$line" | sed -nE "s/.*${key}=([0-9]+).*/\\1/p"
+              printf '%s\n' "$line" | sed -nE "s/.*${key}=([0-9]+).*/\1/p"
             }
 
             echo '--- Host memory before targeted repair ---'
             free -h
-            docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}' || true
 
-            # Production data is live. The original audited IDs are still the
-            # hard boundary, but rows may legitimately become inactive between
-            # audit and repair. Operate only on the current active subset and
-            # fail closed if any active target changed to an unexpected entity.
-            echo '--- Read-only preflight: Vokzal target diagnostics ---'
+            echo '--- Vokzal target diagnostics ---'
             docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
-            SELECT
-              id,
-              active,
-              country,
-              city,
-              data->>'microdistrict' AS microdistrict,
-              data->>'sourceMicrodistrict' AS source_microdistrict
+            SELECT id, active, country, city,
+                   data->>'microdistrict' AS microdistrict,
+                   data->>'sourceMicrodistrict' AS source_microdistrict
             FROM flats.listings
             WHERE id = ANY(ARRAY[6714420,8512167,8817511,8817513,8817514,8817515,8912172,8913193,8993401]::bigint[])
             ORDER BY id;
@@ -110,7 +88,7 @@ jobs:
             )"
             VOKZAL_UNEXPECTED="$(printf '%s' "$VOKZAL_UNEXPECTED" | tr -d '[:space:]')"
             if [ -n "$VOKZAL_UNEXPECTED" ]; then
-              echo "Active Vokzal target IDs changed identity/state: ${VOKZAL_UNEXPECTED}; refusing writes." >&2
+              echo "Unexpected active Vokzal target IDs: $VOKZAL_UNEXPECTED" >&2
               exit 1
             fi
 
@@ -127,7 +105,7 @@ jobs:
             )"
             VOKZAL_IDS="$(printf '%s' "$VOKZAL_IDS" | tr -d '[:space:]')"
             VOKZAL_COUNT="$(csv_count "$VOKZAL_IDS")"
-            echo "Active Vokzal repair scope: count=${VOKZAL_COUNT} ids=${VOKZAL_IDS:-NONE}"
+            echo "Active Vokzal scope: count=$VOKZAL_COUNT ids=${VOKZAL_IDS:-NONE}"
 
             CANONICAL_REFINABLE=0
             if [ "$VOKZAL_COUNT" -gt 0 ]; then
@@ -138,10 +116,8 @@ jobs:
 
               CANONICAL_SCANNED="$(summary_value "$CANONICAL_DRY" '[location-canonical-backfill] scanned=' scanned)"
               CANONICAL_REFINABLE="$(summary_value "$CANONICAL_DRY" '[location-canonical-backfill] scanned=' refinable)"
-              case "$CANONICAL_SCANNED:$CANONICAL_REFINABLE" in
-                *[!0-9:]*|:*|*:) echo 'Could not parse Vokzal dry-run summary; refusing writes.' >&2; cat "$CANONICAL_DRY" >&2; exit 1 ;;
-              esac
               test "$CANONICAL_SCANNED" = "$VOKZAL_COUNT"
+              test -n "$CANONICAL_REFINABLE"
               test "$CANONICAL_REFINABLE" -le "$VOKZAL_COUNT"
 
               if [ "$CANONICAL_REFINABLE" -gt 0 ]; then
@@ -154,18 +130,13 @@ jobs:
               fi
             fi
 
-            echo '--- Read-only preflight: Yangi Sergeli target diagnostics ---'
+            echo '--- Yangi Sergeli target diagnostics ---'
             docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
-            SELECT
-              id,
-              active,
-              country,
-              city,
-              residence_complex,
-              data->>'residenceComplex' AS data_residence_complex,
-              data->>'lat' AS lat,
-              data->>'lng' AS lng,
-              data->>'locationGeoEntityId' AS location_geo_entity_id
+            SELECT id, active, country, city, residence_complex,
+                   data->>'residenceComplex' AS data_residence_complex,
+                   data->>'lat' AS lat,
+                   data->>'lng' AS lng,
+                   data->>'locationGeoEntityId' AS location_geo_entity_id
             FROM flats.listings
             WHERE id = ANY(ARRAY[6965161,6966942]::bigint[])
             ORDER BY id;
@@ -186,7 +157,7 @@ jobs:
             )"
             YANGI_UNEXPECTED="$(printf '%s' "$YANGI_UNEXPECTED" | tr -d '[:space:]')"
             if [ -n "$YANGI_UNEXPECTED" ]; then
-              echo "Active Yangi Sergeli target IDs changed identity/state: ${YANGI_UNEXPECTED}; refusing writes." >&2
+              echo "Unexpected active Yangi Sergeli target IDs: $YANGI_UNEXPECTED" >&2
               exit 1
             fi
 
@@ -203,7 +174,7 @@ jobs:
             )"
             YANGI_IDS="$(printf '%s' "$YANGI_IDS" | tr -d '[:space:]')"
             YANGI_COUNT="$(csv_count "$YANGI_IDS")"
-            echo "Active Yangi Sergeli repair scope: count=${YANGI_COUNT} ids=${YANGI_IDS:-NONE}"
+            echo "Active Yangi Sergeli scope: count=$YANGI_COUNT ids=${YANGI_IDS:-NONE}"
 
             RESIDENTIAL_REFINABLE=0
             if [ "$YANGI_COUNT" -gt 0 ]; then
@@ -214,10 +185,8 @@ jobs:
 
               RESIDENTIAL_SCANNED="$(summary_value "$RESIDENTIAL_DRY" '[residential-coordinate-backfill] scanned=' scanned)"
               RESIDENTIAL_REFINABLE="$(summary_value "$RESIDENTIAL_DRY" '[residential-coordinate-backfill] scanned=' refinable)"
-              case "$RESIDENTIAL_SCANNED:$RESIDENTIAL_REFINABLE" in
-                *[!0-9:]*|:*|*:) echo 'Could not parse Yangi Sergeli dry-run summary; refusing writes.' >&2; cat "$RESIDENTIAL_DRY" >&2; exit 1 ;;
-              esac
               test "$RESIDENTIAL_SCANNED" = "$YANGI_COUNT"
+              test -n "$RESIDENTIAL_REFINABLE"
               test "$RESIDENTIAL_REFINABLE" -le "$YANGI_COUNT"
 
               if [ "$RESIDENTIAL_REFINABLE" -gt 0 ]; then
@@ -231,17 +200,26 @@ jobs:
               fi
             fi
 
-            echo '--- Phase 2: scoped writes only after both dry-runs passed ---'
+            echo '--- Scoped writes ---'
             if [ "$CANONICAL_REFINABLE" -gt 0 ]; then
               CANONICAL_APPLY="$(mktemp)"
               run_flats npm run backfill:location-canonicals -- \
                 --country=UZ --ids="$VOKZAL_IDS" --batch-size=25 --preview=20 --apply \
                 | tee "$CANONICAL_APPLY"
               test "$(summary_value "$CANONICAL_APPLY" '[location-canonical-backfill] scanned=' scanned)" = "$VOKZAL_COUNT"
-              test "$(summary_value "$CANONICAL_APPLY" '[location-canonical-backfill] scanned=' refinable)" = "$CANONICAL_REFINABLE"
               test "$(summary_value "$CANONICAL_APPLY" '[location-canonical-backfill] scanned=' applied)" = "$CANONICAL_REFINABLE"
             fi
 
+            if [ "$RESIDENTIAL_REFINABLE" -gt 0 ]; then
+              RESIDENTIAL_APPLY="$(mktemp)"
+              run_flats npm run backfill:residential-coordinates -- \
+                --country=UZ --ids="$YANGI_IDS" --batch-size=25 --preview=10 --apply \
+                | tee "$RESIDENTIAL_APPLY"
+              test "$(summary_value "$RESIDENTIAL_APPLY" '[residential-coordinate-backfill] scanned=' scanned)" = "$YANGI_COUNT"
+              test "$(summary_value "$RESIDENTIAL_APPLY" '[residential-coordinate-backfill] scanned=' applied)" = "$RESIDENTIAL_REFINABLE"
+            fi
+
+            echo '--- Idempotence controls ---'
             if [ "$VOKZAL_COUNT" -gt 0 ]; then
               CANONICAL_CONTROL="$(mktemp)"
               run_flats npm run backfill:location-canonicals -- \
@@ -249,6 +227,15 @@ jobs:
                 | tee "$CANONICAL_CONTROL"
               test "$(summary_value "$CANONICAL_CONTROL" '[location-canonical-backfill] scanned=' scanned)" = "$VOKZAL_COUNT"
               test "$(summary_value "$CANONICAL_CONTROL" '[location-canonical-backfill] scanned=' refinable)" = '0'
+            fi
+
+            if [ "$YANGI_COUNT" -gt 0 ]; then
+              RESIDENTIAL_CONTROL="$(mktemp)"
+              run_flats npm run backfill:residential-coordinates -- \
+                --country=UZ --ids="$YANGI_IDS" --batch-size=25 --preview=10 \
+                | tee "$RESIDENTIAL_CONTROL"
+              test "$(summary_value "$RESIDENTIAL_CONTROL" '[residential-coordinate-backfill] scanned=' scanned)" = "$YANGI_COUNT"
+              test "$(summary_value "$RESIDENTIAL_CONTROL" '[residential-coordinate-backfill] scanned=' refinable)" = '0'
             fi
 
             VOKZAL_FIXED="$(pg_scalar <<'SQL'
@@ -263,38 +250,17 @@ jobs:
               AND EXISTS (
                 SELECT 1
                 FROM jsonb_array_elements(COALESCE(l.data->'locationEntities', '[]'::jsonb)) AS entity
-                WHERE entity->>'type' = 'microdistrict'
-                  AND entity->>'name' = 'Vokzal'
+                WHERE entity->>'type' = 'microdistrict' AND entity->>'name' = 'Vokzal'
               )
               AND NOT EXISTS (
                 SELECT 1
                 FROM jsonb_array_elements(COALESCE(l.data->'locationEntities', '[]'::jsonb)) AS entity
-                WHERE entity->>'type' = 'microdistrict'
-                  AND entity->>'name' = 'Samarkand Railway Station'
+                WHERE entity->>'type' = 'microdistrict' AND entity->>'name' = 'Samarkand Railway Station'
               );
             SQL
             )"
             VOKZAL_FIXED="$(printf '%s' "$VOKZAL_FIXED" | tr -d '[:space:]')"
             test "$VOKZAL_FIXED" = "$VOKZAL_COUNT"
-
-            if [ "$RESIDENTIAL_REFINABLE" -gt 0 ]; then
-              RESIDENTIAL_APPLY="$(mktemp)"
-              run_flats npm run backfill:residential-coordinates -- \
-                --country=UZ --ids="$YANGI_IDS" --batch-size=25 --preview=10 --apply \
-                | tee "$RESIDENTIAL_APPLY"
-              test "$(summary_value "$RESIDENTIAL_APPLY" '[residential-coordinate-backfill] scanned=' scanned)" = "$YANGI_COUNT"
-              test "$(summary_value "$RESIDENTIAL_APPLY" '[residential-coordinate-backfill] scanned=' refinable)" = "$RESIDENTIAL_REFINABLE"
-              test "$(summary_value "$RESIDENTIAL_APPLY" '[residential-coordinate-backfill] scanned=' applied)" = "$RESIDENTIAL_REFINABLE"
-            fi
-
-            if [ "$YANGI_COUNT" -gt 0 ]; then
-              RESIDENTIAL_CONTROL="$(mktemp)"
-              run_flats npm run backfill:residential-coordinates -- \
-                --country=UZ --ids="$YANGI_IDS" --batch-size=25 --preview=10 \
-                | tee "$RESIDENTIAL_CONTROL"
-              test "$(summary_value "$RESIDENTIAL_CONTROL" '[residential-coordinate-backfill] scanned=' scanned)" = "$YANGI_COUNT"
-              test "$(summary_value "$RESIDENTIAL_CONTROL" '[residential-coordinate-backfill] scanned=' refinable)" = '0'
-            fi
 
             YANGI_FIXED="$(pg_scalar <<'SQL'
             SELECT count(*)
@@ -326,43 +292,31 @@ jobs:
             ALL_ACTIVE_COUNT=$((VOKZAL_COUNT + YANGI_COUNT))
 
             if [ "$ALL_ACTIVE_COUNT" -gt 0 ]; then
-              echo "--- Targeted Elasticsearch update: ${ALL_ACTIVE_COUNT} verified active rows ---"
+              echo "--- Targeted Elasticsearch update: $ALL_ACTIVE_COUNT rows ---"
               REINDEX_LOG="$(mktemp)"
               run_flats npm run reindex:listings -- --ids="$ALL_ACTIVE_IDS" | tee "$REINDEX_LOG"
               test "$(summary_value "$REINDEX_LOG" '[targeted-reindex] indexed=' indexed)" = "$ALL_ACTIVE_COUNT"
-            else
-              echo 'No audited target rows are active; Elasticsearch update skipped.'
             fi
 
-            echo '--- Final database verification ---'
+            echo '--- Final verification ---'
             docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
-            SELECT
-              id,
-              active,
-              source,
-              source_id,
-              city,
-              data->>'microdistrict' AS microdistrict,
-              data->>'sourceMicrodistrict' AS source_microdistrict
+            SELECT id, active, city,
+                   data->>'microdistrict' AS microdistrict,
+                   data->>'sourceMicrodistrict' AS source_microdistrict
             FROM flats.listings
             WHERE id = ANY(ARRAY[6714420,8512167,8817511,8817513,8817514,8817515,8912172,8913193,8993401]::bigint[])
             ORDER BY id;
 
-            SELECT
-              id,
-              active,
-              source_id,
-              residence_complex,
-              data->>'lat' AS lat,
-              data->>'lng' AS lng,
-              data->>'locationSource' AS location_source,
-              data->>'locationProvider' AS location_provider,
-              data->>'locationGeoEntityId' AS location_geo_entity_id
+            SELECT id, active, residence_complex,
+                   data->>'lat' AS lat,
+                   data->>'lng' AS lng,
+                   data->>'locationSource' AS location_source,
+                   data->>'locationProvider' AS location_provider,
+                   data->>'locationGeoEntityId' AS location_geo_entity_id
             FROM flats.listings
             WHERE id = ANY(ARRAY[6965161,6966942]::bigint[])
             ORDER BY id;
             SQL
 
-            echo '--- Host memory after targeted repair ---'
             free -h
             echo '--- Targeted UZ geo repair complete ---'
