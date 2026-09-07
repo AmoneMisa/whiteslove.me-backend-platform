@@ -3,7 +3,7 @@
 // logic to the server so the mobile app can render the same colours/shapes
 // without needing a geo-catalog client of its own (Dart can't import it).
 import {findGeoEntities, resolveLexiconGeoEntity} from '@whiteslove/geo-catalog';
-import {findTransportStops, getRoutesForStop} from '@whiteslove/geo-catalog/transport';
+import {findTransportRoutes, findTransportStops} from '@whiteslove/geo-catalog/transport';
 
 export const ZONE_PALETTE = Object.freeze(['#e0679a', '#24a7d6', '#10b981', '#d99a0b', '#8b5cf6']);
 
@@ -32,6 +32,7 @@ const entitiesByCountryType = new Map();
 const descendantsCache = new Map();
 const transportStopsCache = new Map();
 const routeRefsCache = new Map();
+let routeRefsIndexed = false;
 
 function distanceM(a, b) {
   const toRad = (v) => (v * Math.PI) / 180;
@@ -105,15 +106,41 @@ function cityTransportStops(country, cityId) {
   return transportStopsCache.get(key);
 }
 
-function routeRefsForStop(stopId) {
-  const key = String(stopId || '');
-  if (!routeRefsCache.has(key)) {
-    routeRefsCache.set(
-      key,
-      [...new Set(getRoutesForStop(key).map((route) => route.ref).filter(Boolean))],
-    );
+// geo-catalog's getRoutesForStop() scans the full route catalog on every call.
+// A snapshot build asks for route refs for every stop, turning first-build cost
+// into stops x routes. Build the inverse relation once instead. Iterating routes
+// in catalog order and inserting refs into Sets preserves the previous result's
+// first-seen ordering and de-duplication semantics.
+function ensureRouteRefsIndex() {
+  if (routeRefsIndexed) return;
+
+  const refsByStop = new Map();
+  for (const route of findTransportRoutes()) {
+    const ref = String(route?.ref || '').trim();
+    if (!ref) continue;
+
+    const stopIds = new Set(route?.stopIds || []);
+    for (const variant of route?.variants || []) {
+      for (const stopId of variant?.stopIds || []) stopIds.add(stopId);
+    }
+
+    for (const stopId of stopIds) {
+      const key = String(stopId || '');
+      if (!key) continue;
+      if (!refsByStop.has(key)) refsByStop.set(key, new Set());
+      refsByStop.get(key).add(ref);
+    }
   }
-  return routeRefsCache.get(key);
+
+  for (const [stopId, refs] of refsByStop) {
+    routeRefsCache.set(stopId, [...refs]);
+  }
+  routeRefsIndexed = true;
+}
+
+function routeRefsForStop(stopId) {
+  ensureRouteRefsIndex();
+  return routeRefsCache.get(String(stopId || '')) || [];
 }
 
 function metroPresentationByGeoEntity(cityId, country) {
