@@ -69,7 +69,7 @@ function parseArgs(argv) {
     else if (arg.startsWith('--preview=')) args.preview = intArg(arg.slice(10), '--preview', 0, 200);
     else if (arg.startsWith('--country=')) args.country = arg.slice(10).trim().toUpperCase() || null;
     else if (arg === '--help' || arg === '-h') {
-      console.log(`Usage:\n  node src/backfill-location-canonicals.js [--country=UZ] [--batch-size=250] [--preview=20] [--apply]\n\nDry-run is the default. Known aliases are replaced by their single canonical vocabulary value in both structured listing columns and JSON data. Unknown values are retained unchanged.`);
+      console.log(`Usage:\n  node src/backfill-location-canonicals.js [--country=UZ] [--batch-size=250] [--preview=20] [--apply]\n\nDry-run is the default. Known aliases are replaced by their single canonical vocabulary value in both structured listing columns and JSON data. Unknown values are retained unchanged. Existing source* audit values are replayed so partially applied older canonicalization can be repaired safely.`);
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
@@ -105,7 +105,10 @@ function equal(a, b) {
 
 function buildChange(row) {
   const before = hydrate(row);
-  const after = canonicalizeListingLocations(before);
+  // Backfill is also the repair path for the partially-applied first canonical
+  // migration. Replaying source* values means a bad historical canonical value
+  // is never treated as fresh source truth; current type-safe rules decide again.
+  const after = canonicalizeListingLocations(before, { preferSourceAudit: true });
   const patch = {};
   const changed = {};
 
