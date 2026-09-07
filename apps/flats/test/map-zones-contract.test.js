@@ -18,12 +18,25 @@ test('map zones expose canonical city center and structured filter layers', () =
   assert.ok(Array.isArray(zones.parks));
   assert.ok(Array.isArray(zones.shoppingMalls));
   assert.ok(Array.isArray(zones.universities));
+  assert.ok(Array.isArray(zones.schools));
+  assert.ok(Array.isArray(zones.residentialComplexes));
+  assert.ok(Array.isArray(zones.airports));
+  assert.ok(Array.isArray(zones.railwayStations));
+  assert.ok(Array.isArray(zones.busStations));
+  assert.ok(Array.isArray(zones.transportStops));
+  assert.ok(Array.isArray(zones.parkings));
   assert.ok(zones.parks.every((zone) => zone.type === 'poi.park'));
   assert.ok(zones.shoppingMalls.every((zone) => zone.type === 'poi.shopping_mall'));
   assert.ok(zones.universities.every((zone) => zone.type === 'poi.university'));
+  assert.ok(zones.schools.every((zone) => zone.type === 'poi.school'));
+  assert.ok(zones.residentialComplexes.every((zone) => zone.type === 'residential_complex'));
+  assert.ok(zones.airports.every((zone) => zone.type === 'poi.airport'));
+  assert.ok(zones.railwayStations.every((zone) => zone.type === 'poi.railway_station'));
+  assert.ok(zones.busStations.every((zone) => zone.type === 'poi.bus_station'));
+  assert.ok(zones.transportStops.every((zone) => zone.type === 'transport_stop'));
 });
 
-test('empty map-zone request keeps a stable cityZone field', () => {
+test('empty map-zone request keeps the complete stable map contract', () => {
   assert.deepEqual(mapZonesFor('', ''), {
     districtZones: [],
     microdistrictMarkers: [],
@@ -33,6 +46,13 @@ test('empty map-zone request keeps a stable cityZone field', () => {
     parks: [],
     shoppingMalls: [],
     universities: [],
+    schools: [],
+    residentialComplexes: [],
+    airports: [],
+    railwayStations: [],
+    busStations: [],
+    transportStops: [],
+    parkings: [],
     cityZone: null,
   });
 });
