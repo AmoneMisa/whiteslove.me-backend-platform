@@ -1,0 +1,90 @@
+name: One-shot flats residential coordinate maintenance
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - '.github/workflows/one-shot-flats-residential-maintenance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  maintain:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Backfill residential coordinates and reindex production
+        uses: appleboy/ssh-action@v1.2.1
+        with:
+          host: ${{ vars.SERVER_HOST }}
+          username: ${{ vars.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -eu
+            cd /opt/backend
+
+            EXPECTED_SHA='a962b54a3279a5d1097c807ef7bd117f1f6937ea'
+            ACTUAL_SHA="$(git rev-parse HEAD)"
+            echo "Production checkout: ${ACTUAL_SHA}"
+            test "${ACTUAL_SHA}" = "${EXPECTED_SHA}"
+
+            echo '--- Runtime geo-catalog ---'
+            docker compose exec -T flats-api npm ls @whiteslove/geo-catalog --depth=0
+            docker compose exec -T flats-api node --input-type=module - <<'NODE'
+            import { resolveLexiconGeoEntity } from '@whiteslove/geo-catalog';
+            const entity = resolveLexiconGeoEntity({
+              country: 'UZ',
+              city: 'Tashkent',
+              type: 'residential_complex',
+              canonical: 'Yangi Sergeli',
+            });
+            const expected = { lat: 41.222096, lng: 69.224966 };
+            if (!entity || entity.id !== 'uz:tashkent:residential:yangi-sergeli'
+              || entity.center?.lat !== expected.lat || entity.center?.lng !== expected.lng) {
+              throw new Error(`Unexpected Yangi Sergeli catalog anchor: ${JSON.stringify(entity)}`);
+            }
+            console.log(JSON.stringify({ id: entity.id, center: entity.center, sourceUrl: entity.sourceUrl }));
+            NODE
+
+            echo '--- Listing 6965161 before ---'
+            docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+            SELECT
+              id,
+              data->>'residenceComplex' AS residence_complex,
+              data->>'lat' AS lat,
+              data->>'lng' AS lng,
+              data->>'locationGeoEntityId' AS location_geo_entity_id,
+              data->>'locationCanonical' AS location_canonical,
+              data->>'locationPrecision' AS location_precision,
+              data->>'locationSource' AS location_source
+            FROM flats.listings
+            WHERE id = '6965161';
+            SQL
+
+            echo '--- Residential coordinate backfill dry run ---'
+            docker compose exec -T flats-api npm run backfill:residential-coordinates
+
+            echo '--- Residential coordinate backfill apply ---'
+            docker compose exec -T flats-api npm run backfill:residential-coordinates -- --apply
+
+            echo '--- Listing 6965161 after backfill ---'
+            docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+            SELECT
+              id,
+              data->>'residenceComplex' AS residence_complex,
+              data->>'lat' AS lat,
+              data->>'lng' AS lng,
+              data->>'locationGeoEntityId' AS location_geo_entity_id,
+              data->>'locationCanonical' AS location_canonical,
+              data->>'locationPrecision' AS location_precision,
+              data->>'locationSource' AS location_source
+            FROM flats.listings
+            WHERE id = '6965161';
+            SQL
+
+            echo '--- Elasticsearch reindex ---'
+            docker compose exec -T flats-api npm run reindex
+
+            echo '--- Maintenance complete ---'
