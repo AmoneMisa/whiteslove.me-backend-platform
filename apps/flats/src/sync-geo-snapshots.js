@@ -4,7 +4,10 @@ import {syncGeoCitySnapshots} from './geo/geo-city-snapshot-sync.js';
 
 async function main() {
   await assertDatabaseReady();
-  const result = await syncGeoCitySnapshots();
+  const result = await syncGeoCitySnapshots({strict: true, verify: true});
+  if (result.skipped) {
+    throw new Error(`geo snapshot prewarm skipped: ${result.reason || 'unknown reason'}`);
+  }
   console.log(JSON.stringify(result));
 }
 
