@@ -93,7 +93,10 @@ export function makeListing(partial) {
   const country = parseCanonicalCountryCode(partial.country) || '';
   const propertyType = partial.propertyType === 'house' ? 'house' : 'flat';
   const listingFields = parseHousingListingFields(combined, {country});
-  const housingStructured = parseHousingStructuredContext(combined, {country});
+  const housingStructured = parseHousingStructuredContext(combined, {
+    country,
+    dealType: partial.dealType ?? null,
+  });
   const byAgency = partial.byAgency != null
     ? Boolean(partial.byAgency)
     : housingStructured.seller.type === 'agency';
@@ -232,8 +235,8 @@ export function makeListing(partial) {
     address,
     city,
   });
-  const price = partial.price != null ? Number(partial.price) : null;
-  const currency = partial.currency ?? '';
+  const price = partial.price != null ? Number(partial.price) : housingStructured.price.amount;
+  const currency = partial.currency || housingStructured.price.currency || '';
   const areaSqm = partial.areaSqm != null
     ? Number(partial.areaSqm)
     : (housingStructured.area.total ?? parseHousingAreaFromText(combined));
