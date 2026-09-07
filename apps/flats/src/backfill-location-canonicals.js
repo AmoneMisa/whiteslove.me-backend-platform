@@ -1,6 +1,7 @@
 import { assertDatabaseReady } from './infrastructure/database/schemaReady.js';
 import { closeDb, pool } from './infrastructure/database/listingRepository.js';
 import { canonicalizeListingLocations } from './listing/location-canonicalization.js';
+import { describeBackfillIds, parseBackfillIds } from './maintenance/backfill-id-scope.js';
 
 const LOCATION_DATA_KEYS = Object.freeze([
   'country',
@@ -60,6 +61,7 @@ function parseArgs(argv) {
     apply: false,
     batchSize: 250,
     country: null,
+    ids: null,
     preview: 20,
   };
 
@@ -68,8 +70,9 @@ function parseArgs(argv) {
     else if (arg.startsWith('--batch-size=')) args.batchSize = intArg(arg.slice(13), '--batch-size', 1, 2000);
     else if (arg.startsWith('--preview=')) args.preview = intArg(arg.slice(10), '--preview', 0, 200);
     else if (arg.startsWith('--country=')) args.country = arg.slice(10).trim().toUpperCase() || null;
+    else if (arg.startsWith('--ids=')) args.ids = parseBackfillIds(arg.slice(6));
     else if (arg === '--help' || arg === '-h') {
-      console.log(`Usage:\n  node src/backfill-location-canonicals.js [--country=UZ] [--batch-size=250] [--preview=20] [--apply]\n\nDry-run is the default. Known aliases are replaced by their single canonical vocabulary value in both structured listing columns and JSON data. Unknown values are retained unchanged. Existing source* audit values are replayed so partially applied older canonicalization can be repaired safely.`);
+      console.log(`Usage:\n  node src/backfill-location-canonicals.js [--country=UZ] [--ids=123,456] [--batch-size=250] [--preview=20] [--apply]\n\nDry-run is the default. --ids accepts PostgreSQL listing IDs (the listings.id column) and restricts both preview and apply to exactly those active rows. Known aliases are replaced by their single canonical vocabulary value in both structured listing columns and JSON data. Unknown values are retained unchanged. Existing source* audit values are replayed so partially applied older canonicalization can be repaired safely.`);
       process.exit(0);
     } else {
       throw new Error(`Unknown argument: ${arg}`);
@@ -149,7 +152,7 @@ function buildChange(row) {
   };
 }
 
-async function fetchBatch(afterId, limit, country) {
+async function fetchBatch(afterId, limit, country, ids) {
   const result = await pool.query(
     `
       SELECT
@@ -168,10 +171,11 @@ async function fetchBatch(afterId, limit, country) {
       WHERE active = TRUE
         AND id > $1::bigint
         AND ($3::text IS NULL OR country = $3)
+        AND ($4::bigint[] IS NULL OR id = ANY($4::bigint[]))
       ORDER BY id ASC
       LIMIT $2
     `,
-    [String(afterId || 0), limit, country],
+    [String(afterId || 0), limit, country, ids?.length ? ids : null],
   );
   return result.rows;
 }
@@ -219,18 +223,18 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   await assertDatabaseReady();
 
-  let afterId = 0;
+  let afterId = '0';
   let scanned = 0;
   let refinable = 0;
   let applied = 0;
   let previewed = 0;
 
-  console.log(`[location-canonical-backfill] mode=${args.apply ? 'APPLY' : 'DRY-RUN'} country=${args.country || 'ALL'} batch=${args.batchSize}`);
+  console.log(`[location-canonical-backfill] mode=${args.apply ? 'APPLY' : 'DRY-RUN'} country=${args.country || 'ALL'} ids=${describeBackfillIds(args.ids)} batch=${args.batchSize}`);
 
   for (;;) {
-    const batch = await fetchBatch(afterId, args.batchSize, args.country);
+    const batch = await fetchBatch(afterId, args.batchSize, args.country, args.ids);
     if (!batch.length) break;
-    afterId = Number(batch[batch.length - 1].db_id);
+    afterId = String(batch[batch.length - 1].db_id);
     scanned += batch.length;
 
     const changes = [];
