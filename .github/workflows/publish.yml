@@ -37,6 +37,8 @@ jobs:
             flats:
               - 'apps/flats/**'
               - 'services/olx-fetcher/**'
+              - 'docker-compose.geo.yml'
+              - 'deploy.sh'
             social:
               - 'services/social-fetcher/**'
             vacancies:
@@ -166,10 +168,9 @@ jobs:
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      # Recreates every container whose image just changed, keyed off the same
-      # path filters that gate the publish matrix above. A domain's migration
-      # service is included alongside its api/worker so schema changes land
-      # before the process that depends on them starts.
+      # deploy.sh recognizes flats-api in this list and applies the flats
+      # migration -> strict geo prewarm -> API readiness/smoke -> worker phases
+      # before recreating the remaining explicitly selected services.
       - name: Determine services to redeploy
         id: services
         run: |
