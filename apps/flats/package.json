@@ -16,6 +16,7 @@
     "migrate": "node src/migrate.js",
     "reindex": "node src/reindex.js",
     "reindex:listings": "node src/reindex-listings.js",
+    "sync:geo-snapshots": "node src/sync-geo-snapshots.js",
     "backfill:location-canonicals": "node src/backfill-location-canonicals.js",
     "backfill:residential-coordinates": "node src/backfill-residential-coordinates.js",
     "regeocode": "node src/regeocode.js"
