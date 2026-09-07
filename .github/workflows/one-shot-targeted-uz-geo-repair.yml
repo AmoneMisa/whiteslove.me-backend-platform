@@ -60,7 +60,10 @@ jobs:
             free -h
             docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}' || true
 
-            echo '--- Preflight: exact Vokzal target set ---'
+            # Phase 1 is deliberately read-only. Both target sets must pass
+            # their SQL preflight and their scoped backfill dry-run before the
+            # first UPDATE is allowed to happen.
+            echo '--- Read-only preflight: exact Vokzal target set ---'
             VOKZAL_ROWS="$(pg_scalar <<'SQL'
             SELECT count(*)
             FROM flats.listings
@@ -75,33 +78,71 @@ jobs:
             VOKZAL_ROWS="$(printf '%s' "$VOKZAL_ROWS" | tr -d '[:space:]')"
             test "$VOKZAL_ROWS" = '9'
 
-            echo '--- Canonical dry run: only the nine audited Vokzal rows ---'
             CANONICAL_DRY="$(mktemp)"
             run_flats npm run backfill:location-canonicals -- \
               --country=UZ --ids="$VOKZAL_IDS" --batch-size=25 --preview=20 \
               | tee "$CANONICAL_DRY"
 
+            CANONICAL_NEEDS_APPLY=0
             if grep -Fq '[location-canonical-backfill] scanned=9 refinable=9 applied=0' "$CANONICAL_DRY"; then
+              CANONICAL_NEEDS_APPLY=1
               for id in $(printf '%s' "$VOKZAL_IDS" | tr ',' ' '); do
                 LINE="$(grep -F "\"dbId\":\"${id}\"" "$CANONICAL_DRY")"
                 test -n "$LINE"
                 printf '%s\n' "$LINE" | grep -Fq '"microdistrict":{"from":"Samarkand Railway Station","to":"Vokzal"}'
               done
+            elif grep -Fq '[location-canonical-backfill] scanned=9 refinable=0 applied=0' "$CANONICAL_DRY"; then
+              echo 'All nine Vokzal rows are already idempotent.'
+            else
+              echo 'Unexpected Vokzal dry-run state; refusing all writes.' >&2
+              exit 1
+            fi
 
-              echo '--- Canonical apply: exact same nine IDs ---'
+            echo '--- Read-only preflight: exact Yangi Sergeli target set ---'
+            YANGI_ROWS="$(pg_scalar <<'SQL'
+            SELECT count(*)
+            FROM flats.listings
+            WHERE active = TRUE
+              AND country = 'UZ'
+              AND city = 'Tashkent'
+              AND id = ANY(ARRAY[6965161,6966942]::bigint[])
+              AND residence_complex = 'Yangi Sergeli'
+              AND COALESCE(data->>'residenceComplex', residence_complex) = 'Yangi Sergeli';
+            SQL
+            )"
+            YANGI_ROWS="$(printf '%s' "$YANGI_ROWS" | tr -d '[:space:]')"
+            test "$YANGI_ROWS" = '2'
+
+            RESIDENTIAL_DRY="$(mktemp)"
+            run_flats npm run backfill:residential-coordinates -- \
+              --country=UZ --ids="$YANGI_IDS" --batch-size=25 --preview=10 \
+              | tee "$RESIDENTIAL_DRY"
+
+            RESIDENTIAL_NEEDS_APPLY=0
+            if grep -Fq '[residential-coordinate-backfill] scanned=2 refinable=2 applied=0' "$RESIDENTIAL_DRY"; then
+              RESIDENTIAL_NEEDS_APPLY=1
+              for id in $(printf '%s' "$YANGI_IDS" | tr ',' ' '); do
+                LINE="$(grep -F "\"dbId\":\"${id}\"" "$RESIDENTIAL_DRY")"
+                test -n "$LINE"
+                printf '%s\n' "$LINE" | grep -Fq '"to":{"lat":41.222096,"lng":69.224966}'
+                printf '%s\n' "$LINE" | grep -Fq '"geoEntityId":"uz:tashkent:residential:yangi-sergeli"'
+              done
+            elif grep -Fq '[residential-coordinate-backfill] scanned=2 refinable=0 applied=0' "$RESIDENTIAL_DRY"; then
+              echo 'Both Yangi Sergeli rows are already idempotent.'
+            else
+              echo 'Unexpected Yangi Sergeli dry-run state; refusing all writes.' >&2
+              exit 1
+            fi
+
+            echo '--- Phase 2: scoped writes only after both dry-runs passed ---'
+            if [ "$CANONICAL_NEEDS_APPLY" -eq 1 ]; then
               CANONICAL_APPLY="$(mktemp)"
               run_flats npm run backfill:location-canonicals -- \
                 --country=UZ --ids="$VOKZAL_IDS" --batch-size=25 --preview=20 --apply \
                 | tee "$CANONICAL_APPLY"
               grep -Fq '[location-canonical-backfill] scanned=9 refinable=9 applied=9' "$CANONICAL_APPLY"
-            elif grep -Fq '[location-canonical-backfill] scanned=9 refinable=0 applied=0' "$CANONICAL_DRY"; then
-              echo 'All nine Vokzal rows are already idempotent; no canonical write needed.'
-            else
-              echo 'Unexpected Vokzal dry-run state; refusing to write.' >&2
-              exit 1
             fi
 
-            echo '--- Canonical control dry run ---'
             CANONICAL_CONTROL="$(mktemp)"
             run_flats npm run backfill:location-canonicals -- \
               --country=UZ --ids="$VOKZAL_IDS" --batch-size=25 --preview=20 \
@@ -133,49 +174,14 @@ jobs:
             VOKZAL_FIXED="$(printf '%s' "$VOKZAL_FIXED" | tr -d '[:space:]')"
             test "$VOKZAL_FIXED" = '9'
 
-            echo '--- Preflight: exact Yangi Sergeli target set ---'
-            YANGI_ROWS="$(pg_scalar <<'SQL'
-            SELECT count(*)
-            FROM flats.listings
-            WHERE active = TRUE
-              AND country = 'UZ'
-              AND city = 'Tashkent'
-              AND id = ANY(ARRAY[6965161,6966942]::bigint[])
-              AND residence_complex = 'Yangi Sergeli'
-              AND COALESCE(data->>'residenceComplex', residence_complex) = 'Yangi Sergeli';
-            SQL
-            )"
-            YANGI_ROWS="$(printf '%s' "$YANGI_ROWS" | tr -d '[:space:]')"
-            test "$YANGI_ROWS" = '2'
-
-            echo '--- Residential dry run: only two audited Yangi Sergeli rows ---'
-            RESIDENTIAL_DRY="$(mktemp)"
-            run_flats npm run backfill:residential-coordinates -- \
-              --country=UZ --ids="$YANGI_IDS" --batch-size=25 --preview=10 \
-              | tee "$RESIDENTIAL_DRY"
-
-            if grep -Fq '[residential-coordinate-backfill] scanned=2 refinable=2 applied=0' "$RESIDENTIAL_DRY"; then
-              for id in $(printf '%s' "$YANGI_IDS" | tr ',' ' '); do
-                LINE="$(grep -F "\"dbId\":\"${id}\"" "$RESIDENTIAL_DRY")"
-                test -n "$LINE"
-                printf '%s\n' "$LINE" | grep -Fq '"to":{"lat":41.222096,"lng":69.224966}'
-                printf '%s\n' "$LINE" | grep -Fq '"geoEntityId":"uz:tashkent:residential:yangi-sergeli"'
-              done
-
-              echo '--- Residential apply: exact same two IDs ---'
+            if [ "$RESIDENTIAL_NEEDS_APPLY" -eq 1 ]; then
               RESIDENTIAL_APPLY="$(mktemp)"
               run_flats npm run backfill:residential-coordinates -- \
                 --country=UZ --ids="$YANGI_IDS" --batch-size=25 --preview=10 --apply \
                 | tee "$RESIDENTIAL_APPLY"
               grep -Fq '[residential-coordinate-backfill] scanned=2 refinable=2 applied=2' "$RESIDENTIAL_APPLY"
-            elif grep -Fq '[residential-coordinate-backfill] scanned=2 refinable=0 applied=0' "$RESIDENTIAL_DRY"; then
-              echo 'Both Yangi Sergeli rows are already idempotent; no coordinate write needed.'
-            else
-              echo 'Unexpected Yangi Sergeli dry-run state; refusing to write.' >&2
-              exit 1
             fi
 
-            echo '--- Residential control dry run ---'
             RESIDENTIAL_CONTROL="$(mktemp)"
             run_flats npm run backfill:residential-coordinates -- \
               --country=UZ --ids="$YANGI_IDS" --batch-size=25 --preview=10 \
@@ -201,7 +207,9 @@ jobs:
             YANGI_FIXED="$(printf '%s' "$YANGI_FIXED" | tr -d '[:space:]')"
             test "$YANGI_FIXED" = '2'
 
-            echo '--- Targeted Elasticsearch update: only the eleven repaired rows ---'
+            # Full reindex deletes the live index first. Do not use it here:
+            # only the eleven verified rows are refreshed in-place.
+            echo '--- Targeted Elasticsearch update: eleven verified rows ---'
             REINDEX_LOG="$(mktemp)"
             run_flats npm run reindex:listings -- --ids="$ALL_IDS" | tee "$REINDEX_LOG"
             grep -Fq '[targeted-reindex] indexed=11' "$REINDEX_LOG"
