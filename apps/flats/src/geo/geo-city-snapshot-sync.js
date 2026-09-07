@@ -99,11 +99,21 @@ async function buildAllSnapshots({strict = false, verify = true} = {}) {
     countryInputs.set(country, await collectCountryLocations(country, {strict}));
   }
 
+  const totalCities = [...countryInputs.values()]
+    .reduce((sum, input) => sum + input.cities.length, 0);
+  console.log(
+    `[geo-snapshot] build started: ${totalCities} cities, ${locales.length} locales, strict=${strict}`,
+  );
+
   for (const country of COUNTRY_CODES) {
     const input = countryInputs.get(country);
     const countryKeep = [];
+    const countryStartedAt = performance.now();
+
+    console.log(`[geo-snapshot] ${country} started: ${input.cities.length} cities`);
 
     for (const city of input.cities) {
+      const cityStartedAt = performance.now();
       const baseLocation = input.locations[city] || {districts: [], metro: []};
       const canonicalZones = mapZonesFor(country, city, baseLocation.districts);
       const canonicalOptions = locationOptionsFromZones(baseLocation, canonicalZones);
@@ -134,6 +144,11 @@ async function buildAllSnapshots({strict = false, verify = true} = {}) {
         snapshots += 1;
       }
 
+      console.log(
+        `[geo-snapshot] ${cities}/${totalCities} ${country}/${city} ` +
+        `${Math.round(performance.now() - cityStartedAt)}ms`,
+      );
+
       // Snapshot construction is worker-owned, but yielding between cities
       // keeps queue lease renewals and other worker timers responsive.
       await new Promise((resolve) => setImmediate(resolve));
@@ -148,6 +163,11 @@ async function buildAllSnapshots({strict = false, verify = true} = {}) {
       // later refresh can read the complete source again.
       skippedPruneCountries.push(country);
     }
+
+    console.log(
+      `[geo-snapshot] ${country} completed in ` +
+      `${Math.round(performance.now() - countryStartedAt)}ms`,
+    );
   }
 
   const coverage = verify
