@@ -1,0 +1,26 @@
+services:
+  # Deployment-only one-shot compiler for the persisted geo read model. It uses
+  # the same immutable flats image as the API/worker, but runs before API
+  # cutover so production never serves a cold request-time geo build.
+  flats-geo-sync:
+    image: ${FLATS_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-flats:latest}
+    command: ["node", "src/sync-geo-snapshots.js"]
+    restart: "no"
+    init: true
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      PGHOST: platform-postgres
+      PGPORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-whiteslove}
+      POSTGRES_USER: ${POSTGRES_USER:-whiteslove}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      PGOPTIONS: -c search_path=flats,public
+      PG_STATEMENT_TIMEOUT_MS: ${FLATS_GEO_SYNC_STATEMENT_TIMEOUT_MS:-120000}
+      GEO_SNAPSHOT_LOCALES: ${GEO_SNAPSHOT_LOCALES:-ru}
+    networks: [ platform ]
+    cpus: ${FLATS_GEO_SYNC_CPUS:-1.0}
+    labels:
+      me.whiteslove.platform.domain: flats
+      me.whiteslove.platform.role: geo-prewarm
