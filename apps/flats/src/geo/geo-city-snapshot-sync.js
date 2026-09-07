@@ -10,12 +10,13 @@ import {
 } from './catalog-presentation.js';
 import {getAvailableListingLocations} from '../infrastructure/database/listingRepository.js';
 import {
-  deleteGeoCitySnapshotsNotIn,
-  upsertGeoCitySnapshot,
+  deleteGeoCityProjectionNotIn,
+  upsertGeoCityOptions,
+  upsertGeoCityZones,
   withGeoSnapshotBuildLock,
 } from '../infrastructure/database/geoSnapshotRepository.js';
 
-const SNAPSHOT_SCHEMA_VERSION = 1;
+const SNAPSHOT_SCHEMA_VERSION = 2;
 
 function snapshotLocales() {
   const configured = String(process.env.GEO_SNAPSHOT_LOCALES || 'ru')
@@ -66,19 +67,10 @@ async function collectCountryLocations(countryCode) {
   return {cities: [...cities].sort((a, b) => a.localeCompare(b, 'uk')), locations};
 }
 
-function contentHash(payload) {
+function contentHash(kind, data) {
   return createHash('sha256')
-    .update(JSON.stringify(payload))
+    .update(JSON.stringify({schemaVersion: SNAPSHOT_SCHEMA_VERSION, kind, data}))
     .digest('hex');
-}
-
-function snapshotPayload({country, city, locale, baseLocation, canonicalZones}) {
-  const canonicalOptions = locationOptionsFromZones(baseLocation, canonicalZones);
-  return {
-    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
-    zones: localizedMapZones(canonicalZones, locale, country, city),
-    options: localizedLocationOptions(canonicalOptions, locale, country, city),
-  };
 }
 
 async function buildAllSnapshots() {
@@ -93,22 +85,26 @@ async function buildAllSnapshots() {
     for (const city of input.cities) {
       const baseLocation = input.locations[city] || {districts: [], metro: []};
       const canonicalZones = mapZonesFor(country, city, baseLocation.districts);
+      const canonicalOptions = locationOptionsFromZones(baseLocation, canonicalZones);
       cities += 1;
 
       for (const locale of locales) {
-        const payload = snapshotPayload({
+        const zones = localizedMapZones(canonicalZones, locale, country, city);
+        const options = localizedLocationOptions(canonicalOptions, locale, country, city);
+
+        await upsertGeoCityZones({
           country,
           city,
           locale,
-          baseLocation,
-          canonicalZones,
+          zones,
+          sourceHash: contentHash('zones', zones),
         });
-        await upsertGeoCitySnapshot({
+        await upsertGeoCityOptions({
           country,
           city,
           locale,
-          payload,
-          sourceHash: contentHash(payload),
+          options,
+          sourceHash: contentHash('options', options),
         });
         keep.push({country, city, locale});
         snapshots += 1;
@@ -120,11 +116,13 @@ async function buildAllSnapshots() {
     }
   }
 
-  const deleted = await deleteGeoCitySnapshotsNotIn(keep);
+  const deletedRows = await deleteGeoCityProjectionNotIn(keep);
   return {
     cities,
     snapshots,
-    deleted,
+    deleted: deletedRows.snapshots + deletedRows.options,
+    deletedSnapshots: deletedRows.snapshots,
+    deletedOptions: deletedRows.options,
     locales,
     durationMs: Math.round(performance.now() - startedAt),
   };
