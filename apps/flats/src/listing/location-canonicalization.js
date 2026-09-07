@@ -35,6 +35,30 @@ const GENERIC_AREA_TYPES = Object.freeze([
 const GENERIC_LOCALITY_TYPES = Object.freeze(['suburb', 'settlement', 'local_area']);
 const GENERIC_NEARBY_TYPES = Object.freeze(['poi', 'metro', 'local_area', 'microdistrict']);
 
+const SOURCE_RESTORE_KEYS = Object.freeze([
+  'country',
+  'city',
+  'region',
+  'district',
+  'area',
+  'kvartal',
+  'metro',
+  'residenceComplex',
+  'microdistrict',
+  'street',
+  'locality',
+  'mahallas',
+  'localAreas',
+  'suburbs',
+  'settlements',
+  'informalAreas',
+  'developmentAreas',
+  'searchClusters',
+  'nearby',
+  'locationEntities',
+  'locationCanonical',
+]);
+
 function text(value) {
   const result = String(value ?? '').trim();
   return result || null;
@@ -121,6 +145,12 @@ function geoTypeSupported(type) {
   ].includes(type);
 }
 
+function geoTypeCompatible(requestedType, actualType) {
+  const requested = normalizedType(requestedType);
+  const actual = normalizedType(actualType);
+  return Boolean(requested && actual && requested === actual);
+}
+
 function resolveGeo(country, city, type, canonical) {
   if (!geoTypeSupported(type) || !country || !city || !canonical) return null;
   return resolveLexiconGeoEntity({
@@ -131,17 +161,22 @@ function resolveGeo(country, city, type, canonical) {
   });
 }
 
+function resolveCompatibleGeo(country, city, type, canonical) {
+  const geo = resolveGeo(country, city, type, canonical);
+  return geo && geoTypeCompatible(type, geo.type) ? geo : null;
+}
+
 function typedCanonical(value, country, city, type) {
   const raw = text(value);
   const normalized = normalizedType(type);
   if (!raw || !normalized) return raw;
 
-  const directGeo = resolveGeo(country, city, normalized, raw);
+  const directGeo = resolveCompatibleGeo(country, city, normalized, raw);
   if (directGeo?.canonicalName) return directGeo.canonicalName;
 
   const typed = uniqueCanonical(dictionaryCanonicalCandidates(raw, country, city, [normalized]));
   if (typed) {
-    const geo = resolveGeo(country, city, normalized, typed);
+    const geo = resolveCompatibleGeo(country, city, normalized, typed);
     return geo?.canonicalName || typed;
   }
 
@@ -149,13 +184,12 @@ function typedCanonical(value, country, city, type) {
   // collection while geo-catalog owns the same name under the requested type.
   // Example: "Янги Сергели" is a local-area alias, while the listing field is
   // explicitly residential_complex. Reuse only a candidate that geo-catalog
-  // independently proves under the requested type; never change the type just
-  // because another dictionary entry shares the spelling.
+  // independently proves under the requested type and returns that exact type.
   if (geoTypeSupported(normalized)) {
     const crossType = dictionaryCanonicalCandidates(raw, country, city);
     const proved = [];
     for (const candidate of crossType) {
-      const geo = resolveGeo(country, candidate.city || city, normalized, candidate.canonical);
+      const geo = resolveCompatibleGeo(country, candidate.city || city, normalized, candidate.canonical);
       if (geo?.canonicalName) proved.push(geo.canonicalName);
     }
     const canonical = [...new Set(proved)];
@@ -174,6 +208,14 @@ function genericCanonical(value, country, city, types) {
 
 function sourceKey(key) {
   return `source${key.charAt(0).toUpperCase()}${key.slice(1)}`;
+}
+
+function restoreSourceAuditValues(target) {
+  for (const key of SOURCE_RESTORE_KEYS) {
+    const source = sourceKey(key);
+    if (!Object.hasOwn(target, source) || target[source] == null) continue;
+    target[key] = Array.isArray(target[source]) ? [...target[source]] : target[source];
+  }
 }
 
 function assignScalar(target, key, value) {
@@ -209,8 +251,12 @@ function canonicalizeLocationEntities(values, country, city) {
     if (!type || !rawName) return item;
     const name = typedCanonical(rawName, country, city, type);
     const next = name === rawName ? { ...item } : { ...item, sourceName: item.sourceName || rawName, name };
-    const geo = resolveGeo(country, city, type, name);
+    const geo = resolveCompatibleGeo(country, city, type, name);
     if (geo?.id && !next.geoEntityId) next.geoEntityId = geo.id;
+    if (next.geoEntityId) {
+      const existing = getGeoEntity(next.geoEntityId);
+      if (existing && !geoTypeCompatible(type, existing.type)) delete next.geoEntityId;
+    }
     return next;
   });
 }
@@ -224,9 +270,15 @@ function canonicalizeLocationEntities(values, country, city) {
  * second spelling of the same semantic entity. Unknown values are preserved
  * rather than guessed, and changed source spellings remain available under
  * source* audit fields.
+ *
+ * preferSourceAudit is intended for repair/backfill runs. It replays the
+ * original source spellings through the current canonicalizer so a previous
+ * buggy canonicalization can be corrected idempotently without guessing.
  */
-export function canonicalizeListingLocations(input) {
+export function canonicalizeListingLocations(input, { preferSourceAudit = false } = {}) {
   const target = { ...(input || {}) };
+  if (preferSourceAudit) restoreSourceAuditValues(target);
+
   const country = countryCode(target.country);
   if (country && country !== target.country) {
     if (target.sourceCountry == null && target.country != null) target.sourceCountry = target.country;
