@@ -3,9 +3,23 @@
 // logic to the server so the mobile app can render the same colours/shapes
 // without needing a geo-catalog client of its own (Dart can't import it).
 import { findGeoEntities, resolveLexiconGeoEntity } from '@whiteslove/geo-catalog';
+import { findTransportStops, getRoutesForStop } from '@whiteslove/geo-catalog/transport';
 
-// Keep in sync with ZONE_PALETTE in the site's useDistrictZones.ts.
 export const ZONE_PALETTE = Object.freeze(['#e0679a', '#24a7d6', '#10b981', '#d99a0b', '#8b5cf6']);
+
+const METRO_LINE_COLORS = Object.freeze({
+  Chilonzor: '#e53935',
+  "O'zbekiston": '#1976d2',
+  Yunusobod: '#2eaf5d',
+  Circle: '#f2b705',
+});
+const TRANSPORT_MODE_COLORS = Object.freeze({
+  bus: '#2563eb',
+  tram: '#8b5cf6',
+  trolleybus: '#0ea5e9',
+  minibus: '#f59e0b',
+  rail: '#64748b',
+});
 
 const EARTH_RADIUS_M = 6371000;
 
@@ -19,7 +33,6 @@ function distanceM(a, b) {
   return 2 * EARTH_RADIUS_M * Math.asin(Math.sqrt(h));
 }
 
-// Radius is only used for entities that have no real boundary polygon.
 function fitNonOverlappingRadii(zones, min, max) {
   return zones.map((zone, index) => {
     if (zone.boundary) return zone;
@@ -35,7 +48,7 @@ function fitNonOverlappingRadii(zones, min, max) {
   });
 }
 
-function zoneFromEntity(entity, index) {
+function zoneFromEntity(entity, index, extra = {}) {
   return {
     id: entity.id,
     parentId: entity.parentId ?? null,
@@ -46,6 +59,7 @@ function zoneFromEntity(entity, index) {
     radiusM: entity.accuracyM || 400,
     color: ZONE_PALETTE[index % ZONE_PALETTE.length],
     boundary: entity.boundary || null,
+    ...extra,
   };
 }
 
@@ -57,12 +71,42 @@ function descendantsOf(cityId, country, type) {
   );
 }
 
-/**
- * District colour zones for one city, matching the site's map exactly:
- * each administrative district gets a stable palette colour cycling through
- * ZONE_PALETTE, and its real OSM boundary polygon when the catalog has one
- * (falling back to a non-overlapping circle radius otherwise).
- */
+function routeRefsForStop(stopId) {
+  return [...new Set(getRoutesForStop(stopId).map((route) => route.ref).filter(Boolean))];
+}
+
+function metroPresentationByGeoEntity(cityId, country) {
+  const byGeoEntity = new Map();
+  if (!cityId) return byGeoEntity;
+  for (const stop of findTransportStops({country, cityId, mode: 'metro'})) {
+    if (!stop.geoEntityId) continue;
+    const routeRefs = routeRefsForStop(stop.id);
+    const lineColors = [...new Set(routeRefs.map((ref) => METRO_LINE_COLORS[ref]).filter(Boolean))];
+    byGeoEntity.set(stop.geoEntityId, {
+      routeRefs,
+      lineColors,
+      lineColor: lineColors[0] || '#2563eb',
+    });
+  }
+  return byGeoEntity;
+}
+
+function transportStopZone(stop) {
+  return {
+    id: stop.id,
+    parentId: stop.cityId,
+    type: 'transport_stop',
+    mode: stop.mode,
+    name: stop.canonicalName,
+    lat: stop.center.lat,
+    lng: stop.center.lng,
+    radiusM: stop.accuracyM || 100,
+    color: TRANSPORT_MODE_COLORS[stop.mode] || '#94a3b8',
+    routeRefs: routeRefsForStop(stop.id),
+    boundary: null,
+  };
+}
+
 export function districtZonesFor(countryCode, cityName, districtOptions = []) {
   const country = String(countryCode || '').toUpperCase();
   if (!country || !cityName) return [];
@@ -79,73 +123,47 @@ export function districtZonesFor(countryCode, cityName, districtOptions = []) {
   return fitNonOverlappingRadii(zones, 350, 1800);
 }
 
-/**
- * All of a city's map zone layers at once: administrative districts,
- * microdistricts, mahallas ("quartals"), local/development areas, and metro
- * stations. Every canonical entity carries its catalog `type` and `parentId`
- * so Flutter can apply nested scopes without replacing broader filters.
- */
 export function mapZonesFor(countryCode, cityName, districtOptions = []) {
   const country = String(countryCode || '').toUpperCase();
   if (!country || !cityName) {
     return {
-      districtZones: [],
-      microdistrictMarkers: [],
-      quartalMarkers: [],
-      areaZones: [],
-      metroStations: [],
-      parks: [],
-      shoppingMalls: [],
-      universities: [],
-      cityZone: null,
+      districtZones: [], microdistrictMarkers: [], quartalMarkers: [], areaZones: [],
+      metroStations: [], parks: [], shoppingMalls: [], universities: [], schools: [],
+      residentialComplexes: [], airports: [], railwayStations: [], busStations: [],
+      transportStops: [], parkings: [], cityZone: null,
     };
   }
 
   const cityEntity = resolveLexiconGeoEntity({country, type: 'city', canonical: cityName});
   const cityId = cityEntity?.id ?? null;
-
   const districtZones = districtZonesFor(country, cityName, districtOptions);
+  const microdistrictMarkers = descendantsOf(cityId, country, 'microdistrict').map((entity, index) => zoneFromEntity(entity, index));
+  const quartalMarkers = descendantsOf(cityId, country, 'mahalla').map((entity, index) => zoneFromEntity(entity, index));
+  const areaEntities = [...descendantsOf(cityId, country, 'local_area'), ...descendantsOf(cityId, country, 'development_area')];
+  const areaZones = fitNonOverlappingRadii(areaEntities.map((entity, index) => zoneFromEntity(entity, index)), 150, 700);
 
-  const microdistrictMarkers = descendantsOf(cityId, country, 'microdistrict')
-    .map((entity, index) => zoneFromEntity(entity, index));
-
-  const quartalMarkers = descendantsOf(cityId, country, 'mahalla')
-    .map((entity, index) => zoneFromEntity(entity, index));
-
-  const areaEntities = [
-    ...descendantsOf(cityId, country, 'local_area'),
-    ...descendantsOf(cityId, country, 'development_area'),
-  ];
-  const areaZones = fitNonOverlappingRadii(
-    areaEntities.map((entity, index) => zoneFromEntity(entity, index)),
-    150,
-    700,
-  );
-
-  // Metro proximity rings are a Flat Finder presentation concern; station
-  // identity and coordinates remain canonical geo-catalog data.
+  const metroMeta = metroPresentationByGeoEntity(cityId, country);
   const metroStations = descendantsOf(cityId, country, 'metro')
-    .map((entity, index) => zoneFromEntity(entity, index));
+    .map((entity, index) => zoneFromEntity(entity, index, metroMeta.get(entity.id) || {}));
 
-  // Canonical POI identity, coordinates, hierarchy and boundaries remain
-  // geo-catalog data. Flat Finder owns only their product presentation.
-  const parks = descendantsOf(cityId, country, 'poi.park')
-    .map((entity, index) => zoneFromEntity(entity, index));
-  const shoppingMalls = descendantsOf(cityId, country, 'poi.shopping_mall')
-    .map((entity, index) => zoneFromEntity(entity, index));
-  const universities = descendantsOf(cityId, country, 'poi.university')
-    .map((entity, index) => zoneFromEntity(entity, index));
+  const parks = descendantsOf(cityId, country, 'poi.park').map((entity, index) => zoneFromEntity(entity, index, {color: '#22c55e'}));
+  const shoppingMalls = descendantsOf(cityId, country, 'poi.shopping_mall').map((entity, index) => zoneFromEntity(entity, index, {color: '#f97316'}));
+  const universities = descendantsOf(cityId, country, 'poi.university').map((entity, index) => zoneFromEntity(entity, index, {color: '#8b5cf6'}));
+  const schools = descendantsOf(cityId, country, 'poi.school').map((entity, index) => zoneFromEntity(entity, index, {color: '#ec4899'}));
+  const residentialComplexes = descendantsOf(cityId, country, 'residential_complex').map((entity, index) => zoneFromEntity(entity, index, {color: '#14b8a6'}));
+  const airports = descendantsOf(cityId, country, 'poi.airport').map((entity, index) => zoneFromEntity(entity, index, {color: '#0ea5e9'}));
+  const railwayStations = descendantsOf(cityId, country, 'poi.railway_station').map((entity, index) => zoneFromEntity(entity, index, {color: '#64748b'}));
+  const busStations = descendantsOf(cityId, country, 'poi.bus_station').map((entity, index) => zoneFromEntity(entity, index, {color: '#2563eb'}));
+  const transportStops = cityId
+    ? findTransportStops({country, cityId})
+      .filter((stop) => ['bus', 'tram', 'trolleybus', 'minibus', 'rail'].includes(stop.mode))
+      .map(transportStopZone)
+    : [];
 
   const cityZone = cityEntity ? zoneFromEntity(cityEntity, 0) : null;
   return {
-    districtZones,
-    microdistrictMarkers,
-    quartalMarkers,
-    areaZones,
-    metroStations,
-    parks,
-    shoppingMalls,
-    universities,
-    cityZone,
+    districtZones, microdistrictMarkers, quartalMarkers, areaZones, metroStations,
+    parks, shoppingMalls, universities, schools, residentialComplexes, airports,
+    railwayStations, busStations, transportStops, parkings: [], cityZone,
   };
 }
