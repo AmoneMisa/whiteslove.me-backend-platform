@@ -1,4 +1,4 @@
-name: One-shot UZ canonical geography maintenance
+name: One-shot UZ canonical geography audit
 
 on:
   push:
@@ -10,11 +10,11 @@ permissions:
   contents: read
 
 jobs:
-  maintain:
+  audit:
     runs-on: ubuntu-latest
     environment: Production
     steps:
-      - name: Canonicalize UZ geography, refresh residential anchors and reindex
+      - name: Audit UZ canonical geography without writes
         uses: appleboy/ssh-action@v1.2.1
         with:
           host: ${{ vars.SERVER_HOST }}
@@ -25,30 +25,54 @@ jobs:
             set -euo pipefail
             cd /opt/backend
 
-            EXPECTED_SHA='887a60c86905f6a1a4ae98c3946bc8e67ba9f58c'
+            EXPECTED_SHA='${{ github.sha }}'
+            echo "Waiting for production checkout ${EXPECTED_SHA} ..."
+            for attempt in $(seq 1 120); do
+              ACTUAL_SHA="$(git rev-parse HEAD)"
+              if [ "${ACTUAL_SHA}" = "${EXPECTED_SHA}" ]; then
+                break
+              fi
+              if [ "$attempt" -eq 120 ]; then
+                echo "Production checkout did not reach ${EXPECTED_SHA}; current=${ACTUAL_SHA}" >&2
+                exit 1
+              fi
+              sleep 5
+            done
+
             ACTUAL_SHA="$(git rev-parse HEAD)"
             echo "Production checkout: ${ACTUAL_SHA}"
             test "${ACTUAL_SHA}" = "${EXPECTED_SHA}"
 
             echo '--- Canonical geography dry run (UZ) ---'
-            docker compose exec -T flats-api npm run backfill:location-canonicals -- --country=UZ --batch-size=250 --preview=50
+            docker compose exec -T flats-api npm run backfill:location-canonicals -- --country=UZ --batch-size=250 --preview=100
 
-            echo '--- Canonical geography apply (UZ) ---'
-            docker compose exec -T flats-api npm run backfill:location-canonicals -- --country=UZ --batch-size=250 --preview=50 --apply
-
-            echo '--- Canonical geography control dry run (UZ) ---'
-            docker compose exec -T flats-api npm run backfill:location-canonicals -- --country=UZ --batch-size=250 --preview=20
+            echo '--- Cross-type regression audit (Samarkand/Vokzal) ---'
+            docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+            SELECT
+              id,
+              source,
+              source_id,
+              city,
+              data->>'microdistrict' AS microdistrict,
+              data->>'sourceMicrodistrict' AS source_microdistrict,
+              data->>'locationCanonical' AS location_canonical,
+              data->>'locationGeoEntityId' AS location_geo_entity_id
+            FROM flats.listings
+            WHERE active = TRUE
+              AND country = 'UZ'
+              AND (
+                lower(coalesce(data->>'sourceMicrodistrict', '')) LIKE '%vokzal%'
+                OR lower(coalesce(data->>'sourceMicrodistrict', '')) LIKE '%вокзал%'
+                OR lower(coalesce(data->>'microdistrict', '')) LIKE '%railway station%'
+              )
+            ORDER BY id ASC
+            LIMIT 100;
+            SQL
 
             echo '--- Residential coordinate dry run (UZ) ---'
-            docker compose exec -T flats-api npm run backfill:residential-coordinates -- --country=UZ --batch-size=250 --preview=50
+            docker compose exec -T flats-api npm run backfill:residential-coordinates -- --country=UZ --batch-size=250 --preview=100
 
-            echo '--- Residential coordinate apply (UZ) ---'
-            docker compose exec -T flats-api npm run backfill:residential-coordinates -- --country=UZ --batch-size=250 --preview=50 --apply
-
-            echo '--- Residential coordinate control dry run (UZ) ---'
-            docker compose exec -T flats-api npm run backfill:residential-coordinates -- --country=UZ --batch-size=250 --preview=20
-
-            echo '--- Listing 6965161 after maintenance ---'
+            echo '--- Listing 6965161 audit ---'
             docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
             SELECT
               id,
@@ -65,10 +89,9 @@ jobs:
               data->>'locationSource' AS location_source,
               data->>'locationProvider' AS location_provider
             FROM flats.listings
-            WHERE id = '6965161';
+            WHERE source_id = '6965161'
+               OR data->>'id' = '6965161'
+            ORDER BY id ASC;
             SQL
 
-            echo '--- Elasticsearch reindex ---'
-            docker compose exec -T flats-api npm run reindex
-
-            echo '--- Maintenance complete ---'
+            echo '--- Audit complete: no database writes and no reindex were performed ---'
