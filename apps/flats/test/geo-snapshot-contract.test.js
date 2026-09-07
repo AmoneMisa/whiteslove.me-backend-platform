@@ -15,12 +15,24 @@ const snapshotSyncSource = readFileSync(
   new URL('../src/geo/geo-city-snapshot-sync.js', import.meta.url),
   'utf8',
 );
+const strictSyncCliSource = readFileSync(
+  new URL('../src/sync-geo-snapshots.js', import.meta.url),
+  'utf8',
+);
 const snapshotRepositorySource = readFileSync(
   new URL('../src/infrastructure/database/geoSnapshotRepository.js', import.meta.url),
   'utf8',
 );
 const migrationSource = readFileSync(
   new URL('../migrations/045_geo_city_snapshots.sql', import.meta.url),
+  'utf8',
+);
+const geoComposeSource = readFileSync(
+  new URL('../../../docker-compose.geo.yml', import.meta.url),
+  'utf8',
+);
+const deploySource = readFileSync(
+  new URL('../../../deploy.sh', import.meta.url),
   'utf8',
 );
 
@@ -39,6 +51,22 @@ test('worker snapshot builder owns expensive geo construction and writes both pr
   assert.match(snapshotSyncSource, /upsertGeoCityZones/);
   assert.match(snapshotSyncSource, /upsertGeoCityOptions/);
   assert.match(snapshotSyncSource, /setImmediate/);
+});
+
+test('background geo refresh never prunes a country after incomplete dynamic collection', () => {
+  assert.match(snapshotSyncSource, /dynamicAvailable/);
+  assert.match(snapshotSyncSource, /skippedPruneCountries/);
+  assert.match(snapshotSyncSource, /deleteGeoCityProjectionNotInCountry/);
+  assert.match(snapshotRepositorySource, /WHERE snapshot\.country = \$1/);
+  assert.match(snapshotRepositorySource, /WHERE option_row\.country = \$1/);
+});
+
+test('deployment geo prewarm is strict and verifies both read models', () => {
+  assert.match(strictSyncCliSource, /strict:\s*true/);
+  assert.match(strictSyncCliSource, /verify:\s*true/);
+  assert.match(strictSyncCliSource, /prewarm skipped/);
+  assert.match(snapshotSyncSource, /verifyGeoCityProjection/);
+  assert.match(snapshotSyncSource, /projection verification failed/);
 });
 
 test('geo migration separates heavy map JSONB from compact selector arrays', () => {
@@ -63,6 +91,25 @@ test('countries selector query never reads the map JSONB table', () => {
   assert.match(listOptionsMatch[0], /FROM geo_city_options/);
   assert.doesNotMatch(listOptionsMatch[0], /geo_city_snapshots/);
   assert.doesNotMatch(listOptionsMatch[0], /JSONB|payload|zones/);
+});
+
+test('flats deploy prewarms geo before api cutover and smoke-checks Tashkent', () => {
+  assert.match(geoComposeSource, /flats-geo-sync:/);
+  assert.match(geoComposeSource, /src\/sync-geo-snapshots\.js/);
+  assert.match(deploySource, /flats phase 1\/5: migrate schema/);
+  assert.match(deploySource, /flats phase 2\/5: strict geo prewarm/);
+  assert.match(deploySource, /flats phase 3\/5: cut over flats-api/);
+  assert.match(deploySource, /flats phase 4\/5: smoke materialized geo endpoints/);
+  assert.match(deploySource, /flats phase 5\/5: cut over flats-worker/);
+  assert.match(deploySource, /api\/countries\?locale=ru/);
+  assert.match(deploySource, /api\/district-zones\?country=UZ/);
+
+  const migrateAt = deploySource.indexOf("flats phase 1/5: migrate schema");
+  const prewarmAt = deploySource.indexOf('flats phase 2/5: strict geo prewarm');
+  const apiAt = deploySource.indexOf('flats phase 3/5: cut over flats-api');
+  const smokeAt = deploySource.indexOf('flats phase 4/5: smoke materialized geo endpoints');
+  const workerAt = deploySource.indexOf('flats phase 5/5: cut over flats-worker');
+  assert.ok(migrateAt < prewarmAt && prewarmAt < apiAt && apiAt < smokeAt && smokeAt < workerAt);
 });
 
 test('selectable city options are derived once from the map contract', () => {
