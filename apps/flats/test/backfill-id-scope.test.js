@@ -6,15 +6,15 @@ import {
   parseBackfillIds,
 } from '../src/maintenance/backfill-id-scope.js';
 
-test('parses, canonicalizes and deduplicates PostgreSQL listing IDs', () => {
-  const ids = parseBackfillIds(' 6965161,06714420,6965161, 8993401 ');
+test('parses and deduplicates PostgreSQL listing IDs', () => {
+  const ids = parseBackfillIds(' 6965161,6714420,6965161, 8993401 ');
   assert.deepEqual(ids, ['6965161', '6714420', '8993401']);
   assert.equal(describeBackfillIds(ids), '6965161,6714420,8993401');
   assert.equal(describeBackfillIds(null), 'ALL');
 });
 
-test('rejects empty, non-positive, malformed and out-of-range IDs', () => {
-  for (const value of ['', '0', '-1', '1.5', 'abc', '1,,2', '9223372036854775808']) {
+test('rejects empty, non-canonical, non-positive, malformed and out-of-range IDs', () => {
+  for (const value of ['', '0', '06714420', '-1', '1.5', 'abc', '1,,2', '9223372036854775808']) {
     assert.throws(() => parseBackfillIds(value), /--ids/);
   }
 });
