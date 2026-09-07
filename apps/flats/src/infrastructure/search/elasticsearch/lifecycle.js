@@ -63,7 +63,12 @@ export async function initElasticsearch() {
 
 export async function elasticsearchHealth() {
     try {
-        const health = await client.cluster.health({requestTimeout: 1000, maxRetries: 0});
+        // Transport options are the second argument. Passing them inside the
+        // request params left this probe on the client's global 15s timeout.
+        const health = await client.cluster.health(
+            {},
+            {requestTimeout: 1000, maxRetries: 0},
+        );
 
         return {
             ok: true,
