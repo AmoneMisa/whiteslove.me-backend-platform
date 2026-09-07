@@ -70,6 +70,17 @@ function optionsFromRow(row) {
   return options;
 }
 
+function normalizedProjectionKeys(keys, country = null) {
+  const targetCountry = country ? normalizedCountry(country) : null;
+  return (keys || [])
+    .map((key) => ({
+      country: normalizedCountry(key.country),
+      city: String(key.city || '').trim(),
+      locale: normalizedLocale(key.locale),
+    }))
+    .filter((key) => key.country && key.city && (!targetCountry || key.country === targetCountry));
+}
+
 export async function loadGeoCityZones(country, city, locale = '') {
   const result = await pool.query(
     `SELECT country, city, locale, zones, source_hash, built_at
@@ -202,38 +213,38 @@ export async function upsertGeoCityOptions({country, city, locale = '', options,
   return result.rows[0] || null;
 }
 
-export async function deleteGeoCityProjectionNotIn(keys) {
-  const normalized = (keys || []).map((key) => ({
-    country: normalizedCountry(key.country),
-    city: String(key.city || '').trim(),
-    locale: normalizedLocale(key.locale),
-  }));
-  if (!normalized.length) return {snapshots: 0, options: 0};
-
+// Prune one country at a time. A background refresh that could not read dynamic
+// listing locations for a country must never delete that country's last known
+// good projection.
+export async function deleteGeoCityProjectionNotInCountry(country, keys) {
+  const normalized = normalizedProjectionKeys(keys, country);
+  const targetCountry = normalizedCountry(country);
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const args = [JSON.stringify(normalized)];
+    const args = [targetCountry, JSON.stringify(normalized)];
     const snapshots = await client.query(
       `DELETE FROM geo_city_snapshots snapshot
-       WHERE NOT EXISTS (
-         SELECT 1
-         FROM jsonb_to_recordset($1::jsonb) AS keep(country TEXT, city TEXT, locale TEXT)
-         WHERE keep.country = snapshot.country
-           AND keep.city = snapshot.city
-           AND keep.locale = snapshot.locale
-       );`,
+       WHERE snapshot.country = $1
+         AND NOT EXISTS (
+           SELECT 1
+           FROM jsonb_to_recordset($2::jsonb) AS keep(country TEXT, city TEXT, locale TEXT)
+           WHERE keep.country = snapshot.country
+             AND keep.city = snapshot.city
+             AND keep.locale = snapshot.locale
+         );`,
       args,
     );
     const options = await client.query(
       `DELETE FROM geo_city_options option_row
-       WHERE NOT EXISTS (
-         SELECT 1
-         FROM jsonb_to_recordset($1::jsonb) AS keep(country TEXT, city TEXT, locale TEXT)
-         WHERE keep.country = option_row.country
-           AND keep.city = option_row.city
-           AND keep.locale = option_row.locale
-       );`,
+       WHERE option_row.country = $1
+         AND NOT EXISTS (
+           SELECT 1
+           FROM jsonb_to_recordset($2::jsonb) AS keep(country TEXT, city TEXT, locale TEXT)
+           WHERE keep.country = option_row.country
+             AND keep.city = option_row.city
+             AND keep.locale = option_row.locale
+         );`,
       args,
     );
     await client.query('COMMIT');
@@ -244,6 +255,58 @@ export async function deleteGeoCityProjectionNotIn(keys) {
   } finally {
     client.release();
   }
+}
+
+export async function verifyGeoCityProjection(keys) {
+  const normalized = normalizedProjectionKeys(keys);
+  if (!normalized.length) {
+    return {expected: 0, snapshots: 0, options: 0, missing: []};
+  }
+
+  const result = await pool.query(
+    `WITH expected AS (
+       SELECT DISTINCT country, city, locale
+       FROM jsonb_to_recordset($1::jsonb) AS item(country TEXT, city TEXT, locale TEXT)
+     ), coverage AS (
+       SELECT
+         expected.country,
+         expected.city,
+         expected.locale,
+         snapshot.country IS NOT NULL AS has_snapshot,
+         option_row.country IS NOT NULL AS has_options
+       FROM expected
+       LEFT JOIN geo_city_snapshots snapshot
+         USING (country, city, locale)
+       LEFT JOIN geo_city_options option_row
+         USING (country, city, locale)
+     )
+     SELECT
+       COUNT(*)::integer AS expected,
+       COUNT(*) FILTER (WHERE has_snapshot)::integer AS snapshots,
+       COUNT(*) FILTER (WHERE has_options)::integer AS options,
+       COALESCE(
+         jsonb_agg(
+           jsonb_build_object(
+             'country', country,
+             'city', city,
+             'locale', locale,
+             'snapshot', has_snapshot,
+             'options', has_options
+           )
+         ) FILTER (WHERE NOT has_snapshot OR NOT has_options),
+         '[]'::jsonb
+       ) AS missing
+     FROM coverage;`,
+    [JSON.stringify(normalized)],
+  );
+
+  const row = result.rows[0] || {};
+  return {
+    expected: Number(row.expected || 0),
+    snapshots: Number(row.snapshots || 0),
+    options: Number(row.options || 0),
+    missing: Array.isArray(row.missing) ? row.missing : [],
+  };
 }
 
 export async function withGeoSnapshotBuildLock(fn) {
