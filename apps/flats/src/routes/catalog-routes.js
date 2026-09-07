@@ -7,7 +7,7 @@ import {
 } from '../geo/catalog-presentation.js';
 import {
   listGeoCityOptions,
-  loadGeoCitySnapshot,
+  loadGeoCityZones,
 } from '../infrastructure/database/geoSnapshotRepository.js';
 import {getRates} from '../support/fx.js';
 
@@ -106,13 +106,13 @@ export function installCatalogRoutes(app) {
       }
 
       const locale = String(req.query.locale || '').trim().toLowerCase();
-      const exact = await loadGeoCitySnapshot(country, city, locale);
-      if (exact?.payload?.zones) return res.json(exact.payload.zones);
+      const exact = await loadGeoCityZones(country, city, locale);
+      if (exact?.zones) return res.json(exact.zones);
 
       if (locale) {
-        const canonical = await loadGeoCitySnapshot(country, city, '');
-        if (canonical?.payload?.zones) {
-          return res.json(localizedMapZones(canonical.payload.zones, locale, country, city));
+        const canonical = await loadGeoCityZones(country, city, '');
+        if (canonical?.zones) {
+          return res.json(localizedMapZones(canonical.zones, locale, country, city));
         }
       }
 
