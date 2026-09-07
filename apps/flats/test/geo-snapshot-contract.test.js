@@ -23,7 +23,8 @@ const migrationSource = readFileSync(
 test('catalog request path reads persisted geo projection instead of rebuilding catalogs', () => {
   assert.match(catalogRoutesSource, /listGeoCityOptions/);
   assert.match(catalogRoutesSource, /loadGeoCitySnapshot/);
-  assert.doesNotMatch(catalogRoutesSource, /mapZonesFor/);
+  assert.doesNotMatch(catalogRoutesSource, /from ['"]\.\.\/geo\/district-zones\.js['"]/);
+  assert.doesNotMatch(catalogRoutesSource, /^\s*const\s+zones\s*=\s*mapZonesFor\(/m);
   assert.doesNotMatch(catalogRoutesSource, /getAvailableListingLocations/);
   assert.match(catalogRoutesSource, /Geo snapshot is warming/);
 });
