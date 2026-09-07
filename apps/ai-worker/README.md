@@ -69,6 +69,33 @@ The default FreeLLMAPI runtime is pinned to `v0.9.0` so application code does no
 
 ## Current scope
 
+### Optional APInex text provider
+
+APInex can serve apartment, candidate (CV text), and vacancy extraction through
+the existing prompts, privacy redaction, schema validation and provider failover.
+It is opt-in and is not registered in FreeLLMAPI or the photo-analysis chain.
+
+Set these values in the backend platform deployment environment:
+
+```dotenv
+APINEX_API_KEY=<your-server-side-key>
+APINEX_BASE_URL=https://api.apinex.bond/v1
+APINEX_TEXT_MODEL=<exact-free-model-id-from-your-APInex-account>
+```
+
+Append `apinex` to the existing `TEXT_PROVIDERS` list to use it as a fallback
+(for example `freellmapi,apinex`), or place it first to prefer it. Keep other
+configured fallbacks. Both key and model are required; no model is chosen
+automatically. Deploy only `ai-worker` through the service-scoped deployment flow.
+
+APInex documents `/v1/chat/completions`, but its public pages did not establish
+the advertised eight free models or 1M context on 2026-09-07. Verify the exact
+model ID, zero pricing, quotas and data-retention terms in your account before
+enabling it for CV data. The worker's existing 32,000-character input limit
+still applies. No live APInex inference was validated without credentials.
+References: [API reference](https://apinex.bond/developers),
+[model catalog](https://apinex.bond/models).
+
 Implemented:
 
 - apartment, vacancy, candidate and translation extraction with structured JSON + Zod validation;
