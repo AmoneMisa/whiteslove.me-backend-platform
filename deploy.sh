@@ -111,6 +111,49 @@ console.log('flats-api smoke: health/countries/Tashkent zones OK');
 NODE
 }
 
+# docker compose run can leave its one-shot container alive if the SSH client is
+# killed by an outer timeout. That process keeps the session-scoped PostgreSQL
+# advisory lock, so every later prewarm immediately fails as "locked". The
+# publish workflow serializes production deploys, therefore any geo-sync
+# one-off present at the start of a new deploy is stale and safe to terminate.
+cleanup_geo_sync_runs() {
+  local -a containers=()
+  mapfile -t containers < <(
+    docker ps -aq --filter 'label=com.docker.compose.service=flats-geo-sync'
+  )
+  if (( ${#containers[@]} == 0 )); then
+    return 0
+  fi
+
+  echo "Removing stale flats-geo-sync container(s): ${containers[*]}"
+  docker rm -f "${containers[@]}" >/dev/null
+  # Let PostgreSQL observe the dead client and release its session advisory lock
+  # before the replacement process attempts pg_try_advisory_lock().
+  sleep 2
+}
+
+run_geo_prewarm() {
+  local timeout_value="${FLATS_GEO_PREWARM_TIMEOUT:-20m}"
+  local status=0
+
+  cleanup_geo_sync_runs
+  echo "geo prewarm server-side timeout: ${timeout_value}"
+
+  # The server-side timeout is deliberately shorter than the SSH action's 30m
+  # command timeout. If the build wedges, this shell gets control back and can
+  # remove the one-shot container instead of leaving another lock holder behind.
+  if timeout --signal=TERM --kill-after=30s "$timeout_value" \
+    "${COMPOSE[@]}" run --rm --no-deps --name flats-geo-sync-prewarm flats-geo-sync; then
+    return 0
+  else
+    status=$?
+  fi
+
+  echo "flats geo prewarm failed with status ${status}; cleaning one-shot container" >&2
+  cleanup_geo_sync_runs
+  return "$status"
+}
+
 # Pull only deploy-selected images. A flats API deployment also needs the same
 # flats image for the one-shot geo prewarm service.
 pull_services=("${requested[@]}")
@@ -136,7 +179,7 @@ if contains_requested flats-api; then
   "${COMPOSE[@]}" run --rm --no-deps flats-migrate
 
   echo '=== flats phase 2/5: strict geo prewarm + projection verification ==='
-  "${COMPOSE[@]}" run --rm --no-deps flats-geo-sync
+  run_geo_prewarm
 
   echo '=== flats phase 3/5: cut over flats-api ==='
   "${COMPOSE[@]}" up -d --no-deps --remove-orphans=false flats-api
