@@ -127,20 +127,57 @@ export function mapZonesFor(countryCode, cityName, districtOptions = []) {
   const country = String(countryCode || '').toUpperCase();
   if (!country || !cityName) {
     return {
-      districtZones: [], microdistrictMarkers: [], quartalMarkers: [], areaZones: [],
-      metroStations: [], parks: [], shoppingMalls: [], universities: [], schools: [],
-      residentialComplexes: [], airports: [], railwayStations: [], busStations: [],
-      transportStops: [], parkings: [], cityZone: null,
+      districtZones: [],
+      regionZones: [],
+      microdistrictMarkers: [],
+      mahallaMarkers: [],
+      quarterMarkers: [],
+      quartalMarkers: [],
+      zoneMarkers: [],
+      areaZones: [],
+      metroStations: [],
+      parks: [],
+      shoppingMalls: [],
+      universities: [],
+      schools: [],
+      residentialComplexes: [],
+      airports: [],
+      railwayStations: [],
+      busStations: [],
+      transportStops: [],
+      parkings: [],
+      cityZone: null,
     };
   }
 
   const cityEntity = resolveLexiconGeoEntity({country, type: 'city', canonical: cityName});
   const cityId = cityEntity?.id ?? null;
+  const regionZones = cityEntity?.parentId
+    ? findGeoEntities({country, type: 'region'})
+      .filter((entity) => entity.id === cityEntity.parentId)
+      .map((entity, index) => zoneFromEntity(entity, index))
+    : [];
   const districtZones = districtZonesFor(country, cityName, districtOptions);
-  const microdistrictMarkers = descendantsOf(cityId, country, 'microdistrict').map((entity, index) => zoneFromEntity(entity, index));
-  const quartalMarkers = descendantsOf(cityId, country, 'mahalla').map((entity, index) => zoneFromEntity(entity, index));
-  const areaEntities = [...descendantsOf(cityId, country, 'local_area'), ...descendantsOf(cityId, country, 'development_area')];
-  const areaZones = fitNonOverlappingRadii(areaEntities.map((entity, index) => zoneFromEntity(entity, index)), 150, 700);
+  const microdistrictMarkers = descendantsOf(cityId, country, 'microdistrict')
+    .map((entity, index) => zoneFromEntity(entity, index));
+
+  const mahallaMarkers = descendantsOf(cityId, country, 'mahalla')
+    .map((entity, index) => zoneFromEntity(entity, index));
+  // geo-catalog intentionally models Uzbek mavze/quarter names as
+  // microdistricts. Keep a distinct stable group without duplicating those
+  // canonical entities under a second, misleading type.
+  const quarterMarkers = [];
+
+  const areaEntities = [
+    ...descendantsOf(cityId, country, 'local_area'),
+    ...descendantsOf(cityId, country, 'development_area'),
+  ];
+  const areaZones = fitNonOverlappingRadii(
+    areaEntities.map((entity, index) => zoneFromEntity(entity, index)),
+    150,
+    700,
+  );
+  const zoneMarkers = areaZones;
 
   const metroMeta = metroPresentationByGeoEntity(cityId, country);
   const metroStations = descendantsOf(cityId, country, 'metro')
@@ -159,11 +196,29 @@ export function mapZonesFor(countryCode, cityName, districtOptions = []) {
       .filter((stop) => ['bus', 'tram', 'trolleybus', 'minibus', 'rail'].includes(stop.mode))
       .map(transportStopZone)
     : [];
+  const parkings = [];
 
   const cityZone = cityEntity ? zoneFromEntity(cityEntity, 0) : null;
   return {
-    districtZones, microdistrictMarkers, quartalMarkers, areaZones, metroStations,
-    parks, shoppingMalls, universities, schools, residentialComplexes, airports,
-    railwayStations, busStations, transportStops, parkings: [], cityZone,
+    districtZones,
+    regionZones,
+    microdistrictMarkers,
+    mahallaMarkers,
+    quarterMarkers,
+    quartalMarkers: mahallaMarkers,
+    areaZones,
+    zoneMarkers,
+    metroStations,
+    parks,
+    shoppingMalls,
+    universities,
+    schools,
+    residentialComplexes,
+    airports,
+    railwayStations,
+    busStations,
+    transportStops,
+    parkings,
+    cityZone,
   };
 }

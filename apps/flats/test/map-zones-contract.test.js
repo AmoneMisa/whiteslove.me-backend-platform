@@ -10,7 +10,11 @@ test('map zones expose canonical city center and structured filter layers', () =
   assert.ok(Number.isFinite(zones.cityZone?.lat));
   assert.ok(Number.isFinite(zones.cityZone?.lng));
   assert.ok(zones.districtZones.length > 0);
+  assert.ok(Array.isArray(zones.regionZones));
   assert.ok(zones.microdistrictMarkers.every((zone) => zone.name));
+  assert.ok(Array.isArray(zones.mahallaMarkers));
+  assert.ok(Array.isArray(zones.quarterMarkers));
+  assert.ok(Array.isArray(zones.zoneMarkers));
   assert.ok(zones.quartalMarkers.every((zone) => zone.name));
   assert.ok(zones.metroStations.length > 0);
   assert.ok(zones.metroStations.every((zone) => zone.type === 'metro'));
@@ -39,9 +43,13 @@ test('map zones expose canonical city center and structured filter layers', () =
 test('empty map-zone request keeps the complete stable map contract', () => {
   assert.deepEqual(mapZonesFor('', ''), {
     districtZones: [],
+    regionZones: [],
     microdistrictMarkers: [],
+    mahallaMarkers: [],
+    quarterMarkers: [],
     quartalMarkers: [],
     areaZones: [],
+    zoneMarkers: [],
     metroStations: [],
     parks: [],
     shoppingMalls: [],

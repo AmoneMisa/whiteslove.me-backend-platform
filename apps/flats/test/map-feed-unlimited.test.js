@@ -41,6 +41,7 @@ test('map returns every located result beyond both former caps, ignoring card pa
     country: 'UZ',
     lat_value: 41.3,
     lng_value: 69.2,
+    residence_complex: index === 0 ? 'NRG Oybek' : null,
     total_count: pointCount + 5,
     point_count: pointCount,
   }));
@@ -65,6 +66,7 @@ test('map returns every located result beyond both former caps, ignoring card pa
   assert.equal(result.points.length, pointCount);
   assert.equal(new Set(result.points.map((point) => point.id)).size, pointCount);
   assert.equal(result.points.at(-1).id, '10000');
+  assert.equal(result.points[0].residenceComplex, 'NRG Oybek');
   assert.equal(result.truncated, false);
   assert.equal(result.maxPoints, null);
 });
