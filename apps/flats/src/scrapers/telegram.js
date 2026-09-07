@@ -99,7 +99,11 @@ export function guessTelegramPropertyType(text) {
 
 export function parseTelegramPrice(text, country, dealType = null) {
   const fallbackCurrency = country?.currency || '';
-  const parsed = parsePriceFromText(text, fallbackCurrency);
+  const parsed = parsePriceFromText(text, {
+    country: country?.code || '',
+    currency: fallbackCurrency,
+    dealType,
+  });
   if (parsed.amount != null) return parsed;
 
   const value = String(text || '');
