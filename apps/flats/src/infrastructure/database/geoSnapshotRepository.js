@@ -30,6 +30,20 @@ export async function listGeoCitySnapshots(locale = '') {
   return result.rows;
 }
 
+// /api/countries needs only the small selectable location projection. Avoid
+// pulling every city's map boundaries and transport stops out of JSONB for a
+// request that will never render them.
+export async function listGeoCityOptions(locale = '') {
+  const result = await pool.query(
+    `SELECT country, city, locale, payload -> 'options' AS options, source_hash, built_at
+     FROM geo_city_snapshots
+     WHERE locale = $1
+     ORDER BY country, city;`,
+    [normalizedLocale(locale)],
+  );
+  return result.rows;
+}
+
 export async function upsertGeoCitySnapshot({country, city, locale = '', payload, sourceHash}) {
   const result = await pool.query(
     `INSERT INTO geo_city_snapshots (
