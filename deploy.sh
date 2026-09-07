@@ -35,6 +35,18 @@ contains_requested() {
   return 1
 }
 
+dump_service_health() {
+  local service="$1"
+  local container_id
+  container_id="$("${COMPOSE[@]}" ps -q "$service")"
+  if [[ -n "$container_id" ]]; then
+    echo "${service} container state:" >&2
+    docker inspect -f '{{json .State}}' "$container_id" >&2 || true
+  fi
+  echo "${service} logs:" >&2
+  "${COMPOSE[@]}" logs --tail=200 "$service" >&2 || true
+}
+
 wait_for_health() {
   local service="$1"
   local timeout_seconds="${2:-90}"
@@ -56,7 +68,7 @@ wait_for_health() {
         ;;
       exited|dead)
         echo "$service stopped before becoming ready: $status" >&2
-        "${COMPOSE[@]}" logs --tail=200 "$service" >&2 || true
+        dump_service_health "$service"
         return 1
         ;;
     esac
@@ -64,7 +76,50 @@ wait_for_health() {
   done
 
   echo "$service did not become ready within ${timeout_seconds}s" >&2
-  "${COMPOSE[@]}" logs --tail=200 "$service" >&2 || true
+  dump_service_health "$service"
+  return 1
+}
+
+probe_flats_api() {
+  "${COMPOSE[@]}" exec -T flats-api node --input-type=module <<'NODE'
+try {
+  const response = await fetch('http://127.0.0.1:4000/health', {
+    signal: AbortSignal.timeout(3000),
+  });
+  const body = await response.text();
+  if (!response.ok) {
+    console.error(`/health -> HTTP ${response.status}: ${body.slice(0, 1000)}`);
+    process.exit(1);
+  }
+  const health = body ? JSON.parse(body) : null;
+  if (health?.ok !== true || health?.postgres !== true) {
+    console.error(`/health invalid payload: ${body.slice(0, 1000)}`);
+    process.exit(1);
+  }
+  console.log(body);
+} catch (error) {
+  console.error(error?.stack || error?.message || error);
+  process.exit(1);
+}
+NODE
+}
+
+wait_for_flats_api() {
+  local timeout_seconds="${1:-90}"
+  local started=$SECONDS
+
+  while (( SECONDS - started < timeout_seconds )); do
+    if probe_flats_api >/dev/null 2>&1; then
+      echo "flats-api readiness: /health OK"
+      return 0
+    fi
+    sleep 2
+  done
+
+  echo "flats-api /health did not become ready within ${timeout_seconds}s" >&2
+  echo "direct in-container probe:" >&2
+  probe_flats_api >&2 || true
+  dump_service_health flats-api
   return 1
 }
 
@@ -183,7 +238,7 @@ if contains_requested flats-api; then
 
   echo '=== flats phase 3/5: cut over flats-api ==='
   "${COMPOSE[@]}" up -d --no-deps --remove-orphans=false flats-api
-  wait_for_health flats-api 90
+  wait_for_flats_api 90
 
   echo '=== flats phase 4/5: smoke materialized geo endpoints ==='
   smoke_flats_api

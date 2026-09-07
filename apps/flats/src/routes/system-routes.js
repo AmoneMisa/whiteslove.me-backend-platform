@@ -3,11 +3,21 @@ import {elasticsearchHealth} from '../infrastructure/search/elasticsearch.js';
 import {requireInternal} from '../support/internal-auth.js';
 import {getLastGeoPromote, getLastRun, refreshAll, refreshGeoPromote} from '../scheduling/scheduler.js';
 
+let lastPostgresHealthWarningAt = 0;
+const POSTGRES_HEALTH_WARNING_INTERVAL_MS = 30_000;
+
 function requireOps(req, res) {
   return requireInternal(req, res, {
     envNames: ['OPS_INTERNAL_KEY'],
     missingMessage: 'OPS_INTERNAL_KEY/QUEUE_INTERNAL_KEY is not configured',
   });
+}
+
+function warnPostgresHealth(error) {
+  const now = Date.now();
+  if (now - lastPostgresHealthWarningAt < POSTGRES_HEALTH_WARNING_INTERVAL_MS) return;
+  lastPostgresHealthWarningAt = now;
+  console.warn('[health] postgres check failed:', error?.message ?? String(error));
 }
 
 export function installSystemRoutes(app) {
@@ -19,7 +29,12 @@ export function installSystemRoutes(app) {
     try {
       await dbHealth();
       postgres = true;
-    } catch {}
+    } catch (error) {
+      // Do not expose infrastructure error details in the public payload, but
+      // keep a throttled server-side diagnostic so a failed container health
+      // check can be explained from ordinary service logs.
+      warnPostgresHealth(error);
+    }
 
     // PostgreSQL is the primary listing/search store. Keep container readiness
     // independent from optional Elasticsearch: awaiting ES here let a degraded
