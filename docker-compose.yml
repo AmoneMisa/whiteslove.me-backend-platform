@@ -301,6 +301,7 @@ services:
       ELASTICSEARCH_URL: http://platform-elasticsearch:9200
       ELASTICSEARCH_INDEX: flat-listings-v1
       AI_WORKER_URL: http://ai-worker:4030
+      AI_WORKER_KEY: ${AI_API_KEY:-}
       OLX_FETCHER_URL: http://flats-olx-router:4021
       SOCIAL_FETCHER_URL: http://social-fetcher:4040
       PHOTO_CACHE_DIR: /var/cache/flat-photos
@@ -337,6 +338,7 @@ services:
       ELASTICSEARCH_URL: http://platform-elasticsearch:9200
       ELASTICSEARCH_INDEX: flat-listings-v1
       AI_WORKER_URL: http://ai-worker:4030
+      AI_WORKER_KEY: ${AI_API_KEY:-}
       OLX_FETCHER_URL: http://flats-olx-router:4021
       OLX_FETCHER_URL_0: http://flats-olx-fetcher:4020
       OLX_FETCHER_URL_1: http://flats-olx-fetcher-ua:4020
@@ -581,6 +583,7 @@ services:
       JOBS_QUEUE_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://whiteslove:change-me@platform-postgres:5432/whiteslove}
       JOBS_QUEUE_DB_SCHEMA: queue
       AI_WORKER_URL: http://ai-worker:4030
+      AI_WORKER_KEY: ${AI_API_KEY:-}
       ELASTICSEARCH_URL: http://platform-elasticsearch:9200
       JOBS_ELASTICSEARCH_INDEX: job-listings-v1
       JOB_BROWSER_FETCHER_URL: http://job-browser-fetcher:4040
