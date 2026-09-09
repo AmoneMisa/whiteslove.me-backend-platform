@@ -80,7 +80,7 @@ export function parseCanonicalRegion(countryCode, value) {
 
 export function parseHousingIntent(text) { return resolveHousingIntent(text); }
 export function parseHousingSemanticContext(text) { return parseHousingContext(text); }
-export function parseHousingStructuredContext(text) { return parseHousingStructured(text); }
+export function parseHousingStructuredContext(text, options = {}) { return parseHousingStructured(text, options); }
 
 export function parseLexiconDealType(text) {
   return resolveHousingIntent(text)?.dealType
