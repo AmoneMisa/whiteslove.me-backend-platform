@@ -42,7 +42,9 @@ const TEXT_PROVIDER_API_KEYS = {
 };
 
 app.get('/health', asyncRoute(async (_req, res) => {
-  const textProvidersConfigured = config.textProviders.some((provider) => Boolean(config[TEXT_PROVIDER_API_KEYS[provider]]));
+  const textProvidersConfigured = config.textProviders.some((provider) => provider === 'apinex'
+    ? Boolean(config.apinexApiKey && config.apinexTextModel)
+    : Boolean(config[TEXT_PROVIDER_API_KEYS[provider]]));
   const health = evaluateHealth({
     enabled: config.enabled,
     textEnabled: config.textEnabled,

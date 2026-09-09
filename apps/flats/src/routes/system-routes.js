@@ -1,7 +1,10 @@
-import { dbHealth, getDbStats } from '../infrastructure/database/listingRepository.js';
-import { elasticsearchHealth } from '../infrastructure/search/elasticsearch.js';
-import { requireInternal } from '../support/internal-auth.js';
-import { getLastGeoPromote, getLastRun, refreshAll, refreshGeoPromote } from '../scheduling/scheduler.js';
+import {dbHealth, getDbStats} from '../infrastructure/database/listingRepository.js';
+import {elasticsearchHealth} from '../infrastructure/search/elasticsearch.js';
+import {requireInternal} from '../support/internal-auth.js';
+import {getLastGeoPromote, getLastRun, refreshAll, refreshGeoPromote} from '../scheduling/scheduler.js';
+
+let lastPostgresHealthWarningAt = 0;
+const POSTGRES_HEALTH_WARNING_INTERVAL_MS = 30_000;
 
 function requireOps(req, res) {
   return requireInternal(req, res, {
@@ -10,35 +13,68 @@ function requireOps(req, res) {
   });
 }
 
+function warnPostgresHealth(error) {
+  const now = Date.now();
+  if (now - lastPostgresHealthWarningAt < POSTGRES_HEALTH_WARNING_INTERVAL_MS) return;
+  lastPostgresHealthWarningAt = now;
+  console.warn('[health] postgres check failed:', error?.message ?? String(error));
+}
+
 export function installSystemRoutes(app) {
   if (app.locals.systemRoutesInstalled) return;
   app.locals.systemRoutesInstalled = true;
 
   app.get('/health', async (_req, res) => {
     let postgres = false;
+    try {
+      await dbHealth();
+      postgres = true;
+    } catch (error) {
+      // Do not expose infrastructure error details in the public payload, but
+      // keep a throttled server-side diagnostic so a failed container health
+      // check can be explained from ordinary service logs.
+      warnPostgresHealth(error);
+    }
+
+    // PostgreSQL is the primary listing/search store. Keep container readiness
+    // independent from optional Elasticsearch: awaiting ES here let a degraded
+    // ranking layer hold the whole 5s Docker health budget and mark a usable API
+    // unhealthy. Detailed dependency health is available on the ops route.
+    const ok = postgres;
+    res.status(ok ? 200 : 503).json({
+      ok,
+      postgres,
+      elasticsearch: null,
+      elasticsearchStatus: null,
+    });
+  });
+
+  app.get('/internal/health-details', async (req, res) => {
+    if (!requireOps(req, res)) return;
+
+    let postgres = false;
     let elasticsearch = false;
     let elasticsearchStatus = null;
-
+    let elasticsearchError = null;
     try {
       await dbHealth();
       postgres = true;
     } catch {}
-
     try {
       const health = await elasticsearchHealth();
       elasticsearch = health.ok === true;
       elasticsearchStatus = health.status ?? null;
-    } catch {}
+      elasticsearchError = health.error ?? null;
+    } catch (error) {
+      elasticsearchError = error?.message ?? String(error);
+    }
 
-    // PostgreSQL is the primary listing/search store. Elasticsearch remains
-    // an optional text-ranking layer and is not required for backend health.
-    const ok = postgres;
-
-    res.status(ok ? 200 : 503).json({
-      ok,
+    res.status(postgres ? 200 : 503).json({
+      ok: postgres,
       postgres,
       elasticsearch,
       elasticsearchStatus,
+      elasticsearchError,
     });
   });
 
@@ -47,7 +83,7 @@ export function installSystemRoutes(app) {
 
     try {
       const rows = await getDbStats();
-      res.json({ ok: true, rows });
+      res.json({ok: true, rows});
     } catch (err) {
       res.status(500).json({
         ok: false,
@@ -58,7 +94,7 @@ export function installSystemRoutes(app) {
 
   app.get('/internal/refresh', (req, res) => {
     if (!requireOps(req, res)) return;
-    res.json({ lastRun: getLastRun() });
+    res.json({lastRun: getLastRun()});
   });
 
   app.post('/internal/refresh', async (req, res) => {
@@ -66,7 +102,7 @@ export function installSystemRoutes(app) {
 
     try {
       const result = await refreshAll('manual');
-      res.json({ ok: true, result });
+      res.json({ok: true, result});
     } catch (err) {
       res.status(500).json({
         ok: false,
@@ -81,7 +117,7 @@ export function installSystemRoutes(app) {
   // to be configured — see promoteLearnedGeo's own skip check for that case.
   app.get('/internal/geo-promote', (req, res) => {
     if (!requireOps(req, res)) return;
-    res.json({ lastRun: getLastGeoPromote() });
+    res.json({lastRun: getLastGeoPromote()});
   });
 
   app.post('/internal/geo-promote', async (req, res) => {
@@ -89,7 +125,7 @@ export function installSystemRoutes(app) {
 
     try {
       const result = await refreshGeoPromote('manual');
-      res.json({ ok: true, result });
+      res.json({ok: true, result});
     } catch (err) {
       res.status(500).json({
         ok: false,

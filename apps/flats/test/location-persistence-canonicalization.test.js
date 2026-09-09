@@ -81,6 +81,49 @@ test('canonicalization is idempotent and does not invent a canonical for unknown
   assert.equal(unknown.sourceResidenceComplex, undefined);
 });
 
+test('never substitutes a railway/POI entity for a microdistrict canonical', () => {
+  const listing = canonicalizeListingLocations({
+    country: 'UZ',
+    city: 'Samarkand',
+    microdistrict: 'Vokzal',
+    locationEntities: [
+      { type: 'microdistrict', name: 'Vokzal', role: 'mentioned' },
+    ],
+  });
+
+  assert.equal(listing.microdistrict, 'Vokzal');
+  assert.equal(listing.sourceMicrodistrict, undefined);
+  assert.equal(listing.locationEntities[0].type, 'microdistrict');
+  assert.equal(listing.locationEntities[0].name, 'Vokzal');
+  assert.equal(listing.locationEntities[0].geoEntityId, undefined);
+  assert.notEqual(listing.locationEntities[0].name, 'Samarkand Railway Station');
+});
+
+test('repair mode replays source audit values after a partially applied bad canonicalization', () => {
+  const repaired = canonicalizeListingLocations({
+    country: 'UZ',
+    city: 'Samarkand',
+    microdistrict: 'Samarkand Railway Station',
+    sourceMicrodistrict: 'Vokzal',
+    locationEntities: [
+      {
+        type: 'microdistrict',
+        name: 'Samarkand Railway Station',
+        sourceName: 'Vokzal',
+      },
+    ],
+    sourceLocationEntities: [
+      { type: 'microdistrict', name: 'Vokzal', role: 'mentioned' },
+    ],
+  }, { preferSourceAudit: true });
+
+  assert.equal(repaired.microdistrict, 'Vokzal');
+  assert.equal(repaired.sourceMicrodistrict, 'Vokzal');
+  assert.equal(repaired.locationEntities[0].type, 'microdistrict');
+  assert.equal(repaired.locationEntities[0].name, 'Vokzal');
+  assert.equal(repaired.locationEntities[0].geoEntityId, undefined);
+});
+
 test('database mapper persists canonical Yangi Sergeli and refines its broad source point', () => {
   const row = mapListingToRow(rawTashkentListing({
     title: 'Квартира в ЖК Янги Сергели',

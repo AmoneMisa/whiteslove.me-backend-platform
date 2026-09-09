@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
 
-import { installSystemRoutes } from '../src/routes/system-routes.js';
+import {installSystemRoutes} from '../src/routes/system-routes.js';
 
 const systemRoutesSource = readFileSync(
   new URL('../src/routes/system-routes.js', import.meta.url),
@@ -55,11 +55,12 @@ function withEnv(values, fn) {
   }
 }
 
-test('system routes expose health publicly and operations only under /internal', () => {
+test('system routes expose readiness publicly and operations only under /internal', () => {
   const app = fakeApp();
   installSystemRoutes(app);
 
   assert.ok(app.routes.has('GET /health'));
+  assert.ok(app.routes.has('GET /internal/health-details'));
   assert.ok(app.routes.has('GET /internal/db-stats'));
   assert.ok(app.routes.has('GET /internal/refresh'));
   assert.ok(app.routes.has('POST /internal/refresh'));
@@ -71,35 +72,42 @@ test('system routes expose health publicly and operations only under /internal',
   assert.equal(app.routes.has('POST /api/geo-promote'), false);
 });
 
+test('public readiness does not await optional Elasticsearch', () => {
+  const healthBlock = systemRoutesSource.match(/app\.get\('\/health',[\s\S]*?\n  \}\);/)?.[0] || '';
+  assert.match(healthBlock, /await dbHealth\(\)/);
+  assert.doesNotMatch(healthBlock, /elasticsearchHealth\(/);
+  assert.match(healthBlock, /elasticsearch: null/);
+});
+
 test('operational routes reject unauthenticated requests before touching dependencies', async () => {
   const app = fakeApp();
   installSystemRoutes(app);
 
-  await withEnv({ OPS_INTERNAL_KEY: null, QUEUE_INTERNAL_KEY: null }, async () => {
+  await withEnv({OPS_INTERNAL_KEY: null, QUEUE_INTERNAL_KEY: null}, async () => {
     const handler = app.routes.get('GET /internal/db-stats');
     const res = responseRecorder();
-    await handler({ get: () => '' }, res);
+    await handler({get: () => ''}, res);
     assert.equal(res.statusCode, 503);
   });
 
-  await withEnv({ OPS_INTERNAL_KEY: 'ops-secret-123456', QUEUE_INTERNAL_KEY: null }, async () => {
+  await withEnv({OPS_INTERNAL_KEY: 'ops-secret-123456', QUEUE_INTERNAL_KEY: null}, async () => {
     const handler = app.routes.get('POST /internal/refresh');
     const res = responseRecorder();
-    await handler({ get: () => 'wrong-key' }, res);
+    await handler({get: () => 'wrong-key'}, res);
     assert.equal(res.statusCode, 401);
   });
 
-  await withEnv({ OPS_INTERNAL_KEY: null, QUEUE_INTERNAL_KEY: null }, async () => {
+  await withEnv({OPS_INTERNAL_KEY: null, QUEUE_INTERNAL_KEY: null}, async () => {
     const handler = app.routes.get('POST /internal/geo-promote');
     const res = responseRecorder();
-    await handler({ get: () => '' }, res);
+    await handler({get: () => ''}, res);
     assert.equal(res.statusCode, 503);
   });
 
-  await withEnv({ OPS_INTERNAL_KEY: 'ops-secret-123456', QUEUE_INTERNAL_KEY: null }, async () => {
+  await withEnv({OPS_INTERNAL_KEY: 'ops-secret-123456', QUEUE_INTERNAL_KEY: null}, async () => {
     const handler = app.routes.get('POST /internal/geo-promote');
     const res = responseRecorder();
-    await handler({ get: () => 'wrong-key' }, res);
+    await handler({get: () => 'wrong-key'}, res);
     assert.equal(res.statusCode, 401);
   });
 });
@@ -112,18 +120,18 @@ test('geo-promote route runs the manual promotion and surfaces its result as JSO
   // as soon as the async callback yields at its first await, not once every
   // await inside it has settled, so chaining more than one awaited handler call
   // inside a single withEnv block would read a reverted env on the later calls.
-  await withEnv({ OPS_INTERNAL_KEY: 'ops-secret-123456', QUEUE_INTERNAL_KEY: null }, async () => {
+  await withEnv({OPS_INTERNAL_KEY: 'ops-secret-123456', QUEUE_INTERNAL_KEY: null}, async () => {
     const statusHandler = app.routes.get('GET /internal/geo-promote');
     const statusRes = responseRecorder();
-    await statusHandler({ get: () => 'ops-secret-123456' }, statusRes);
+    await statusHandler({get: () => 'ops-secret-123456'}, statusRes);
     assert.equal(statusRes.statusCode, 200);
     assert.ok('lastRun' in statusRes.body);
   });
 
-  await withEnv({ OPS_INTERNAL_KEY: 'ops-secret-123456', QUEUE_INTERNAL_KEY: null }, async () => {
+  await withEnv({OPS_INTERNAL_KEY: 'ops-secret-123456', QUEUE_INTERNAL_KEY: null}, async () => {
     const triggerHandler = app.routes.get('POST /internal/geo-promote');
     const triggerRes = responseRecorder();
-    await triggerHandler({ get: () => 'ops-secret-123456' }, triggerRes);
+    await triggerHandler({get: () => 'ops-secret-123456'}, triggerRes);
     // No GEO_CATALOG_GITHUB_TOKEN in the test environment, so promoteLearnedGeo
     // resolves with a skipped result rather than throwing — this only asserts
     // the route wiring stays a 200 JSON response either way.

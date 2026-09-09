@@ -98,6 +98,17 @@ async function groq(request) {
   }, request);
 }
 
+async function apinex(request) {
+  if (!config.apinexTextModel) {
+    throw Object.assign(new Error('APINEX_MODEL_NOT_CONFIGURED'), { code: 'TEXT_PROVIDER_NOT_CONFIGURED' });
+  }
+  return openAiCompatibleText('apinex', {
+    baseUrl: config.apinexBaseUrl,
+    apiKey: config.apinexApiKey,
+    model: config.apinexTextModel,
+  }, request);
+}
+
 async function gemini(request) {
   return openAiCompatibleText('gemini', {
     baseUrl: config.geminiBaseUrl,
@@ -147,5 +158,5 @@ async function mistral(request) {
 }
 
 export const TEXT_PROVIDERS = Object.freeze({
-  freellmapi, groq, gemini, nvidia, huggingface, llm7, openrouter, mistral,
+  freellmapi, apinex, groq, gemini, nvidia, huggingface, llm7, openrouter, mistral,
 });

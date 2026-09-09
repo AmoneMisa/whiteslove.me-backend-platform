@@ -36,6 +36,8 @@ jobs:
               - 'apps/flats/**'
               - 'services/olx-fetcher/**'
               - 'services/olx-router/**'
+              - 'docker-compose.geo.yml'
+              - 'deploy.sh'
               - '.github/workflows/ci.yml'
             social:
               - 'services/social-fetcher/**'
@@ -67,7 +69,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker compose config --quiet
+      - run: docker compose -f docker-compose.yml -f docker-compose.geo.yml config --quiet
+      - run: bash -n deploy.sh
 
   ai:
     needs: changes
@@ -124,6 +127,18 @@ jobs:
           POSTGRES_PASSWORD: flatfinder
           TEST_POSTGRES_URL: postgresql://flatfinder:flatfinder@127.0.0.1:5432/flatfinder
           TEST_POSTGRES_SEARCH: '1'
+      - name: Run strict geo projection prewarm
+        run: npm run sync:geo-snapshots
+        working-directory: apps/flats
+        env:
+          GEO_CATALOG_DECRYPTION_KEY: ${{ secrets.GEO_CATALOG_DECRYPTION_KEY }}
+          GEO_SNAPSHOT_LOCALES: ru
+          PGHOST: 127.0.0.1
+          POSTGRES_DB: flatfinder
+          POSTGRES_USER: flatfinder
+          POSTGRES_PASSWORD: flatfinder
+          PGOPTIONS: -c search_path=flats,public
+          PG_STATEMENT_TIMEOUT_MS: '120000'
       - run: docker build apps/flats
       - run: docker build services/olx-fetcher
 

@@ -60,6 +60,10 @@ export const config = Object.freeze({
   visionRateLimitCooldownMs: number('VISION_RATE_LIMIT_COOLDOWN_MS', 30_000, { min: 0, integer: true }),
   visionCacheTtlMs: number('VISION_CACHE_TTL_MS', 30 * 24 * 60 * 60_000, { min: 1, integer: true }),
   groqApiKey: env('GROQ_API_KEY'),
+  apinexApiKey: env('APINEX_API_KEY'),
+  apinexBaseUrl: env('APINEX_BASE_URL', 'https://api.apinex.bond/v1').replace(/\/+$/, ''),
+  // Require an explicit catalog ID: promotional names and free tiers can change.
+  apinexTextModel: env('APINEX_TEXT_MODEL'),
   groqVisionModel: env('GROQ_VISION_MODEL', 'qwen/qwen3.6-27b'),
   groqTextModel: env('GROQ_TEXT_MODEL', env('GROQ_VISION_MODEL', 'qwen/qwen3.6-27b')),
   cloudflareAccountId: env('CLOUDFLARE_ACCOUNT_ID'),

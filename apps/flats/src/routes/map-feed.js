@@ -2,8 +2,6 @@ import {pool} from '../infrastructure/database/pool.js';
 import {copyResolvedSearchGeometry} from '../geo/search-filter-geometry.js';
 import { buildSearchContext } from '../support/postgres-search.js';
 
-const MAP_MAX_POINTS = Math.max(60, Math.min(Number(process.env.MAP_FEED_MAX_POINTS) || 3000, 10000));
-
 function finiteCoordinate(value) {
   if (value == null || value === '') return null;
   const number = Number(value);
@@ -27,6 +25,7 @@ function mapPointFromRow(row) {
     publicId: Number.isInteger(Number(row.db_id)) ? Number(row.db_id) : null,
     city: String(row.city || ''),
     district: row.district ? String(row.district) : null,
+    residenceComplex: row.residence_complex ? String(row.residence_complex) : null,
     dealType: row.deal_type ? String(row.deal_type) : null,
     roomOnly: row.room_only === true,
     byAgency: row.by_agency === true,
@@ -43,7 +42,8 @@ function mapPointFromRow(row) {
  * search, but use one narrow SQL query rather than consuming 60-row listing
  * pages. The query preserves the same latest-publication winner per dedupe_key,
  * counts the complete filtered result once, and transfers only marker/card
- * fields instead of the full listing JSONB payload.
+ * fields instead of the full listing JSONB payload. Every matching located
+ * listing is returned; card pagination and result caps do not apply to maps.
  */
 export async function searchPostgresMapPoints({ filters, countries, rates = null, searchMatches = null }) {
   const startedAt = performance.now();
@@ -62,8 +62,6 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
     searchMatches,
   });
   const params = [...context.params];
-  params.push(MAP_MAX_POINTS);
-  const limitParam = `$${params.length}`;
   const dedupeKey = mapFilters.listingId
     ? `CONCAT_WS(':', LOWER(l.source), UPPER(l.country), l.source_id)`
     : 'l.dedupe_key';
@@ -84,6 +82,7 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
         l.by_agency,
         l.city,
         l.district,
+        l.residence_complex,
         l.property_type,
         l.rooms,
         l.area_sqm,
@@ -112,9 +111,8 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
       points.*,
       totals.total_count,
       totals.point_count,
-      -- Resolved after the LIMIT: the marker payload only ever needs a photo
-      -- for the points actually transported, while the filtered set behind it
-      -- can be the whole country.
+      -- Resolve photos only for located deduplicated points, keeping the full
+      -- listing JSONB payload out of the materialized filtered result.
       COALESCE(
         NULLIF(BTRIM(payload.data->>'photo'), ''),
         CASE
@@ -136,7 +134,6 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
       WHERE visible.lat_value BETWEEN -90 AND 90
         AND visible.lng_value BETWEEN -180 AND 180
       ORDER BY visible.created_at DESC NULLS LAST, visible.db_id DESC
-      LIMIT ${limitParam}
     ) AS points ON TRUE
     LEFT JOIN listings AS payload ON payload.id = points.db_id
   `;
@@ -154,7 +151,7 @@ export async function searchPostgresMapPoints({ filters, countries, rates = null
     points,
     truncated: pointCount > points.length,
     pages: 1,
-    maxPoints: MAP_MAX_POINTS,
+    maxPoints: null,
     queryMs: Math.round((performance.now() - startedAt) * 10) / 10,
   };
 }

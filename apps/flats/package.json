@@ -15,14 +15,16 @@
     "test": "node --test",
     "migrate": "node src/migrate.js",
     "reindex": "node src/reindex.js",
+    "reindex:listings": "node src/reindex-listings.js",
+    "sync:geo-snapshots": "node src/sync-geo-snapshots.js",
     "backfill:location-canonicals": "node src/backfill-location-canonicals.js",
     "backfill:residential-coordinates": "node src/backfill-residential-coordinates.js",
     "regeocode": "node src/regeocode.js"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.1",
-    "@whiteslove/geo-catalog": "^0.9.3",
-    "@whiteslove/parsing-lexicon": "^0.6.17",
+    "@whiteslove/geo-catalog": "^0.9.10",
+    "@whiteslove/parsing-lexicon": "^0.8.0",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "pg": "^8.23.0"

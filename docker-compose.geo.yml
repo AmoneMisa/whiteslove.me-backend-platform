@@ -1,0 +1,43 @@
+services:
+  # Production/readiness override: probe the API over IPv4 loopback explicitly
+  # and keep useful failure output in Docker's health log. This avoids a false
+  # negative from localhost resolution and makes the next deploy failure
+  # diagnosable without shell access to the host.
+  flats-api:
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - >-
+          fetch('http://127.0.0.1:4000/health',{signal:AbortSignal.timeout(3000)}).then(async r=>{const body=await r.text();if(!r.ok){console.error('HTTP '+r.status+': '+body);process.exit(1)};const health=JSON.parse(body);if(health?.ok!==true||health?.postgres!==true){console.error(body);process.exit(1)};console.log(body)}).catch(error=>{console.error(error?.stack||error?.message||error);process.exit(1)})
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 15s
+
+  # Deployment-only one-shot compiler for the persisted geo read model. It uses
+  # the same immutable flats image as the API/worker, but runs before API
+  # cutover so production never serves a cold request-time geo build.
+  flats-geo-sync:
+    image: ${FLATS_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-flats:latest}
+    command: ["node", "src/sync-geo-snapshots.js"]
+    restart: "no"
+    init: true
+    env_file:
+      - path: ./.env
+        required: false
+    environment:
+      PGHOST: platform-postgres
+      PGPORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-whiteslove}
+      POSTGRES_USER: ${POSTGRES_USER:-whiteslove}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change-me}
+      PGOPTIONS: -c search_path=flats,public
+      PG_STATEMENT_TIMEOUT_MS: ${FLATS_GEO_SYNC_STATEMENT_TIMEOUT_MS:-120000}
+      GEO_SNAPSHOT_LOCALES: ${GEO_SNAPSHOT_LOCALES:-ru}
+    networks: [ platform ]
+    cpus: ${FLATS_GEO_SYNC_CPUS:-1.0}
+    labels:
+      me.whiteslove.platform.domain: flats
+      me.whiteslove.platform.role: geo-prewarm

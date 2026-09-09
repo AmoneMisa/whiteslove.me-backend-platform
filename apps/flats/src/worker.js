@@ -18,6 +18,7 @@ import {startSocialHousingScheduler} from './sources/social-housing-scheduler.js
 import {verifyDueListingAvailability} from './availability/availability-sweep.js';
 import {deactivateExpiredListings} from './listing/listing-lifecycle.js';
 import {refreshStatisticsSnapshot} from './support/statistics-snapshot.js';
+import {syncGeoCitySnapshots} from './geo/geo-city-snapshot-sync.js';
 
 const REFRESH_SECONDS = Math.max(60, Number(process.env.QUEUE_REFRESH_SECONDS) || 1800);
 const POLL_MS = Math.max(200, Number(process.env.QUEUE_POLL_SECONDS || 1) * 1000);
@@ -25,6 +26,10 @@ const ERROR_RETRY_MS = Math.max(1_000, Number(process.env.QUEUE_ERROR_RETRY_SECO
 const DISPATCH_MS = Math.min(30_000, Math.max(5_000, Number(process.env.QUEUE_DISPATCH_TICK_SECONDS || 10) * 1000));
 const PRUNE_MS = Math.max(60_000, Number(process.env.QUEUE_HISTORY_PRUNE_SECONDS || 86_400) * 1000);
 const PLACES_CHECK_MS = Math.max(60 * 60_000, Number(process.env.PLACES_CHECK_HOURS || 24) * 60 * 60_000);
+const GEO_SNAPSHOT_REFRESH_MS = Math.max(
+  60 * 60_000,
+  Number(process.env.GEO_SNAPSHOT_REFRESH_HOURS || 24) * 60 * 60_000,
+);
 const CUSTOM_SOURCE_WORKERS = Math.max(
   1,
   Math.min(8, Math.trunc(Number(process.env.CUSTOM_SOURCE_WORKERS) || 4)),
@@ -47,6 +52,7 @@ let dispatching = false;
 let availabilityRunning = false;
 let lifecycleRunning = false;
 let statisticsRunning = false;
+let geoSnapshotRunning = false;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -182,6 +188,30 @@ async function statisticsTick() {
   }
 }
 
+// Geo/transport/POI presentation is another materialized read model. Building
+// it in an API request repeatedly scanned static catalogs and could monopolize
+// the event loop for minutes. The worker compiles the static + dynamic location
+// inputs into PostgreSQL; API replicas only read the finished JSONB projection.
+async function geoSnapshotTick() {
+  if (geoSnapshotRunning || stopping) return;
+  geoSnapshotRunning = true;
+  try {
+    const result = await syncGeoCitySnapshots();
+    if (result.skipped) {
+      console.log(`[flat:worker] geo snapshot skipped reason=${result.reason}`);
+    } else {
+      console.log(
+        `[flat:worker] geo snapshots cities=${result.cities} rows=${result.snapshots} ` +
+        `deleted=${result.deleted} durationMs=${result.durationMs}`,
+      );
+    }
+  } catch (error) {
+    console.warn('[flat:worker] geo snapshot refresh failed:', error?.message ?? error);
+  } finally {
+    geoSnapshotRunning = false;
+  }
+}
+
 async function workerLoop(role, shard = 0) {
   const label = role === 'telegram'
     ? 'telegram'
@@ -231,6 +261,7 @@ async function main() {
   void availabilityTick();
   void lifecycleTick();
   void statisticsTick();
+  void geoSnapshotTick();
 
   await dispatchTick();
 
@@ -250,12 +281,14 @@ async function main() {
   const availabilityTimer = setInterval(() => void availabilityTick(), AVAILABILITY_SWEEP_MS);
   const lifecycleTimer = setInterval(() => void lifecycleTick(), LIFECYCLE_SWEEP_MS);
   const statisticsTimer = setInterval(() => void statisticsTick(), STATISTICS_REFRESH_MS);
+  const geoSnapshotTimer = setInterval(() => void geoSnapshotTick(), GEO_SNAPSHOT_REFRESH_MS);
   dispatchTimer.unref?.();
   pruneTimer.unref?.();
   placesTimer.unref?.();
   availabilityTimer.unref?.();
   lifecycleTimer.unref?.();
   statisticsTimer.unref?.();
+  geoSnapshotTimer.unref?.();
 
   try {
     await Promise.all([
@@ -270,6 +303,7 @@ async function main() {
     clearInterval(availabilityTimer);
     clearInterval(lifecycleTimer);
     clearInterval(statisticsTimer);
+    clearInterval(geoSnapshotTimer);
     await Promise.allSettled([closeElasticsearch(), closeDb()]);
   }
 }

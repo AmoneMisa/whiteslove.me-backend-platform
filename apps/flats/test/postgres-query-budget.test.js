@@ -10,10 +10,9 @@ test('map feed uses one narrow PostgreSQL query instead of listing-page fanout',
   assert.match(source, /SELECT DISTINCT ON \(dedupe_key\)/u);
   assert.match(source, /COUNT\(\*\)::int AS total_count/u);
   assert.match(source, /COUNT\(\*\) FILTER/u);
-  assert.match(source, /LIMIT \$\{limitParam\}/u);
-  // The marker photo is a jsonb walk over the payload. It belongs after the
-  // LIMIT, so it runs for the transported points rather than for every row in
-  // the filtered set.
+  assert.doesNotMatch(source, /\bLIMIT\b|MAP_MAX_POINTS|MAP_FEED_MAX_POINTS/u);
+  // The marker photo is a jsonb walk over the payload. It belongs after
+  // deduplication and coordinate filtering, rather than in the filtered set.
   assert.match(source, /LEFT JOIN listings AS payload ON payload\.id = points\.db_id/u);
   assert.match(source, /NULLIF\(BTRIM\(payload\.data->>'photo'\), ''\)/u);
   assert.doesNotMatch(source, /l\.data->>'photo'/u);

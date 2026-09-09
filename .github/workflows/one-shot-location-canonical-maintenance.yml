@@ -1,0 +1,106 @@
+name: One-shot UZ canonical geography audit
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - '.github/workflows/one-shot-location-canonical-maintenance.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    environment: Production
+    steps:
+      - name: Audit UZ canonical geography without writes
+        uses: appleboy/ssh-action@v1.2.1
+        with:
+          host: ${{ vars.SERVER_HOST }}
+          username: ${{ vars.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            cd /opt/backend
+
+            # The previous production deploy already contains the type-safe
+            # canonicalization code. This workflow-only follow-up is not itself
+            # deployed, so require that code commit (or a descendant), rather
+            # than requiring the workflow commit to be the server checkout.
+            REQUIRED_CODE_SHA='88b62ff0abdf7a82bbf41e163db4242e9250f24b'
+            ACTUAL_SHA="$(git rev-parse HEAD)"
+            echo "Production checkout: ${ACTUAL_SHA}"
+            git merge-base --is-ancestor "${REQUIRED_CODE_SHA}" "${ACTUAL_SHA}"
+
+            echo '--- Host memory before audit ---'
+            free -h
+            docker stats --no-stream --format 'table {{.Name}}\t{{.MemUsage}}' || true
+
+            # The first audit attempt was killed by the host (exit 137) while a
+            # 250-row batch duplicated large listing JSON inside the live API
+            # container. Keep the audit read-only, reduce the batch by 10x and
+            # cap the maintenance Node heap so it cannot pressure production.
+            echo '--- Canonical geography dry run (UZ) ---'
+            docker compose exec -T \
+              -e NODE_OPTIONS=--max-old-space-size=384 \
+              flats-api \
+              npm run backfill:location-canonicals -- \
+              --country=UZ --batch-size=25 --preview=100
+
+            echo '--- Cross-type regression audit (Samarkand/Vokzal) ---'
+            docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+            SELECT
+              id,
+              source,
+              source_id,
+              city,
+              data->>'microdistrict' AS microdistrict,
+              data->>'sourceMicrodistrict' AS source_microdistrict,
+              data->>'locationCanonical' AS location_canonical,
+              data->>'locationGeoEntityId' AS location_geo_entity_id
+            FROM flats.listings
+            WHERE active = TRUE
+              AND country = 'UZ'
+              AND (
+                lower(coalesce(data->>'sourceMicrodistrict', '')) LIKE '%vokzal%'
+                OR lower(coalesce(data->>'sourceMicrodistrict', '')) LIKE '%вокзал%'
+                OR lower(coalesce(data->>'microdistrict', '')) LIKE '%railway station%'
+              )
+            ORDER BY id ASC
+            LIMIT 100;
+            SQL
+
+            echo '--- Residential coordinate dry run (UZ) ---'
+            docker compose exec -T \
+              -e NODE_OPTIONS=--max-old-space-size=384 \
+              flats-api \
+              npm run backfill:residential-coordinates -- \
+              --country=UZ --batch-size=25 --preview=100
+
+            echo '--- Listing 6965161 audit ---'
+            docker compose exec -T platform-postgres sh -lc 'psql -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' <<'SQL'
+            SELECT
+              id,
+              city,
+              district,
+              metro,
+              residence_complex,
+              data->>'residenceComplex' AS data_residence_complex,
+              data->>'sourceResidenceComplex' AS source_residence_complex,
+              data->>'lat' AS lat,
+              data->>'lng' AS lng,
+              data->>'locationCanonical' AS location_canonical,
+              data->>'locationGeoEntityId' AS location_geo_entity_id,
+              data->>'locationSource' AS location_source,
+              data->>'locationProvider' AS location_provider
+            FROM flats.listings
+            WHERE source_id = '6965161'
+               OR data->>'id' = '6965161'
+            ORDER BY id ASC;
+            SQL
+
+            echo '--- Host memory after audit ---'
+            free -h
+            echo '--- Audit complete: no database writes and no reindex were performed ---'

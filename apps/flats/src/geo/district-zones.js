@@ -2,8 +2,8 @@
 // Ports whiteslove.me's app/composables/flats/useDistrictZones.ts district
 // logic to the server so the mobile app can render the same colours/shapes
 // without needing a geo-catalog client of its own (Dart can't import it).
-import { findGeoEntities, resolveLexiconGeoEntity } from '@whiteslove/geo-catalog';
-import { findTransportStops, getRoutesForStop } from '@whiteslove/geo-catalog/transport';
+import {findGeoEntities, resolveLexiconGeoEntity} from '@whiteslove/geo-catalog';
+import {findTransportRoutes, findTransportStops} from '@whiteslove/geo-catalog/transport';
 
 export const ZONE_PALETTE = Object.freeze(['#e0679a', '#24a7d6', '#10b981', '#d99a0b', '#8b5cf6']);
 
@@ -22,6 +22,17 @@ const TRANSPORT_MODE_COLORS = Object.freeze({
 });
 
 const EARTH_RADIUS_M = 6371000;
+
+// geo-catalog data is immutable for the lifetime of a process. The old map
+// adapter rescanned the complete catalog for every entity type, for every city,
+// on every request. Keep those package-level scans once per process; the
+// persisted read model means API requests normally do not execute this path at
+// all, while snapshot rebuilds and tests remain bounded.
+const entitiesByCountryType = new Map();
+const descendantsCache = new Map();
+const transportStopsCache = new Map();
+const routeRefsCache = new Map();
+let routeRefsIndexed = false;
 
 function distanceM(a, b) {
   const toRad = (v) => (v * Math.PI) / 180;
@@ -63,23 +74,80 @@ function zoneFromEntity(entity, index, extra = {}) {
   };
 }
 
+function entitiesForType(country, type) {
+  const key = `${country}\0${type}`;
+  if (!entitiesByCountryType.has(key)) {
+    entitiesByCountryType.set(key, findGeoEntities({country, type}));
+  }
+  return entitiesByCountryType.get(key);
+}
+
 function descendantsOf(cityId, country, type) {
   if (!cityId) return [];
-  const prefix = `${cityId}:`;
-  return findGeoEntities({country, type}).filter(
-    (entity) => entity.parentId === cityId || entity.id.startsWith(prefix),
-  );
+  const key = `${country}\0${cityId}\0${type}`;
+  if (!descendantsCache.has(key)) {
+    const prefix = `${cityId}:`;
+    descendantsCache.set(
+      key,
+      entitiesForType(country, type).filter(
+        (entity) => entity.parentId === cityId || entity.id.startsWith(prefix),
+      ),
+    );
+  }
+  return descendantsCache.get(key);
+}
+
+function cityTransportStops(country, cityId) {
+  if (!cityId) return [];
+  const key = `${country}\0${cityId}`;
+  if (!transportStopsCache.has(key)) {
+    transportStopsCache.set(key, findTransportStops({country, cityId}));
+  }
+  return transportStopsCache.get(key);
+}
+
+// geo-catalog's getRoutesForStop() scans the full route catalog on every call.
+// A snapshot build asks for route refs for every stop, turning first-build cost
+// into stops x routes. Build the inverse relation once instead. Iterating routes
+// in catalog order and inserting refs into Sets preserves the previous result's
+// first-seen ordering and de-duplication semantics.
+function ensureRouteRefsIndex() {
+  if (routeRefsIndexed) return;
+
+  const refsByStop = new Map();
+  for (const route of findTransportRoutes()) {
+    const ref = String(route?.ref || '').trim();
+    if (!ref) continue;
+
+    const stopIds = new Set(route?.stopIds || []);
+    for (const variant of route?.variants || []) {
+      for (const stopId of variant?.stopIds || []) stopIds.add(stopId);
+    }
+
+    for (const stopId of stopIds) {
+      const key = String(stopId || '');
+      if (!key) continue;
+      if (!refsByStop.has(key)) refsByStop.set(key, new Set());
+      refsByStop.get(key).add(ref);
+    }
+  }
+
+  for (const [stopId, refs] of refsByStop) {
+    routeRefsCache.set(stopId, [...refs]);
+  }
+  routeRefsIndexed = true;
 }
 
 function routeRefsForStop(stopId) {
-  return [...new Set(getRoutesForStop(stopId).map((route) => route.ref).filter(Boolean))];
+  ensureRouteRefsIndex();
+  return routeRefsCache.get(String(stopId || '')) || [];
 }
 
 function metroPresentationByGeoEntity(cityId, country) {
   const byGeoEntity = new Map();
   if (!cityId) return byGeoEntity;
-  for (const stop of findTransportStops({country, cityId, mode: 'metro'})) {
-    if (!stop.geoEntityId) continue;
+  for (const stop of cityTransportStops(country, cityId)) {
+    if (stop.mode !== 'metro' || !stop.geoEntityId) continue;
     const routeRefs = routeRefsForStop(stop.id);
     const lineColors = [...new Set(routeRefs.map((ref) => METRO_LINE_COLORS[ref]).filter(Boolean))];
     byGeoEntity.set(stop.geoEntityId, {
@@ -127,20 +195,57 @@ export function mapZonesFor(countryCode, cityName, districtOptions = []) {
   const country = String(countryCode || '').toUpperCase();
   if (!country || !cityName) {
     return {
-      districtZones: [], microdistrictMarkers: [], quartalMarkers: [], areaZones: [],
-      metroStations: [], parks: [], shoppingMalls: [], universities: [], schools: [],
-      residentialComplexes: [], airports: [], railwayStations: [], busStations: [],
-      transportStops: [], parkings: [], cityZone: null,
+      districtZones: [],
+      regionZones: [],
+      microdistrictMarkers: [],
+      mahallaMarkers: [],
+      quarterMarkers: [],
+      quartalMarkers: [],
+      zoneMarkers: [],
+      areaZones: [],
+      metroStations: [],
+      parks: [],
+      shoppingMalls: [],
+      universities: [],
+      schools: [],
+      residentialComplexes: [],
+      airports: [],
+      railwayStations: [],
+      busStations: [],
+      transportStops: [],
+      parkings: [],
+      cityZone: null,
     };
   }
 
   const cityEntity = resolveLexiconGeoEntity({country, type: 'city', canonical: cityName});
   const cityId = cityEntity?.id ?? null;
+  const regionZones = cityEntity?.parentId
+    ? entitiesForType(country, 'region')
+      .filter((entity) => entity.id === cityEntity.parentId)
+      .map((entity, index) => zoneFromEntity(entity, index))
+    : [];
   const districtZones = districtZonesFor(country, cityName, districtOptions);
-  const microdistrictMarkers = descendantsOf(cityId, country, 'microdistrict').map((entity, index) => zoneFromEntity(entity, index));
-  const quartalMarkers = descendantsOf(cityId, country, 'mahalla').map((entity, index) => zoneFromEntity(entity, index));
-  const areaEntities = [...descendantsOf(cityId, country, 'local_area'), ...descendantsOf(cityId, country, 'development_area')];
-  const areaZones = fitNonOverlappingRadii(areaEntities.map((entity, index) => zoneFromEntity(entity, index)), 150, 700);
+  const microdistrictMarkers = descendantsOf(cityId, country, 'microdistrict')
+    .map((entity, index) => zoneFromEntity(entity, index));
+
+  const mahallaMarkers = descendantsOf(cityId, country, 'mahalla')
+    .map((entity, index) => zoneFromEntity(entity, index));
+  // geo-catalog intentionally models Uzbek mavze/quarter names as
+  // microdistricts. Keep a distinct stable group without duplicating those
+  // canonical entities under a second, misleading type.
+  const quarterMarkers = [];
+
+  const areaEntities = [
+    ...descendantsOf(cityId, country, 'local_area'),
+    ...descendantsOf(cityId, country, 'development_area'),
+  ];
+  const areaZones = fitNonOverlappingRadii(
+    areaEntities.map((entity, index) => zoneFromEntity(entity, index)),
+    150,
+    700,
+  );
+  const zoneMarkers = areaZones;
 
   const metroMeta = metroPresentationByGeoEntity(cityId, country);
   const metroStations = descendantsOf(cityId, country, 'metro')
@@ -154,16 +259,32 @@ export function mapZonesFor(countryCode, cityName, districtOptions = []) {
   const airports = descendantsOf(cityId, country, 'poi.airport').map((entity, index) => zoneFromEntity(entity, index, {color: '#0ea5e9'}));
   const railwayStations = descendantsOf(cityId, country, 'poi.railway_station').map((entity, index) => zoneFromEntity(entity, index, {color: '#64748b'}));
   const busStations = descendantsOf(cityId, country, 'poi.bus_station').map((entity, index) => zoneFromEntity(entity, index, {color: '#2563eb'}));
-  const transportStops = cityId
-    ? findTransportStops({country, cityId})
-      .filter((stop) => ['bus', 'tram', 'trolleybus', 'minibus', 'rail'].includes(stop.mode))
-      .map(transportStopZone)
-    : [];
+  const transportStops = cityTransportStops(country, cityId)
+    .filter((stop) => ['bus', 'tram', 'trolleybus', 'minibus', 'rail'].includes(stop.mode))
+    .map(transportStopZone);
+  const parkings = [];
 
   const cityZone = cityEntity ? zoneFromEntity(cityEntity, 0) : null;
   return {
-    districtZones, microdistrictMarkers, quartalMarkers, areaZones, metroStations,
-    parks, shoppingMalls, universities, schools, residentialComplexes, airports,
-    railwayStations, busStations, transportStops, parkings: [], cityZone,
+    districtZones,
+    regionZones,
+    microdistrictMarkers,
+    mahallaMarkers,
+    quarterMarkers,
+    quartalMarkers: mahallaMarkers,
+    areaZones,
+    zoneMarkers,
+    metroStations,
+    parks,
+    shoppingMalls,
+    universities,
+    schools,
+    residentialComplexes,
+    airports,
+    railwayStations,
+    busStations,
+    transportStops,
+    parkings,
+    cityZone,
   };
 }
