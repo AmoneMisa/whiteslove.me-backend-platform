@@ -6,6 +6,8 @@ import {
 } from '../infrastructure/search/postgres-search-fast-core.js';
 import {
   canUseCanonicalFeedPath,
+  canUseMemberStatsPath,
+  computeMemberStatistics,
   searchCanonicalFeed,
 } from './postgres-canonical-feed.js';
 import {
@@ -28,9 +30,21 @@ export async function searchPostgresListings(args) {
   });
 
   const scopedArgs = {...args, filters: scopedFilters};
-  const result = canUseCanonicalFeedPath(scopedFilters, args?.searchMatches)
-    ? await searchCanonicalFeed(scopedArgs)
-    : await searchPostgresListingsCore(scopedArgs);
+  // includeStats+statsOnly needs no page at all -- route it at the aggregate
+  // read model straight away, ahead of the canonical-feed/general branch
+  // below (that branch's own statsOnly handling stays for every other
+  // includeStats/statsOnly combination, which still needs a listings page).
+  let result;
+  if (
+    scopedFilters.includeStats && scopedFilters.statsOnly
+    && canUseMemberStatsPath(scopedFilters, args?.searchMatches)
+  ) {
+    result = await computeMemberStatistics(scopedArgs);
+  } else if (canUseCanonicalFeedPath(scopedFilters, args?.searchMatches)) {
+    result = await searchCanonicalFeed(scopedArgs);
+  } else {
+    result = await searchPostgresListingsCore(scopedArgs);
+  }
   return {
     ...result,
     nextCursor: attachScopeToCursor(result.nextCursor, scope),
