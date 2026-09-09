@@ -261,7 +261,11 @@ async function main() {
   void availabilityTick();
   void lifecycleTick();
   void statisticsTick();
-  void geoSnapshotTick();
+  // Deploys already run a dedicated flats-geo-sync-prewarm step that does this
+  // exact rebuild before the worker starts. Re-running it here too meant every
+  // process start -- including a plain host reboot -- paid the full ~1786-row
+  // rebuild again, right as the source-poller loops were also spinning up.
+  // The GEO_SNAPSHOT_REFRESH_MS interval timer below still keeps it fresh.
 
   await dispatchTick();
 
