@@ -106,6 +106,15 @@ function configuredFacebookTargets() {
   return merged;
 }
 
+// Exposed so API responses (e.g. /api/countries) can tell clients which
+// countries actually have Facebook housing coverage configured, instead of
+// hardcoding a second copy of this list next to DEFAULT_FACEBOOK_TARGETS.
+export function facebookHousingCountries() {
+  return Object.entries(configuredFacebookTargets())
+    .filter(([, targets]) => targets.length)
+    .map(([country]) => country);
+}
+
 function countryConfig(code, { facebookHousingTargets = [], threadsHousingQueries = [] } = {}) {
   return {
     ...(COUNTRIES[code] || {}),

@@ -120,6 +120,13 @@ function add(targets, country, target, city = null, region = null) {
   targets.push({ country, target, ...(city ? { city } : {}), ...(region ? { region } : {}) });
 }
 
+// Exposed so API responses (e.g. /api/countries) can tell clients which
+// countries actually have Threads housing coverage, without rebuilding the
+// full (query x city) coverage set just to read off the country codes.
+export function threadsHousingCountries() {
+  return [...new Set([...Object.keys(SOCIAL_HOUSING_COUNTRIES), 'UA'])];
+}
+
 export function buildThreadsHousingCoverage() {
   const targets = [];
 

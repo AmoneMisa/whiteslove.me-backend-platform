@@ -10,6 +10,25 @@ import {
   loadGeoCityZones,
 } from '../infrastructure/database/geoSnapshotRepository.js';
 import {getRates} from '../support/fx.js';
+import {facebookHousingCountries} from '../sources/social-housing-scheduler.js';
+import {threadsHousingCountries} from '../sources/social-search-coverage.js';
+
+// Sources are per-country, not global: olx/telegram crawling is configured
+// per country in COUNTRIES, and Facebook/Threads housing coverage is a
+// curated per-country target list (social-housing-scheduler.js /
+// social-search-coverage.js) -- a country with no configured targets has no
+// listings for that source and should not offer it as a filter option.
+// Custom source URLs are user-supplied at request time, so every country
+// accepts them.
+function availableSources(country) {
+  const facebookCountries = facebookHousingCountries();
+  const threadsCountries = threadsHousingCountries();
+  const sources = new Set(country.sources || []);
+  if (facebookCountries.includes(country.code)) sources.add('facebook');
+  if (threadsCountries.includes(country.code)) sources.add('threads');
+  sources.add('custom');
+  return [...sources];
+}
 
 function optionRowsByCity(rows) {
   const map = new Map();
@@ -86,6 +105,7 @@ export function installCatalogRoutes(app) {
           cities: citiesList,
           ...(locale ? {cityLabels: labelMap(citiesList, locale, 'city')} : {}),
           locations,
+          sources: availableSources(country),
         };
       });
 
