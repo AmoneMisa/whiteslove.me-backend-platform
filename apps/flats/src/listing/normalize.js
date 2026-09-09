@@ -17,7 +17,18 @@ function consumerAddress(address, text, country) {
   return text.match(UA_EXPLICIT_STREET_RE)?.[1]?.trim() || null;
 }
 
-function normalizePhotoValue(value) {
+function isOlxCdnUrl(value) {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:') return false;
+    const host = url.hostname.toLowerCase();
+    return host === 'olxcdn.com' || host.endsWith('.olxcdn.com');
+  } catch {
+    return false;
+  }
+}
+
+function normalizePhotoValue(value, source) {
   let raw = value;
   if (value && typeof value === 'object') {
     raw = value.link ?? value.url ?? value.src ?? value.imageUrl ?? null;
@@ -25,17 +36,29 @@ function normalizePhotoValue(value) {
   if (typeof raw !== 'string') return null;
   const photo = raw.trim();
   if (!photo) return null;
-  return photo
+  const sized = photo
     .replaceAll('{width}', '800')
     .replaceAll('{height}', '600');
+
+  // OLX hotlinks straight to its own CDN, with nothing to catch it when that
+  // CDN 404s -- a removed ad, a rotated asset id, a transient edge miss, all
+  // outside our control. Telegram photos already go through a proxy+cache
+  // (media-routes.js); route OLX's the same way instead of exposing that
+  // CDN's reliability directly to browsers.
+  if (String(source || '').toLowerCase() === 'olx' && isOlxCdnUrl(sized)) {
+    return `/api/olx-photo?src=${encodeURIComponent(sized)}`;
+  }
+
+  return sized;
 }
 
 function normalizeListingPhotos(partial, listing) {
+  const source = partial?.source ?? listing?.source;
   const candidates = Array.isArray(partial?.photos)
     ? partial.photos
     : (Array.isArray(listing?.photos) ? listing.photos : []);
-  const photos = [...new Set(candidates.map(normalizePhotoValue).filter(Boolean))];
-  const single = normalizePhotoValue(partial?.photo) ?? normalizePhotoValue(listing?.photo);
+  const photos = [...new Set(candidates.map((value) => normalizePhotoValue(value, source)).filter(Boolean))];
+  const single = normalizePhotoValue(partial?.photo, source) ?? normalizePhotoValue(listing?.photo, source);
 
   if (single && !photos.includes(single)) photos.unshift(single);
 

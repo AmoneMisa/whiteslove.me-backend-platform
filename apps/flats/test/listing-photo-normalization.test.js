@@ -21,7 +21,7 @@ function base(overrides = {}) {
   };
 }
 
-test('normalizes OLX prerender photo objects into usable URLs', () => {
+test('normalizes OLX prerender photo objects and routes them through the photo proxy', () => {
   const listing = makeListing(base({
     photos: [
       {link: 'https://ireland.apollo.olxcdn.com/v1/files/a/image;s={width}x{height}'},
@@ -29,14 +29,30 @@ test('normalizes OLX prerender photo objects into usable URLs', () => {
     ],
   }));
 
+  // apollo.olxcdn.com can 404 for reasons entirely outside our control (a
+  // removed ad, a rotated asset id, a transient edge miss) with nothing to
+  // catch it, so OLX photos are proxied+cached the same way Telegram photos
+  // already are, instead of hotlinking the CDN URL straight to the browser.
+  const proxied = (url) => `/api/olx-photo?src=${encodeURIComponent(url)}`;
+
   assert.equal(
     listing.photo,
-    'https://ireland.apollo.olxcdn.com/v1/files/a/image;s=800x600',
+    proxied('https://ireland.apollo.olxcdn.com/v1/files/a/image;s=800x600'),
   );
   assert.deepEqual(listing.photos, [
-    'https://ireland.apollo.olxcdn.com/v1/files/a/image;s=800x600',
-    'https://ireland.apollo.olxcdn.com/v1/files/b/image;s=800x600',
+    proxied('https://ireland.apollo.olxcdn.com/v1/files/a/image;s=800x600'),
+    proxied('https://ireland.apollo.olxcdn.com/v1/files/b/image;s=800x600'),
   ]);
+});
+
+test('leaves non-OLX-CDN photo URLs unproxied', () => {
+  const listing = makeListing({
+    ...base(),
+    source: 'telegram',
+    photos: ['https://example.com/photo.jpg'],
+  });
+
+  assert.equal(listing.photo, 'https://example.com/photo.jpg');
 });
 
 test('keeps existing string photo URLs and removes duplicates', () => {

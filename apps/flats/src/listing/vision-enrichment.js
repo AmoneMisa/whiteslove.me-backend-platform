@@ -28,7 +28,7 @@ function absolutePhotoUrl(raw) {
   const url = String(raw || '').trim();
   if (!url) return null;
   if (/^https?:\/\//i.test(url)) return url;
-  if (url.startsWith('/api/tg-photo/')) return `${PHOTO_BASE_URL}${url}`;
+  if (url.startsWith('/api/tg-photo/') || url.startsWith('/api/olx-photo?')) return `${PHOTO_BASE_URL}${url}`;
   return null;
 }
 
