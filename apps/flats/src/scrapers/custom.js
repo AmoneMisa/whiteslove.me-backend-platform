@@ -13,6 +13,11 @@
 //
 // SSRF-safe: only http/https, and every requested/redirected host must resolve
 // exclusively to public IPs (no loopback / private / link-local ranges).
+//
+// A handful of hosts (dom.ria.com, lun.ua) front themselves with a WAF that
+// 403s a plain Node fetch by TLS/JA3 fingerprint — the same problem OLX has.
+// Those go through the olx-fetcher sidecar's generic /fetch/html endpoint
+// (curl_cffi, Chrome impersonation) instead of the raw Node request below.
 
 import dns from 'node:dns/promises';
 import net from 'node:net';
@@ -29,6 +34,12 @@ const DOMZA_DETAIL_CONCURRENCY = 6;
 const MAX_REDIRECTS = 5;
 const MAX_BYTES = 4 * 1024 * 1024; // cap the response we'll parse (4 MB)
 const MAX_ITEMS = 40;
+
+// Hosts known to WAF-block a plain server fetch, routed through the curl_cffi
+// sidecar instead. Keep in sync with GENERIC_FETCH_HOSTS in
+// services/olx-fetcher/app.py.
+const CFFI_FETCH_HOSTS = new Set(['dom.ria.com', 'www.dom.ria.com', 'lun.ua', 'www.lun.ua']);
+const CFFI_FETCHER_URL = process.env.OLX_FETCHER_URL || '';
 
 // A realistic browser UA — many sites 403 an obvious bot UA outright.
 const BROWSER_UA =
@@ -147,7 +158,42 @@ function requestSource(u, timeoutMs) {
   });
 }
 
+// Fetch a WAF-protected host's HTML through the curl_cffi sidecar instead of
+// the raw Node request, which gets 403'd by TLS/JA3 fingerprinting.
+async function fetchViaCffiSidecar(u, timeoutMs) {
+  if (!CFFI_FETCHER_URL) {
+    throw new SourceError('Source blocked automated access');
+  }
+  const base = CFFI_FETCHER_URL.replace(/\/$/, '');
+  const params = new URLSearchParams({ url: u.href });
+  let res;
+  try {
+    res = await fetch(`${base}/fetch/html?${params}`, {
+      signal: AbortSignal.timeout(Math.max(timeoutMs, 20_000)),
+    });
+  } catch {
+    throw new SourceError('Could not reach source');
+  }
+  if (!res.ok) {
+    if (res.status === 502) {
+      let detail = '';
+      try { detail = (await res.json())?.error || ''; } catch {}
+      if (detail === 'blocked_automated_access') {
+        throw new SourceError('Source blocked automated access');
+      }
+    }
+    throw new SourceError('Could not reach source');
+  }
+  const data = await res.json();
+  if (typeof data?.html !== 'string') throw new SourceError('Could not reach source');
+  return data.html;
+}
+
 async function fetchText(u, timeoutMs = FETCH_TIMEOUT_MS) {
+  if (CFFI_FETCH_HOSTS.has(u.hostname.toLowerCase())) {
+    return fetchViaCffiSidecar(u, timeoutMs);
+  }
+
   const startedAt = Date.now();
   let current = u;
   let res = null;

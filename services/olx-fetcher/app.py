@@ -9,6 +9,13 @@
 #
 # The Node backend owns all normalization/filtering; this only does the fetch +
 # extract. Callers are expected to rate-limit (the Node side throttles per host).
+#
+# It also exposes a generic /fetch/html endpoint that returns raw HTML for other
+# WAF-protected housing sites (dom.ria.com, lun.ua, ...) that the generic custom.js
+# scraper cannot reach with a plain Node fetch. That endpoint only impersonates a
+# browser TLS fingerprint — it does not know page structure — so extraction of the
+# returned HTML still happens in custom.js/owner-html.js. It is restricted to an
+# explicit host allowlist so this sidecar can't be used as an open fetch proxy.
 
 import html as html_lib
 import os
@@ -68,6 +75,19 @@ STATUS_TIMEOUT = max(3, min(30, int(os.environ.get("OLX_AVAILABILITY_TIMEOUT", "
 ATTEMPTS = max(1, int(os.environ.get("OLX_ATTEMPTS", "1")))
 RETRY_BACKOFF = float(os.environ.get("OLX_RETRY_BACKOFF", "1.5"))
 LOOKBACK_DAYS = max(1, int(os.environ.get("OLX_LOOKBACK_DAYS", "21")))
+
+# Hosts that other scrapers are allowed to fetch through /fetch/html. Keep this
+# tight — it's a fetch-by-URL endpoint, so anything added here is effectively
+# trusted to be a real housing site, not an SSRF target picked by a caller.
+GENERIC_FETCH_HOSTS = {
+    h.strip().lower()
+    for h in os.environ.get(
+        "GENERIC_FETCH_HOSTS",
+        "dom.ria.com,www.dom.ria.com,lun.ua,www.lun.ua",
+    ).split(",")
+    if h.strip()
+}
+GENERIC_FETCH_TIMEOUT = int(os.environ.get("GENERIC_FETCH_TIMEOUT", "20"))
 
 _STATE_RE = re.compile(
     r'window\.__PRERENDERED_STATE__\s*=\s*("(?:[^"\\]|\\.)*")\s*;',
@@ -383,6 +403,50 @@ def olx_listings():
         if attempt + 1 < ATTEMPTS:
             time.sleep(RETRY_BACKOFF)
     return jsonify(error=last_err or f"{where}: failed"), 502
+
+
+@app.get("/fetch/html")
+def fetch_html():
+    """Fetch an allowlisted, WAF-protected housing page and return raw HTML.
+
+    Extraction stays in Node (custom.js / owner-html.js) — this only gets past
+    the TLS-fingerprint block, the same problem OLX has.
+    """
+    url = (request.args.get("url") or "").strip()
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return jsonify(error="invalid url"), 400
+
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or host not in GENERIC_FETCH_HOSTS:
+        return jsonify(error=f"host {host!r} is not allowlisted for /fetch/html"), 400
+
+    try:
+        resp = cffi.get(
+            url,
+            impersonate=IMPERSONATE,
+            timeout=GENERIC_FETCH_TIMEOUT,
+            headers={"Accept-Language": "uk-UA,uk;q=0.9,ru;q=0.7,en;q=0.5"},
+            allow_redirects=True,
+        )
+    except Exception as exc:
+        return jsonify(error=f"fetch error: {exc}"[:240]), 502
+
+    # A redirect off the allowlisted host (e.g. to an internal address) must not
+    # be followed transparently — allow_redirects already fetched it, so just
+    # refuse to hand the body back rather than trusting an arbitrary final host.
+    final_host = (urlparse(str(resp.url or "")).hostname or "").lower()
+    if final_host not in GENERIC_FETCH_HOSTS:
+        return jsonify(error=f"redirected off-allowlist to {final_host!r}"), 502
+
+    if resp.status_code in (401, 403):
+        return jsonify(error="blocked_automated_access", httpStatus=resp.status_code), 502
+    if resp.status_code != 200:
+        return jsonify(error=f"HTTP {resp.status_code}", httpStatus=resp.status_code), 502
+
+    return jsonify(status=resp.status_code, finalUrl=str(resp.url or ""), html=resp.text)
+
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", "4020")))
