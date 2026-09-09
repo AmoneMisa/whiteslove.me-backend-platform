@@ -27,6 +27,18 @@ export const EXTERNAL_HOUSING_SOURCES = Object.freeze({
       city: 'Kyiv',
       dealType: 'longRent',
     }),
+    // Nationwide (no stable per-city URL, like m2bomber below), mixing
+    // owners and agencies. The dedicated owner-filtered counterpart
+    // (/bez-rieltora/, "without a realtor") is dimria-ukraine-owner-rent in
+    // owner-housing-sources.js, kept correct by that task's ownerOnly
+    // policy rather than a host-level assumption -- see MIXED_HOSTS in
+    // scrapers/owner-html.js.
+    Object.freeze({
+      key: 'dimria-ukraine-rent',
+      url: 'https://dom.ria.com/uk/arenda-kvartir/',
+      city: null,
+      dealType: 'longRent',
+    }),
     Object.freeze({
       key: 'rieltor-kyiv-rent',
       url: 'https://rieltor.ua/flats-rent/',

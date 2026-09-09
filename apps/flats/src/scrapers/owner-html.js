@@ -13,7 +13,6 @@ const OWNER_HOSTS = new Set([
   'rentli.uz',
   'easy-house.in.ua',
   'norieltor.com.ua',
-  'dom.ria.com',
   'bezmakler.com.ua',
   'dobalux.com',
   'proprietaripebune.ro',
@@ -40,6 +39,11 @@ const MIXED_HOSTS = new Set([
   'lalafo.kg',
   'lun.ua',
   'rieltor.ua',
+  // dom.ria.com's general rent catalogue mixes owners and agencies; its
+  // dedicated /bez-rieltora/ ("without a realtor") URL in
+  // owner-housing-sources.js stays correct via that task's ownerOnly policy,
+  // same as rieltor.ua's owner-filtered URL above.
+  'dom.ria.com',
   'imobiliare.ro',
   'anuntul.ro',
   'lajumate.ro',
