@@ -1,4 +1,4 @@
-import {resolveLexiconGeoEntity} from '@whiteslove/geo-catalog';
+import {findGeoEntities, resolveLexiconGeoEntity} from '@whiteslove/geo-catalog';
 import {matchDictionaryEntities} from './location-dictionary-resolver.js';
 
 const SEARCH_GEOMETRY_KEY = '_resolvedSearchGeometry';
@@ -64,6 +64,25 @@ function snapshotEntity(entity) {
   };
 }
 
+// Regions (oblasts/viloyats) sit above cities in the catalog hierarchy, so
+// unlike district/metro they resolve by country alone. Listings have no
+// region text column, so the resolved snapshot also carries the region's
+// child city names as a coordinate-free fallback for the SQL builder.
+function resolveRegionEntity(value, country) {
+  const requested = text(value);
+  if (!requested || !country) return null;
+  return resolveLexiconGeoEntity({country, type: 'region', canonical: requested});
+}
+
+function regionSnapshot(entity, country) {
+  const snapshot = snapshotEntity(entity);
+  if (!snapshot) return null;
+  const cityNames = findGeoEntities({country, type: 'city', parentId: entity.id})
+    .map((city) => text(city.canonicalName))
+    .filter(Boolean);
+  return {...snapshot, cityNames};
+}
+
 /**
  * Resolve user-facing district/metro filter names to canonical geo-catalog
  * entities once at the HTTP boundary. The result is intentionally attached as
@@ -83,8 +102,13 @@ export function attachResolvedSearchGeometry(filters, countryCodes) {
   );
 
   let district = null;
+  let region = null;
   const metros = [];
   const unresolvedMetros = [];
+
+  if (country) {
+    region = regionSnapshot(resolveRegionEntity(filters.region, country), country);
+  }
 
   if (country && city) {
     district = snapshotEntity(resolveEntity('district', filters.district, country, city));
@@ -101,6 +125,7 @@ export function attachResolvedSearchGeometry(filters, countryCodes) {
   }
 
   if (district?.canonicalName) filters.district = district.canonicalName;
+  if (region?.canonicalName) filters.region = region.canonicalName;
   if (requestedMetros.length) {
     const resolvedByRequested = new Map(metros.map((item) => [item.requested.toLocaleLowerCase(), item.canonicalName]));
     filters.metros = requestedMetros.map((requested) =>
@@ -116,6 +141,7 @@ export function attachResolvedSearchGeometry(filters, countryCodes) {
     country,
     city,
     district,
+    region,
     metros: Object.freeze(metros),
     unresolvedMetros: Object.freeze(unresolvedMetros),
   });

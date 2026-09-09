@@ -136,6 +136,7 @@ export function parseListingFilters(q) {
     commissionPercentMax: num(q.commissionPercentMax),
     sort: VALID_SORTS.includes(q.sort) ? q.sort : null,
     city: q.city ? String(q.city) : '',
+    region: q.region ? String(q.region) : '',
     district: q.district ? String(q.district) : '',
     microdistrict: q.microdistrict ? String(q.microdistrict) : '',
     quartal: q.quartal ? String(q.quartal) : '',

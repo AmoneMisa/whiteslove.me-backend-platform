@@ -222,6 +222,35 @@ function appendDistrictWhere({where, filters, alias, add, geometry}) {
   where.push(`(((${usable}) AND ${boundary}) OR ((NOT (${usable})) AND ${fallback}))`);
 }
 
+function appendRegionWhere({where, filters, alias, add, geometry}) {
+  if (!filters?.region) return;
+  const region = geometry?.region;
+  const boundary = boundaryPredicate(alias, region?.boundary, add);
+  const cityNames = region?.cityNames || [];
+  const cityFallback = cityNames.length
+    ? `LOWER(${alias}.city) = ANY(${add(cityNames.map((name) => name.toLocaleLowerCase()))}::text[])`
+    : null;
+
+  if (!boundary) {
+    // Listings carry no region text column, so with no boundary and no known
+    // child cities there is nothing left to match against. Fail closed rather
+    // than silently ignoring the filter.
+    where.push(cityFallback || 'FALSE');
+    return;
+  }
+
+  const usable = usableCoordinateSql(alias);
+  if (!cityFallback) {
+    where.push(`((${usable}) AND ${boundary})`);
+    return;
+  }
+
+  // Coordinates outrank the city fallback, mirroring appendDistrictWhere: a
+  // row with a usable point must satisfy the polygon, and the city-name match
+  // exists only for rows without one.
+  where.push(`(((${usable}) AND ${boundary}) OR ((NOT (${usable})) AND ${cityFallback}))`);
+}
+
 function appendMetroWhere({where, filters, alias, add, geometry}) {
   const names = metroNames(filters);
   if (!names.length) return;
@@ -271,6 +300,7 @@ function appendMetroWhere({where, filters, alias, add, geometry}) {
 export function appendPostgresGeoFilters({where, filters, alias, add}) {
   const geometry = resolvedSearchGeometry(filters);
   appendDistrictWhere({where, filters, alias, add, geometry});
+  appendRegionWhere({where, filters, alias, add, geometry});
   appendMetroWhere({where, filters, alias, add, geometry});
 }
 
@@ -282,4 +312,5 @@ export const __postgresGeoFilterTest = {
   stationRadiusBounds,
   stationRadiusBboxSql,
   stationSpatialPredicate,
+  appendRegionWhere,
 };

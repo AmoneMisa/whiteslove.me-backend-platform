@@ -224,6 +224,62 @@ test('resolved geometry survives canonical filter copies', () => {
   assert.equal(canonical._resolvedSearchGeometry, filters._resolvedSearchGeometry);
 });
 
+test('region filter prefers boundary containment over the city fallback', () => {
+  const {params, add} = collector();
+  const where = [];
+  __postgresGeoFilterTest.appendRegionWhere({
+    where,
+    filters: {region: 'Tashkent Region'},
+    alias: 'l',
+    add,
+    geometry: {
+      region: {
+        canonicalName: 'Tashkent Region',
+        boundary: {
+          type: 'Polygon',
+          coordinates: [[[69, 41], [70, 41], [70, 42], [69, 42], [69, 41]]],
+        },
+        cityNames: ['Chirchiq', 'Angren'],
+      },
+    },
+  });
+  assert.equal(where.length, 1);
+  assert.match(where[0], /point\(l\.lng, l\.lat\) <@ \$\d+::polygon/);
+  assert.match(where[0], /LOWER\(l\.city\) = ANY\(\$\d+::text\[\]\)/);
+  assert.ok(params.some((value) => Array.isArray(value) && value.includes('chirchiq')));
+});
+
+test('region filter without a resolved boundary falls back to member cities', () => {
+  const {where: builtWhere} = (() => {
+    const where = [];
+    const {add} = collector();
+    __postgresGeoFilterTest.appendRegionWhere({
+      where,
+      filters: {region: 'Tashkent Region'},
+      alias: 'l',
+      add,
+      geometry: {region: {canonicalName: 'Tashkent Region', boundary: null, cityNames: ['Chirchiq']}},
+    });
+    return {where};
+  })();
+  assert.equal(builtWhere.length, 1);
+  assert.match(builtWhere[0], /LOWER\(l\.city\) = ANY/);
+  assert.doesNotMatch(builtWhere[0], /polygon/);
+});
+
+test('region filter fails closed with no boundary and no known member cities', () => {
+  const where = [];
+  const {add} = collector();
+  __postgresGeoFilterTest.appendRegionWhere({
+    where,
+    filters: {region: 'Unresolved Oblast'},
+    alias: 'l',
+    add,
+    geometry: {region: null},
+  });
+  assert.deepEqual(where, ['FALSE']);
+});
+
 test('cursor scope changes when geographic membership changes', () => {
   const base = {
     city: 'Tashkent',
