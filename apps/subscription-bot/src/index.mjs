@@ -1,6 +1,7 @@
 import { config, validateConfig } from './config.mjs';
 import {
   claimHandoff,
+  closeDatabase,
   createEditSession,
   createSubscription,
   deleteSubscription,
@@ -581,6 +582,9 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     stopping = true;
     clearInterval(scanTimer);
+    void closeDatabase().catch((error) => {
+      console.error('[subscription-bot] closeDatabase failed:', error.message);
+    });
   });
 }
 

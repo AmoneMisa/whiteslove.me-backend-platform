@@ -236,6 +236,10 @@ services:
   platform-postgres:
     image: postgres:18-alpine
     restart: unless-stopped
+    # Safety net against client-side connection leaks (any service, present or
+    # future): a session sitting idle this long is reclaimed server-side
+    # regardless of whether the client ever meant to release it.
+    command: ["postgres", "-c", "idle_session_timeout=${PG_IDLE_SESSION_TIMEOUT:-5min}"]
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-whiteslove}
       POSTGRES_USER: ${POSTGRES_USER:-whiteslove}

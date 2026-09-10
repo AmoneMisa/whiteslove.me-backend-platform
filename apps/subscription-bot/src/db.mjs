@@ -21,83 +21,96 @@ function token() {
 export function ensureSchema() {
   if (schemaPromise) return schemaPromise;
   schemaPromise = (async () => {
-    await pool.query(`CREATE SCHEMA IF NOT EXISTS ${schema};`);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ${schema}.users (
-        telegram_user_id BIGINT PRIMARY KEY,
-        chat_id BIGINT NOT NULL,
-        username TEXT,
-        first_name TEXT,
-        language VARCHAR(2) NOT NULL DEFAULT 'ru',
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ${schema}.subscriptions (
-        id BIGSERIAL PRIMARY KEY,
-        telegram_user_id BIGINT NOT NULL REFERENCES ${schema}.users(telegram_user_id) ON DELETE CASCADE,
-        kind VARCHAR(16) NOT NULL CHECK (kind IN ('flats', 'jobs', 'candidates')),
-        name TEXT NOT NULL,
-        search_url TEXT NOT NULL,
-        filters JSONB NOT NULL DEFAULT '{}'::jsonb,
-        enabled BOOLEAN NOT NULL DEFAULT TRUE,
-        initialized BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        last_checked_at TIMESTAMPTZ
-      );
-    `);
-    await pool.query(`ALTER TABLE ${schema}.subscriptions ADD COLUMN IF NOT EXISTS initialized BOOLEAN NOT NULL DEFAULT FALSE;`);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ${schema}.deliveries (
-        telegram_user_id BIGINT NOT NULL,
-        kind VARCHAR(16) NOT NULL,
-        item_key TEXT NOT NULL,
-        first_subscription_id BIGINT REFERENCES ${schema}.subscriptions(id) ON DELETE SET NULL,
-        sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (telegram_user_id, kind, item_key)
-      );
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ${schema}.subscription_seen (
-        subscription_id BIGINT NOT NULL REFERENCES ${schema}.subscriptions(id) ON DELETE CASCADE,
-        item_key TEXT NOT NULL,
-        seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (subscription_id, item_key)
-      );
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ${schema}.edit_sessions (
-        token VARCHAR(48) PRIMARY KEY,
-        subscription_id BIGINT NOT NULL,
-        telegram_user_id BIGINT NOT NULL,
-        expires_at TIMESTAMPTZ NOT NULL,
-        consumed_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-    `);
-    await pool.query(`
-      CREATE TABLE IF NOT EXISTS ${schema}.handoffs (
-        token VARCHAR(48) PRIMARY KEY,
-        search_url TEXT NOT NULL,
-        edit_token VARCHAR(48),
-        expires_at TIMESTAMPTZ NOT NULL,
-        consumed_at TIMESTAMPTZ,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      );
-    `);
-    await pool.query(`CREATE INDEX IF NOT EXISTS subscriptions_enabled_idx ON ${schema}.subscriptions(enabled, id);`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS subscriptions_user_idx ON ${schema}.subscriptions(telegram_user_id, id);`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS deliveries_sent_idx ON ${schema}.deliveries(sent_at DESC);`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS subscription_seen_seen_idx ON ${schema}.subscription_seen(subscription_id, seen_at DESC);`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS handoffs_expiry_idx ON ${schema}.handoffs(expires_at);`);
-    await pool.query(`CREATE INDEX IF NOT EXISTS edit_sessions_expiry_idx ON ${schema}.edit_sessions(expires_at);`);
+    // One explicit connection for the whole sequence, released in `finally`
+    // regardless of which statement fails - pool.query() per statement left a
+    // connection stuck (never returned to the pool) whenever a mid-sequence
+    // statement threw, which leaked one Postgres connection per failed run.
+    const client = await pool.connect();
+    try {
+      await runSchemaStatements(client);
+    } finally {
+      client.release();
+    }
   })().catch((error) => {
     schemaPromise = undefined;
     throw error;
   });
   return schemaPromise;
+}
+
+async function runSchemaStatements(client) {
+  await client.query(`CREATE SCHEMA IF NOT EXISTS ${schema};`);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS ${schema}.users (
+      telegram_user_id BIGINT PRIMARY KEY,
+      chat_id BIGINT NOT NULL,
+      username TEXT,
+      first_name TEXT,
+      language VARCHAR(2) NOT NULL DEFAULT 'ru',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS ${schema}.subscriptions (
+      id BIGSERIAL PRIMARY KEY,
+      telegram_user_id BIGINT NOT NULL REFERENCES ${schema}.users(telegram_user_id) ON DELETE CASCADE,
+      kind VARCHAR(16) NOT NULL CHECK (kind IN ('flats', 'jobs', 'candidates')),
+      name TEXT NOT NULL,
+      search_url TEXT NOT NULL,
+      filters JSONB NOT NULL DEFAULT '{}'::jsonb,
+      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      initialized BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      last_checked_at TIMESTAMPTZ
+    );
+  `);
+  await client.query(`ALTER TABLE ${schema}.subscriptions ADD COLUMN IF NOT EXISTS initialized BOOLEAN NOT NULL DEFAULT FALSE;`);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS ${schema}.deliveries (
+      telegram_user_id BIGINT NOT NULL,
+      kind VARCHAR(16) NOT NULL,
+      item_key TEXT NOT NULL,
+      first_subscription_id BIGINT REFERENCES ${schema}.subscriptions(id) ON DELETE SET NULL,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (telegram_user_id, kind, item_key)
+    );
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS ${schema}.subscription_seen (
+      subscription_id BIGINT NOT NULL REFERENCES ${schema}.subscriptions(id) ON DELETE CASCADE,
+      item_key TEXT NOT NULL,
+      seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (subscription_id, item_key)
+    );
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS ${schema}.edit_sessions (
+      token VARCHAR(48) PRIMARY KEY,
+      subscription_id BIGINT NOT NULL,
+      telegram_user_id BIGINT NOT NULL,
+      expires_at TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await client.query(`
+    CREATE TABLE IF NOT EXISTS ${schema}.handoffs (
+      token VARCHAR(48) PRIMARY KEY,
+      search_url TEXT NOT NULL,
+      edit_token VARCHAR(48),
+      expires_at TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  await client.query(`CREATE INDEX IF NOT EXISTS subscriptions_enabled_idx ON ${schema}.subscriptions(enabled, id);`);
+  await client.query(`CREATE INDEX IF NOT EXISTS subscriptions_user_idx ON ${schema}.subscriptions(telegram_user_id, id);`);
+  await client.query(`CREATE INDEX IF NOT EXISTS deliveries_sent_idx ON ${schema}.deliveries(sent_at DESC);`);
+  await client.query(`CREATE INDEX IF NOT EXISTS subscription_seen_seen_idx ON ${schema}.subscription_seen(subscription_id, seen_at DESC);`);
+  await client.query(`CREATE INDEX IF NOT EXISTS handoffs_expiry_idx ON ${schema}.handoffs(expires_at);`);
+  await client.query(`CREATE INDEX IF NOT EXISTS edit_sessions_expiry_idx ON ${schema}.edit_sessions(expires_at);`);
 }
 
 export async function upsertUser(from, chatId, language) {
