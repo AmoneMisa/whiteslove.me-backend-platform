@@ -9,6 +9,7 @@ import {attachMarketComparisons} from '../geo/market-comparison.js';
 import {searchListingMatches} from '../infrastructure/search/elasticsearch.js';
 import {checkRate} from '../support/request-rate-limit.js';
 import {prepareCustomSources} from '../sources/custom-source-queue.js';
+import {customSourceUrlsForDomains, isKnownCustomSiteDomain} from '../sources/custom-site-domains.js';
 
 const LISTING_MAX_AGE_DAYS = 14;
 const LISTING_PAGE_SIZE = 20;
@@ -44,6 +45,18 @@ export function parseListingFilters(q) {
         .filter((s) => /^https?:\/\//i.test(s)),
     ),
   ].slice(0, 10);
+  // Which curated "custom" sites (by domain) to narrow the Sites bucket to --
+  // distinct from `customSources` above, which is the user's own ad-hoc URLs
+  // queued for on-demand scraping. An unrecognized domain is dropped rather
+  // than silently matching nothing downstream.
+  const customSites = [
+    ...new Set(
+      String(q.customSites || '')
+        .split(',')
+        .map((s) => s.trim().toLowerCase())
+        .filter((s) => s && isKnownCustomSiteDomain(s)),
+    ),
+  ];
   const metros = [
     ...new Set(
       String(q.metro || '')
@@ -83,6 +96,8 @@ export function parseListingFilters(q) {
 
   return {
     customSources,
+    customSites,
+    customSiteUrls: customSites.length ? customSourceUrlsForDomains(customSites) : [],
     propertyType: ['flat', 'house', 'any'].includes(q.propertyType) ? q.propertyType : 'any',
     dealType,
     agency: ['owner', 'agency', 'any'].includes(q.agency) ? q.agency : 'any',

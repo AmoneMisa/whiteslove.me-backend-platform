@@ -22,6 +22,7 @@ test('exact source listing requests qualify for the indexed detail path', () => 
   assert.equal(canUseFastListingPath(baseFilters, ['UA', 'UZ'], null), false);
   assert.equal(canUseFastListingPath({...baseFilters, priceMax: 500}, ['UA'], null), false);
   assert.equal(canUseFastListingPath({...baseFilters, includeStats: true}, ['UA'], null), false);
+  assert.equal(canUseFastListingPath({...baseFilters, customSites: ['krisha.kz']}, ['UA'], null), false);
 });
 
 test('fast searches use one database request and exact lookups follow the unique index order', async () => {

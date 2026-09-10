@@ -45,7 +45,8 @@ const BOOLEAN_FILTERS = [
 
 function hasSecondaryFilters(filters) {
   if (
-    filters.customSources?.length || filters.query || filters.city || filters.district ||
+    filters.customSources?.length || filters.customSites?.length || filters.query ||
+    filters.city || filters.district ||
     filters.region || filters.microdistrict || filters.quartal || filters.area || filters.metro
   ) return true;
   if (filters.propertyType && filters.propertyType !== 'any') return true;
@@ -68,7 +69,7 @@ export function canUseFastFeedPath(filters, searchMatches) {
   if (searchMatches) return false;
   if (filters.includeStats || filters.statsOnly || filters.mapOnly) return false;
   if (filters.listingId) return false;
-  if (filters.customSources?.length || filters.query) return false;
+  if (filters.customSources?.length || filters.customSites?.length || filters.query) return false;
   if (filters.sort && !['newest', 'oldest'].includes(filters.sort)) return false;
   return true;
 }

@@ -86,6 +86,13 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
   if (customSources.length) where.push(`(${publicSource} OR l.data->>'customSourceUrl' = ANY(${add(customSources)}::text[]))`);
   else where.push(publicSource);
 
+  // Narrows the curated "custom" bucket down to specific sites (by domain),
+  // e.g. only krisha.kz. Listings from every other source are untouched.
+  const customSiteUrls = [...new Set((filters.customSiteUrls || []).map(String).filter(Boolean))];
+  if (customSiteUrls.length) {
+    where.push(`(l.source <> 'custom' OR l.data->>'customSourceUrl' = ANY(${add(customSiteUrls)}::text[]))`);
+  }
+
   if (filters.listingId) where.push(`l.source_id = ${add(String(filters.listingId))}`);
 
   where.push(`NOT l.commercial`);

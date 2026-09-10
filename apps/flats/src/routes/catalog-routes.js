@@ -10,6 +10,7 @@ import {
   loadGeoCityZones,
 } from '../infrastructure/database/geoSnapshotRepository.js';
 import {getRates} from '../support/fx.js';
+import {listCustomSiteDomains} from '../sources/custom-site-domains.js';
 
 function optionRowsByCity(rows) {
   const map = new Map();
@@ -128,6 +129,14 @@ export function installCatalogRoutes(app) {
     } catch (err) {
       return res.status(500).json({error: err?.message ?? String(err)});
     }
+  });
+
+  app.get('/api/custom-sites', (req, res) => {
+    const country = String(req.query.country || '').toUpperCase();
+    const sites = listCustomSiteDomains().filter(
+      (site) => !country || site.countries.includes(country),
+    );
+    return res.json({sites});
   });
 
   app.get('/api/rates', async (_req, res) => {

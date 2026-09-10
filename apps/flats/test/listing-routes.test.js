@@ -53,6 +53,11 @@ test('persisted custom listings are scoped to explicitly requested source URLs',
   assert.match(postgresSearchSource, /customSources\.length/);
 });
 
+test('per-site filtering narrows only the custom bucket, by resolved catalogue URLs', () => {
+  assert.match(postgresSearchSource, /customSiteUrls\.length/);
+  assert.match(postgresSearchSource, /filters\.customSiteUrls/);
+});
+
 test('listing filters preserve the existing public query contract', () => {
   const filters = parseListingFilters({
     propertyType: 'flat',
@@ -67,6 +72,7 @@ test('listing filters preserve the existing public query contract', () => {
     query: 'center',
     sources: 'OLX,telegram,unknown',
     customSources: 'https://example.com/a,https://example.com/a,ftp://bad',
+    customSites: 'Krisha.KZ,krisha.kz,not-a-real-site.example',
     pets: 'true',
     children: '1',
     withPhotos: 'true',
@@ -88,6 +94,13 @@ test('listing filters preserve the existing public query contract', () => {
   assert.equal(filters.query, 'center');
   assert.deepEqual(filters.sources, ['olx', 'telegram']);
   assert.deepEqual(filters.customSources, ['https://example.com/a']);
+  assert.deepEqual(filters.customSites, ['krisha.kz']);
+  assert.ok(filters.customSiteUrls.length > 0);
+  assert.ok(
+    filters.customSiteUrls.every(
+      (url) => new URL(url).hostname.replace(/^www\./, '') === 'krisha.kz',
+    ),
+  );
   assert.equal(filters.pets, true);
   assert.equal(filters.children, true);
   assert.equal(filters.withPhotos, true);

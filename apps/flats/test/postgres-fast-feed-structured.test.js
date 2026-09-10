@@ -56,6 +56,7 @@ test('ordinary structured filters stay on the public-feed fast path', () => {
 
   assert.equal(canUseFastFeedPath({...base, query: 'near metro'}, null), false);
   assert.equal(canUseFastFeedPath({...base, customSources: ['https://example.com']}, null), false);
+  assert.equal(canUseFastFeedPath({...base, customSites: ['krisha.kz']}, null), false);
   assert.equal(canUseFastFeedPath({...base, includeStats: true}, null), false);
   assert.equal(canUseFastFeedPath({...base, sort: 'priceAsc'}, null), false);
 });
