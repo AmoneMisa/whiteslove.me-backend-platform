@@ -202,6 +202,19 @@ const SOURCE_COUNTRIES = {
     olxHost: 'https://www.olx.kz',
     realEstateRoot: 1,
     crawlCities: ['Almaty', 'Astana', 'Shymkent', 'Karaganda', 'Aktobe', 'Atyrau', 'Oral', 'Taraz'],
+    // OLX.kz city slugs, confirmed against its own geo-encoder API - several
+    // are not the obvious transliteration (Almaty is still "alma-ata", the
+    // Soviet-era name; Oral/Uralsk is "uralsk").
+    olxCities: [
+      { city: 'Almaty', slug: 'alma-ata' },
+      { city: 'Astana', slug: 'astana' },
+      { city: 'Shymkent', slug: 'shymkent' },
+      { city: 'Karaganda', slug: 'karaganda' },
+      { city: 'Aktobe', slug: 'aktobe' },
+      { city: 'Atyrau', slug: 'atyrau' },
+      { city: 'Oral', slug: 'uralsk' },
+      { city: 'Taraz', slug: 'taraz' },
+    ],
     telegramChannels: [
       'kvartiry2', 'arendakvartirastana2022', 'arendam0',
     ],
@@ -223,6 +236,17 @@ const SOURCE_COUNTRIES = {
     olxHost: 'https://www.olx.uz',
     realEstateRoot: 1,
     crawlCities: ['Tashkent', 'Samarkand', 'Bukhara', 'Namangan', 'Andijan', 'Fergana', 'Nukus'],
+    // OLX.uz city slugs, confirmed against its own geo-encoder API - Bukhara
+    // and Andijan use a different transliteration than the display name.
+    olxCities: [
+      { city: 'Tashkent', slug: 'tashkent' },
+      { city: 'Samarkand', slug: 'samarkand' },
+      { city: 'Bukhara', slug: 'buhara' },
+      { city: 'Namangan', slug: 'namangan' },
+      { city: 'Andijan', slug: 'andizhan' },
+      { city: 'Fergana', slug: 'fergana' },
+      { city: 'Nukus', slug: 'nukus' },
+    ],
     telegramChannels: [
       'nedvizhimost_tashkent', 'arentash', 'kvartira_dom_arenda', 'arendatashkent_uz',
       'bez_makler_kvartira_arenda_ijara', 'TOSHKENT_IJARAGA_UYLAR_SERGELI',

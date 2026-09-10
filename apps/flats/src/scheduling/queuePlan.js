@@ -132,7 +132,7 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
     if (country.sources?.includes('olx')) {
       const segments = ['flat:longRent', 'flat:shortRent', 'flat:sale'];
 
-      if (country.code === 'UA' && Array.isArray(country.olxCities)) {
+      if (Array.isArray(country.olxCities)) {
         for (const target of country.olxCities) {
           for (const segment of segments) {
             const task = versionTask({
