@@ -157,6 +157,35 @@ function flagmaSalary(
   }
 }
 
+// A fixed "</div></div></div>" literal after the opening tag only matches
+// pages whose description div happens to be wrapped by exactly two more
+// divs with nothing else in between. When the real description itself
+// contains its own nested <div> (or the wrapper differs), the non-greedy
+// [\s\S]*? has no reason to stop at that first triple-close -- it keeps
+// going until it finds one *anywhere later in the page*, swallowing the
+// site's nav menu, language switcher and footer as the "description". Track
+// actual <div>/</div> depth instead so the match always ends at the real
+// closing tag of the opened element, regardless of what's nested inside it.
+function extractBalancedDivContent(html: string, openTagRe: RegExp): string {
+  const open = html.match(openTagRe)
+  if (!open || open.index == null) return ''
+  const contentStart = open.index + open[0].length
+  const tagRe = /<div\b[^>]*>|<\/div\s*>/gi
+  tagRe.lastIndex = contentStart
+  let depth = 1
+  let match: RegExpExecArray | null
+  // eslint-disable-next-line no-cond-assign
+  while ((match = tagRe.exec(html))) {
+    if (match[0][1] === '/') {
+      depth -= 1
+      if (depth === 0) return html.slice(contentStart, match.index)
+    } else {
+      depth += 1
+    }
+  }
+  return ''
+}
+
 export function parseFlagmaVacancyDetail(html: string, summary: Job): Job | null {
   const canonical = absoluteUrl(
     html.match(/<link\b[^>]*rel=["']canonical["'][^>]*href=["']([^"']+)["'][^>]*>/iu)?.[1] || summary.url,
@@ -169,7 +198,7 @@ export function parseFlagmaVacancyDetail(html: string, summary: Job): Job | null
     html.match(/["']title["']\s*:\s*["']([^"']+)["']/iu)?.[1] || heading,
   )
   const description = stripHtml(
-    html.match(/<div\b[^>]*id=["']description-text["'][^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/iu)?.[1] || '',
+    extractBalancedDivContent(html, /<div\b[^>]*id=["']description-text["'][^>]*>/iu),
   )
   if (!canonical || !title || title.length > 240 || description.length < 40) return null
 

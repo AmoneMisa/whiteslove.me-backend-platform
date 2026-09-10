@@ -130,3 +130,20 @@ test('Flagma detail parser ignores an unrelated itemprop=value row with no expli
 test('Flagma detail parser rejects a captcha or generic shell', () => {
   assert.equal(parseFlagmaVacancyDetail('<html><title>Flagma</title><div>reCAPTCHA</div></html>', summary), null)
 })
+
+test('Flagma detail parser stops at the real close of #description-text instead of the site nav further down the page', () => {
+  // The description here wraps its own <p> inside an extra <div>, so it no
+  // longer closes with exactly "</div></div></div>" right after the content.
+  // A fixed triple-close regex would keep scanning past it and grab the
+  // first "</div></div></div>" it finds anywhere later -- in this case, the
+  // site's nav menu -- as if that were the job description.
+  const nestedHtml = detailHtml.replace(
+    /<div id="description-text">[\s\S]*?<\/div><\/div><\/div>/,
+    `<div id="description-text"><div class="wrap"><p>Вести переписку с клиентами в чатах и отвечать по готовым скриптам поддержки.</p></div></div></div>` +
+    `<nav>bo'limlarVakansiyalar E'lonlar Xizmatlar Vakansiyalar Rezyume Mashinalar Yuklar Masofalar Avto Ko'chmas mulk Kompaniyalar<div><div></div></div></nav>`,
+  )
+  const job = parseFlagmaVacancyDetail(nestedHtml, summary)
+  assert.ok(job)
+  assert.match(job.description || '', /Вести переписку с клиентами/)
+  assert.doesNotMatch(job.description || '', /bo'limlarVakansiyalar|Ko'chmas mulk/)
+})

@@ -38,7 +38,7 @@ const markedStreetRe = new RegExp(
   `${WORD_LEFT_BOUND}((?:${streetMarkerPart})\\.?[\\s\\u00a0]*[^\\n,;.]{2,70}(?:,?\\s*(?:${alternatives([ADDRESS_TERMS.house])})?\\.?\\s*\\d+[\\p{L}0-9/-]*)?)`,
   'iu',
 );
-const ADDRESS_NOISE_RE = /(?:поверх|этаж|підвал|подвал|цоколь|ремонт|площа|площад|кімнат|комнат)/iu;
+const ADDRESS_NOISE_RE = /(?:поверх|этаж|підвал|подвал|цоколь|ремонт|площа|площад|кімнат|комнат|техник|мебел|меблі|риелтор|ріелтор|рієлтор|телефон|^тел\b|контакт|номер|звонит|дзвон)/iu;
 const ADDRESS_PAREN_CONTEXT_RE = /\s*\((?:парк|park|школ|school|магазин|сільпо|silpo|рынок|ринок|базар|метро|metro)\b.*$/iu;
 
 function cleanAddress(value) {
@@ -147,8 +147,17 @@ export function parseLexiconAddress(text, canonicalStreet = null) {
   const canonicalAddress = plausibleAddress(canonicalStreet);
   if (canonicalAddress) return canonicalAddress;
 
+  // The trailing number's suffix is capped at 1-2 letters (a building-letter
+  // suffix like "12а"/"11A", optionally with a "/2" block number) rather than
+  // an open-ended word. An open suffix let this last-resort fallback read a
+  // scale word right after an unrelated number as if it were a house number:
+  // "мебель, техника\n11тыс" (furniture, appliances / 11 thousand [UAH])
+  // was captured whole as the address "техника 11тыс".
+  // The leading digit group is capped at 4 digits: a real house number is
+  // never longer, while a phone number (7+ digits) glued to a contact label
+  // ("Риелтор 0965890931") would otherwise satisfy this exact same shape.
   const bare = String(text).match(
-    /(?:^|[,;\n]\s*)([\p{L}][\p{L}'’‘`ʻʼ.-]*(?:\s+[\p{L}][\p{L}'’‘`ʻʼ.-]*){0,5}\s+\d+[\p{L}0-9/-]*)(?=\s*(?:[,.;\n]|$))/iu,
+    /(?:^|[,;\n]\s*)([\p{L}][\p{L}'’‘`ʻʼ.-]*(?:\s+[\p{L}][\p{L}'’‘`ʻʼ.-]*){0,5}\s+\d{1,4}[\p{L}]{0,2}(?:[\/-]\d{1,4}[\p{L}]{0,2})?)(?=\s*(?:[,.;\n]|$))/iu,
   );
   return bare ? plausibleAddress(bare[1]) : null;
 }
