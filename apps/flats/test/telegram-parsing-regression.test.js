@@ -100,3 +100,16 @@ test('creates one stable listing per digest apartment while preserving the origi
 test('keeps ordinary single-listing Telegram posts unsplit', () => {
   assert.deepEqual(splitTelegramHousingMessage(problematicPost), [{text: problematicPost, suffix: null}]);
 });
+
+test('drops Telegram group moderation notices that only coincidentally contain "дом"', () => {
+  // "повідомлення" (message) contains the Russian root "дом" (house) as a
+  // plain substring; an unbounded HOUSING_RE let this bot notice through as
+  // a housing ad even though it has nothing to do with a listing.
+  const text = '🌙 НІЧНИЙ РЕЖИМ ВИМКНЕНО\n\n✅ Відтепер можна знову відправляти текстові повідомлення в групу.';
+  const listings = telegramMessageToListings(
+    {id: 1, date: '2026-09-01T00:00:00.000Z', text},
+    {name: 'test-channel', city: 'Kyiv', dealType: null},
+    {code: 'UA', currency: 'UAH'},
+  );
+  assert.deepEqual(listings, []);
+});

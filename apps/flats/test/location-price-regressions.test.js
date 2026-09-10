@@ -9,3 +9,14 @@ test('compact Ukrainian street marker is parsed without a space after the dot', 
     'вул.Воробкевича',
   );
 });
+
+test('the 3-letter "пер" street abbreviation does not match mid-word', () => {
+  // "Відтепер" (Ukrainian: "from now on") ends in the letters "пер", which
+  // is also the abbreviation for переулок/провулок (lane). Without a word
+  // boundary this Telegram moderation notice was mistaken for a street
+  // address and its sentence became the listing's "location".
+  assert.equal(
+    parseLexiconAddress('Відтепер можна знову відправляти текстові повідомлення в групу.'),
+    null,
+  );
+});

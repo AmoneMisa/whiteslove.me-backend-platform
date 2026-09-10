@@ -28,9 +28,14 @@ const alternatives = (entries) => [...new Set(entries.flatMap(values))]
 
 const addressLabelPart = alternatives([ADDRESS_TERMS.label]);
 const streetMarkerPart = alternatives([ADDRESS_TERMS.street, ADDRESS_TERMS.avenue]);
-const addressLabelRe = new RegExp(`(?:${addressLabelPart})\\s*[:\\-–—]\\s*([^\\n]{3,100})`, 'iu');
+// Short abbreviations like "пер"/"ул" are common letter sequences inside
+// unrelated words ("Відтепер", "получил"), so both markers require a
+// non-letter/start boundary to their left -- otherwise they match mid-word
+// and the capture swallows whatever unrelated sentence follows.
+const WORD_LEFT_BOUND = '(?:^|[^\\p{L}\\p{N}_])';
+const addressLabelRe = new RegExp(`${WORD_LEFT_BOUND}(?:${addressLabelPart})\\s*[:\\-–—]\\s*([^\\n]{3,100})`, 'iu');
 const markedStreetRe = new RegExp(
-  `((?:${streetMarkerPart})\\.?[\\s\\u00a0]*[^\\n,;.]{2,70}(?:,?\\s*(?:${alternatives([ADDRESS_TERMS.house])})?\\.?\\s*\\d+[\\p{L}0-9/-]*)?)`,
+  `${WORD_LEFT_BOUND}((?:${streetMarkerPart})\\.?[\\s\\u00a0]*[^\\n,;.]{2,70}(?:,?\\s*(?:${alternatives([ADDRESS_TERMS.house])})?\\.?\\s*\\d+[\\p{L}0-9/-]*)?)`,
   'iu',
 );
 const ADDRESS_NOISE_RE = /(?:поверх|этаж|підвал|подвал|цоколь|ремонт|площа|площад|кімнат|комнат)/iu;

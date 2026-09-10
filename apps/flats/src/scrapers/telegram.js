@@ -22,8 +22,21 @@ import {classifyChildren, parseCondition, parseKvartal} from '../listing/textpar
 
 const TG_WORKER_URL = process.env.TG_WORKER_URL || '';
 
-const HOUSING_RE =
-  /(apartament|casa|квартир|kvartira|\bkv\b|дом|\buy\b|будин|пәтер|үй|кімнат|комнат|xona|хона|ijara|arenda|аренд|жал[гғ]а|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|тенге|у\.?е)/i;
+// Short Cyrillic roots like "дом" are common substrings inside unrelated
+// words in other Slavic languages -- e.g. Ukrainian "повідомлення" (message)
+// contains "дом", so an unbounded match let plain Telegram moderation notices
+// ("night mode disabled") through as housing ads. Word-like terms therefore
+// require a non-letter/start boundary on their left; currency/unit tokens
+// stay unbounded since they're routinely glued directly to a digit ("500грн").
+const HOUSING_WORD_TERMS = [
+  'apartament', 'casa', 'квартир', 'kvartira', 'дом', 'будин', 'пәтер', 'үй',
+  'кімнат', 'комнат', 'xona', 'хона', 'ijara', 'arenda', 'аренд', 'жал[гғ]а', 'тенге',
+];
+const HOUSING_WORD_RE = new RegExp(`(?:^|[^\\p{L}\\p{N}_])(?:${HOUSING_WORD_TERMS.join('|')})`, 'iu');
+const HOUSING_SYMBOL_RE = /(\bkv\b|\buy\b|m2|м2|кв\.?\s?м|\$|€|грн|сум|so'?m|у\.?е)/i;
+const HOUSING_RE = {
+  test: (text) => HOUSING_WORD_RE.test(text) || HOUSING_SYMBOL_RE.test(text),
+};
 
 const TELEGRAM_BARE_USD_RE =
   /^.{0,70}?(?<![\d+])([1-9]\d{2,3})(?!\d)(?=\s+(?!m2\b|m²\b|м2\b|м²\b|qavat\b|этаж\b|xona\b|xonali\b|хона\b|хонали\b|комнат\b|kvartal\b|квартал\b)[\p{L}])/iu;
