@@ -113,3 +113,19 @@ test('drops Telegram group moderation notices that only coincidentally contain "
   );
   assert.deepEqual(listings, []);
 });
+
+test('drops a group welcome/intro post even when it names a rental group', () => {
+  // The group's own welcome message names the group, and the real-estate
+  // group here is named after what it rents out ("Оренда квартир Одеса"),
+  // which otherwise reads as ordinary housing content to HOUSING_RE. The
+  // post describes no property -- it's a greeting plus an off-topic
+  // channel cross-promo.
+  const text = '., Добро пожаловать в группу Оренда квартир Одеса | Аренда Одесса | OK Realty.\n\n'
+    + '🐧 Стать сисадмином теперь стало проще! @sysadmin_library – новый канал с лучшими материалами по DevOps и Linux для начинающих.';
+  const listings = telegramMessageToListings(
+    {id: 2, date: '2026-09-01T00:00:00.000Z', text},
+    {name: 'test-channel', city: 'Odesa', dealType: null},
+    {code: 'UA', currency: 'UAH'},
+  );
+  assert.deepEqual(listings, []);
+});

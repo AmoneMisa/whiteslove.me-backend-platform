@@ -12,7 +12,7 @@ import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing'
 import {makeListing} from '../listing/normalize.js';
 import {MAX_AGE_MS} from '../listing/listing-policy.js';
 import {looksTelegramRoomShare} from '../sources/telegram-room-share.js';
-import {isDirectOwner} from '@whiteslove/parsing-lexicon/housing-commercial';
+import {isDirectOwner, looksLikeGroupWelcomeMessage} from '@whiteslove/parsing-lexicon/housing-commercial';
 import { parseHousingPrice as parsePriceFromText } from '@whiteslove/parsing-lexicon/housing-money';
 import {
   parseHousingRoomsFromText as parseRoomsFromText,
@@ -146,6 +146,11 @@ function messageToListing(msg, channelConfig, country, suffix = null) {
   if (resolveHousingIntent(text)?.listingKind === 'propertyWanted') return null;
   if (text.length < 10) return null;
   if (!HOUSING_RE.test(text)) return null;
+  // A group's own welcome/intro post is often named after what the group
+  // rents out ("Оренда квартир Одеса"), which satisfies HOUSING_RE above
+  // even though the message describes no property -- it's a greeting (and
+  // frequently an off-topic channel cross-promo riding along with it).
+  if (looksLikeGroupWelcomeMessage(text)) return null;
 
   const {amount: price, currency} = parseTelegramPrice(text, country, channelConfig.dealType);
   const type = guessTelegramPropertyType(text);
