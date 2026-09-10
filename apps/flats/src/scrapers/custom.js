@@ -131,11 +131,16 @@ function requestSource(u, timeoutMs) {
         'Accept-Encoding': 'identity',
       },
       servername: u.hostname,
-      lookup: (_host, _options, callback) => callback(
-        null,
-        address,
-        net.isIPv6(address) ? 6 : 4,
-      ),
+      // Node's autoSelectFamily (Happy Eyeballs) requests options.all: true,
+      // which expects an array of records back instead of a bare
+      // (address, family) pair - answering with the old two-arg shape makes
+      // Node read `undefined` as the address and fail every request with
+      // ERR_INVALID_IP_ADDRESS, regardless of whether the host is reachable.
+      lookup: (_host, options, callback) => {
+        const family = net.isIPv6(address) ? 6 : 4;
+        if (options?.all) callback(null, [{ address, family }]);
+        else callback(null, address, family);
+      },
     }, (response) => {
       const chunks = [];
       let total = 0;

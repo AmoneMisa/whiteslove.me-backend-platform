@@ -381,7 +381,12 @@ services:
     restart: unless-stopped
     environment: &olx-environment
       OLX_TIMEOUT: ${OLX_TIMEOUT:-45}
-      OLX_ATTEMPTS: ${OLX_ATTEMPTS:-1}
+      # A single attempt turns any transient timeout/SSL hiccup into a hard
+      # task failure that only recovers via the outer crawl-task retry
+      # (minutes later, with backoff). One extra in-sidecar retry absorbs
+      # that flakiness in seconds instead.
+      OLX_ATTEMPTS: ${OLX_ATTEMPTS:-2}
+      OLX_RETRY_BACKOFF: ${OLX_RETRY_BACKOFF:-2}
       OLX_LOOKBACK_DAYS: ${OLX_LOOKBACK_DAYS:-21}
     networks: [ platform ]
     healthcheck: &olx-healthcheck
