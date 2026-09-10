@@ -355,6 +355,11 @@ services:
       QUEUE_TASK_LEASE_SECONDS: ${FLATS_QUEUE_TASK_LEASE_SECONDS:-300}
       VISION_PHOTO_BASE_URL: http://flats-api:4000
       PG_STATEMENT_TIMEOUT_MS: ${FLATS_WORKER_STATEMENT_TIMEOUT_MS:-120000}
+      # 2 OLX shards + 4 custom-source shards + dispatcher + availability sweep
+      # + lifecycle tick + geo lookups + statistics tick all share this one
+      # pool; the previous default of 10 left them contending for slots
+      # whenever a long-running query (the statistics snapshot) held one.
+      PG_POOL_MAX: ${FLATS_WORKER_PG_POOL_MAX:-20}
     depends_on:
       flats-migrate: { condition: service_completed_successfully }
       flats-olx-router: { condition: service_healthy }
