@@ -22,6 +22,11 @@ import {
   tashkentMetroLabels,
 } from '@whiteslove/parsing-lexicon';
 import { matchTashkentHousingTransit } from '@whiteslove/parsing-lexicon/tashkent-housing-geography';
+// Same semantics as `entries.find((entry) => entry.re.test(text))`, but skips
+// entries whose aliases cannot occur in the text. An unscoped country scan
+// touches ~14.5k entries (Tashkent alone catalogues 4k streets), which cost
+// seconds per listing and dominated every crawl.
+import { matchFirstEntry } from '@whiteslove/parsing-lexicon/alias-prefilter';
 import { canonicalCityName } from './countries.js';
 
 let mergedUkraine = null;
@@ -244,7 +249,7 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     const secondary = matchUkraineSecondaryCity(text);
     if (secondary) {
       result.city = secondary.city;
-      const micro = (secondary.microdistricts || []).find((x) => x.re.test(text));
+      const micro = matchFirstEntry(secondary.microdistricts, text);
       if (micro) result.microdistrict = micro.name;
     }
   }
@@ -282,16 +287,16 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
   }
 
   for (const [cityName, data] of ordered) {
-    const district = (data.districts || []).find((x) => x.re.test(text));
-    const microdistrict = (data.microdistricts || []).find((x) => x.re.test(text));
+    const district = matchFirstEntry(data.districts, text);
+    const microdistrict = matchFirstEntry(data.microdistricts, text);
     const metro = matchMetro(text, data.metro, microdistrict?.name || null, cityName, countryCode);
     const residentialComplex = countryCode === 'UZ' && cityName === 'Tashkent'
       ? matchTashkentResidentialComplex(text)
-      : (data.residentialComplexes || []).find((x) => x.re.test(text));
-    const street = (data.streets || []).find((x) => x.re.test(text));
+      : matchFirstEntry(data.residentialComplexes, text);
+    const street = matchFirstEntry(data.streets, text);
     const landmark = countryCode === 'UZ' && cityName === 'Tashkent'
       ? matchTashkentPoi(text)
-      : (data.landmarks || []).find((x) => x.re.test(text));
+      : matchFirstEntry(data.landmarks, text);
 
     if (!result.district && district) result.district = district.name;
     if (!result.microdistrict && microdistrict) result.microdistrict = microdistrict.name;
@@ -419,7 +424,7 @@ function dropPlaceNamedMetro(result, text, countryCode, cities) {
 export function canonicalDictionaryDistrict(name, countryCode) {
   if (!name || !countryCode) return null;
   for (const data of Object.values(mergedCountry(countryCode))) {
-    const match = (data.districts || []).find((entry) => entry.re.test(name));
+    const match = matchFirstEntry(data.districts, name);
     if (match) return match.name;
   }
   return null;
