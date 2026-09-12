@@ -38,6 +38,16 @@ const DEFAULT_GREENHOUSE = [
   'wildlifestudios:Wildlife Studios', 'wooga:Wooga',
   'nix:N-iX', 'mhp:MHP', 'baidu:Baidu',
   'pieinsurance:Pie Insurance',
+  // Resolved from the remote-company registry in extraPublicJobSources by
+  // scripts/discover-ats-boards.mjs. Each board returned postings and its
+  // published board name matched the company, so these replace homepage
+  // anchor-scraping with the documented Greenhouse API.
+  'acquia:Acquia', 'circleci:CircleCI', 'customerio:Customer.io',
+  'dashlane:Dashlane', 'generalassembly:General Assembly',
+  'ghost:Ghost Foundation', 'godaddy:GoDaddy', 'gohiring:GoHiring',
+  'honeycomb:Honeycomb', 'liveperson:LivePerson', 'metalab:MetaLab',
+  'muckrack:Muck Rack', 'octopusdeploy:Octopus Deploy', 'okta:Okta',
+  'openzeppelin:OpenZeppelin', 'platformsh:Platform.sh', 'rocketchat:Rocket.Chat',
 ].join(',')
 
 const DEFAULT_LEVER = [
@@ -46,6 +56,12 @@ const DEFAULT_LEVER = [
   'palantir:Palantir', 'spotify:Spotify', 'toptal:Toptal',
   'matchgroup:Match Group', 'dreamgames:Dream Games', 'jamcity:Jam City',
   'eleks:ELEKS', 'intellias:Intellias',
+  // From scripts/discover-ats-boards.mjs. Lever publishes no company identity,
+  // so each of these was confirmed by finding the company's own domain or name
+  // inside its postings — see the KNOWN_HANDLE_MISMATCHES note in that script
+  // for the boards this check rejected.
+  'bounteous:Bounteous', 'britecore:BriteCore', 'collabora:Collabora',
+  'fly:Fly.io', 'prominentedge:Prominent Edge', 'renofi:RenoFi',
 ].join(',')
 
 const DEFAULT_SMARTRECRUITERS = [
@@ -53,6 +69,8 @@ const DEFAULT_SMARTRECRUITERS = [
   'ByteDance:ByteDance', 'Joom:Joom', 'Uber:Uber', 'Wayfair:Wayfair',
   'Grab:Grab', 'BigCommerce:BigCommerce', 'Omio:Omio', 'Gameloft:Gameloft',
   'Alorica:Alorica', 'geico:GEICO',
+  // Name-verified by scripts/discover-ats-boards.mjs — see DEFAULT_GREENHOUSE.
+  'applaudostudios:Applaudo', 'kinsta:Kinsta',
 ].join(',')
 
 const DEFAULT_ASHBY = [
@@ -65,6 +83,13 @@ const DEFAULT_ASHBY = [
   'voodoo:Voodoo', 'supercell:Supercell', 'preply:Preply', 'headway:Headway',
   'solidgate:Solidgate', 'obrio:OBRIO', 'universe:Universe', 'restream:Restream',
   'zapier:Zapier', 'buffer:Buffer',
+  // From scripts/discover-ats-boards.mjs, confirmed the same way as the Lever
+  // entries above: Ashby publishes no company identity either.
+  'andela:Andela', 'capchase:Capchase', 'caremessage:CareMessage',
+  'clickup:ClickUp', 'close:Close', 'gruntwork:Gruntwork',
+  'helpscout:Help Scout', 'lightspeedhq:Lightspeed', 'mapbox:Mapbox',
+  'mux:Mux', 'percona:Percona', 'pleo:Pleo', 'quora:Quora',
+  'recharge:ReCharge',
 ].join(',')
 
 const DEFAULT_CAREERS_PAGES = [
