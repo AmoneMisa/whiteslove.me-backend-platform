@@ -156,7 +156,7 @@ function plausibleCard(text, country) {
   return parsed?.amount != null;
 }
 
-function toListing(fragment, text, country, sourceUrl, index, ownerHost) {
+function toListing(fragment, text, country, sourceUrl, index, ownerHost, sourceDealType) {
   const parsedPrice = parsePriceFromText(text, country?.currency || '');
   const url = firstHref(fragment, sourceUrl) || sourceUrl;
   const agency = !ownerHost && parseHousingSeller(text).type === 'agency';
@@ -167,6 +167,9 @@ function toListing(fragment, text, country, sourceUrl, index, ownerHost) {
     title: heading(fragment, text),
     description: text,
     propertyType: resolveHousingPropertyType(text),
+    // The catalogue's declared deal type is source evidence, not a verdict:
+    // normalization still lets explicit short-stay wording in the card win.
+    dealType: sourceDealType ?? null,
     // Owner-only hosts keep their source contract. Mixed hosts only set true
     // when an explicit realtor/agency signal exists; otherwise normalization is
     // free to apply shared seller semantics instead of us inventing an owner.
@@ -191,7 +194,7 @@ function structuredBlocks(html) {
   for (const tag of ['article', 'li']) {
     const re = new RegExp(`<${tag}\\b[^>]*>[\\s\\S]*?<\\/${tag}>`, 'giu');
     let match;
-    while ((match = re.exec(html)) && blocks.length < 240) blocks.push(match[0]);
+    while ((match = re.exec(html))) blocks.push(match[0]);
   }
   return blocks;
 }
@@ -206,7 +209,7 @@ function divBlocks(html, cardClass) {
   );
   const starts = [];
   let match;
-  while ((match = marker.exec(html)) && starts.length < 240) starts.push(match.index);
+  while ((match = marker.exec(html))) starts.push(match.index);
 
   const blocks = [];
   for (let i = 0; i < starts.length; i += 1) {
@@ -220,7 +223,7 @@ function textWindows(html) {
   const text = stripHtml(html);
   const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
   const windows = [];
-  for (let index = 0; index < lines.length && windows.length < 160; index += 1) {
+  for (let index = 0; index < lines.length; index += 1) {
     if (!PRICE_RE.test(lines[index])) continue;
     const start = Math.max(0, index - 5);
     const end = Math.min(lines.length, index + 5);
@@ -230,7 +233,7 @@ function textWindows(html) {
   return windows;
 }
 
-export function extractKnownOwnerHtml(html, country, sourceUrl) {
+export function extractKnownOwnerHtml(html, country, sourceUrl, sourceDealType = null) {
   let host;
   try {
     host = new URL(sourceUrl).hostname.replace(/^www\./, '').toLowerCase();
@@ -248,19 +251,22 @@ export function extractKnownOwnerHtml(html, country, sourceUrl) {
     const key = normalized.toLocaleLowerCase().slice(0, 420);
     if (seen.has(key)) return;
     seen.add(key);
-    listings.push(toListing(fragment, normalized, country, sourceUrl, listings.length, ownerHost));
+    listings.push(
+      toListing(fragment, normalized, country, sourceUrl, listings.length, ownerHost, sourceDealType),
+    );
   };
 
+  // Every card on the page is read. Result volume is not a crawl boundary
+  // (AGENTS.md); how far the catalogue is traversed is the crawler's decision,
+  // not this extractor's.
   const divCardClass = DIV_CARD_HOSTS.get(host);
   if (divCardClass) {
     for (const block of divBlocks(String(html || ''), divCardClass)) {
       add(block, stripHtml(block));
-      if (listings.length >= 40) break;
     }
   } else {
     for (const block of structuredBlocks(String(html || ''))) {
       add(block, stripHtml(block));
-      if (listings.length >= 40) break;
     }
   }
 
@@ -270,7 +276,6 @@ export function extractKnownOwnerHtml(html, country, sourceUrl) {
   if (listings.length === 0) {
     for (const window of textWindows(String(html || ''))) {
       add('', window);
-      if (listings.length >= 40) break;
     }
   }
 

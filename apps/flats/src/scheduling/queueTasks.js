@@ -450,7 +450,13 @@ async function processQueueTaskInner(task) {
       throw new Error('Missing custom source URL');
     }
 
-    const fetchedListings = await scrapeCustomUrl(sourceUrl, COUNTRIES[country]);
+    // The source's declared deal type is handed to the scraper so shared
+    // normalization can weigh it against each card's own wording. Patching it
+    // in afterwards could only fill a null — it could not correct a misread,
+    // and tags/occupancy were already derived from the wrong value.
+    const fetchedListings = await scrapeCustomUrl(sourceUrl, COUNTRIES[country], {
+      dealType: task.dealType || null,
+    });
     const ownerFiltered = enforceOwnerOnlyListings(fetchedListings, task);
     const listings = ownerFiltered.map((listing) => ({
       ...listing,
@@ -459,7 +465,6 @@ async function processQueueTaskInner(task) {
       city: listing.city || task.city || '',
       customSourceUrl: sourceUrl,
       curatedSource: task.curated === true,
-      dealType: listing.dealType || task.dealType || null,
     }));
     const persisted = await persist(listings, task);
     // A catalog page is not an authoritative snapshot of the whole source.

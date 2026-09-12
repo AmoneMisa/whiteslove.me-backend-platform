@@ -33,7 +33,10 @@ const DOMZA_FETCH_TIMEOUT_MS = 20_000;
 const DOMZA_DETAIL_CONCURRENCY = 6;
 const MAX_REDIRECTS = 5;
 const MAX_BYTES = 4 * 1024 * 1024; // cap the response we'll parse (4 MB)
-const MAX_ITEMS = 40;
+// There is deliberately no result cap here. MAX_BYTES bounds transport, not
+// crawl depth: a fetched page is parsed to exhaustion and every listing it
+// yields is returned. See AGENTS.md — a result count must never bound a
+// successful crawl, and crawl depth belongs to the shared crawler, not here.
 
 // Hosts known to WAF-block a plain server fetch, routed through the curl_cffi
 // sidecar instead. Keep in sync with GENERIC_FETCH_HOSTS in
@@ -333,7 +336,7 @@ function sellerText(node, offer) {
   return names.map((value) => String(value || '')).filter(Boolean).join(' ');
 }
 
-function mapLdNode(node, country, sourceUrl, idx) {
+function mapLdNode(node, country, sourceUrl, idx, sourceDealType) {
   const offer = firstOffer(node);
   const price = numFrom(offer.price ?? offer.lowPrice ?? node.price);
   const currency = offer.priceCurrency ?? node.priceCurrency ?? country.currency;
@@ -354,6 +357,7 @@ function mapLdNode(node, country, sourceUrl, idx) {
     title: node.name ?? node.headline ?? 'Listing',
     description: node.description ?? '',
     propertyType: ldType(node).includes('house') ? 'house' : 'flat',
+    dealType: sourceDealType ?? null,
     // Generic structured data is not owner-only. Preserve an explicit agency
     // signal and otherwise let makeListing/shared lexicon infer the seller.
     byAgency: agency ? true : undefined,
@@ -371,7 +375,7 @@ function mapLdNode(node, country, sourceUrl, idx) {
   });
 }
 
-function extractJsonLd(html, country, sourceUrl) {
+function extractJsonLd(html, country, sourceUrl, sourceDealType) {
   const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   const nodes = [];
   let m;
@@ -390,20 +394,19 @@ function extractJsonLd(html, country, sourceUrl) {
     if (!ldType(node).some((t) => LISTING_TYPES.has(t))) continue;
     // A bare Offer with no price/name is noise; require something usable.
     if (!node.name && !node.offers && node.price == null) continue;
-    listings.push(mapLdNode(node, country, sourceUrl, idx++));
-    if (listings.length >= MAX_ITEMS) break;
+    listings.push(mapLdNode(node, country, sourceUrl, idx++, sourceDealType));
   }
   return listings;
 }
 
 // Minimal RSS/Atom item extraction.
-function extractFeed(xml, country, sourceUrl) {
+function extractFeed(xml, country, sourceUrl, sourceDealType) {
   const isFeed = /<rss[\s>]|<feed[\s>]/i.test(xml);
   if (!isFeed) return [];
   const items = [];
   const itemRe = /<(item|entry)\b[\s\S]*?<\/\1>/gi;
   let m;
-  while ((m = itemRe.exec(xml)) && items.length < MAX_ITEMS) {
+  while ((m = itemRe.exec(xml))) {
     const block = m[0];
     const title = tag(block, 'title') || 'Listing';
     const link =
@@ -421,6 +424,7 @@ function extractFeed(xml, country, sourceUrl) {
         title: decodedTitle,
         description: decodedDesc,
         propertyType: 'flat',
+        dealType: sourceDealType ?? null,
         byAgency: parseHousingSeller(`${decodedTitle} ${decodedDesc}`).type === 'agency' ? true : undefined,
         price: null,
         currency: country.currency,
@@ -483,7 +487,7 @@ function extractDomzaOfferUrls(html, sourceUrl) {
   const hrefRe = /href=["']([^"']+)["']/gi;
   let match;
 
-  while ((match = hrefRe.exec(html)) && urls.length < MAX_ITEMS) {
+  while ((match = hrefRe.exec(html))) {
     let url;
     try {
       url = new URL(decodeXml(match[1]), sourceUrl);
@@ -530,7 +534,7 @@ async function concurrentMap(values, concurrency, mapper) {
   return results;
 }
 
-async function scrapeDomzaCatalog(safe, country) {
+async function scrapeDomzaCatalog(safe, country, sourceDealType) {
   const body = await fetchText(safe, DOMZA_FETCH_TIMEOUT_MS);
   const offerUrls = extractDomzaOfferUrls(body, safe.href);
   if (!offerUrls.length) {
@@ -543,12 +547,12 @@ async function scrapeDomzaCatalog(safe, country) {
     async (url) => {
       const detailUrl = await assertSafeUrl(url);
       const detailBody = await fetchText(detailUrl, DOMZA_FETCH_TIMEOUT_MS);
-      return extractJsonLd(detailBody, country, detailUrl.href)
+      return extractJsonLd(detailBody, country, detailUrl.href, sourceDealType)
         .filter((listing) => /^https:\/\/(?:www\.)?domza\.uz\/offers\//i.test(listing.url || ''));
     },
   );
 
-  const listings = groups.flat().slice(0, MAX_ITEMS);
+  const listings = groups.flat();
   if (!listings.length) {
     throw new SourceError('Domza offer pages did not expose readable RealEstateListing JSON-LD');
   }
@@ -575,7 +579,7 @@ async function scrapeTelegramUrl(u, country) {
   if (!listings.length) {
     throw new SourceError('No readable listings — the channel is private or empty');
   }
-  return listings.slice(0, MAX_ITEMS);
+  return listings;
 }
 
 // Fetch + parse a single custom-source URL. Recognizes common social platforms
@@ -584,7 +588,13 @@ async function scrapeTelegramUrl(u, country) {
 // allowlisted housing sites) conservative server-rendered listing-card
 // extraction. Domza's catalog keeps listing JSON-LD on individual offer pages,
 // so we discover those links first and parse the detail pages in parallel.
-export async function scrapeCustomUrl(url, country) {
+//
+// `dealType` is the curated source's declared contract (e.g. a daily-rental
+// catalogue). It is handed to makeListing as evidence rather than applied
+// afterwards, so shared normalization can arbitrate it against the text —
+// explicit short-stay wording still wins, and an off-topic "продам" in a card
+// no longer turns a rental catalogue entry into a sale.
+export async function scrapeCustomUrl(url, country, { dealType = null } = {}) {
   const safe = await assertSafeUrl(url);
   const platform = detectPlatform(safe);
   if (platform === 'telegram') return scrapeTelegramUrl(safe, country);
@@ -596,18 +606,18 @@ export async function scrapeCustomUrl(url, country) {
     );
   }
   if (isDomzaCatalogUrl(safe)) {
-    return scrapeDomzaCatalog(safe, country);
+    return scrapeDomzaCatalog(safe, country, dealType);
   }
 
   const body = await fetchText(safe);
-  let listings = extractJsonLd(body, country, safe.href);
-  if (!listings.length) listings = extractFeed(body, country, safe.href);
-  if (!listings.length) listings = extractKnownOwnerHtml(body, country, safe.href);
+  let listings = extractJsonLd(body, country, safe.href, dealType);
+  if (!listings.length) listings = extractFeed(body, country, safe.href, dealType);
+  if (!listings.length) listings = extractKnownOwnerHtml(body, country, safe.href, dealType);
 
   if (!listings.length) {
     throw new SourceError(
       'No listings found — the page has no readable structured data, feed, or supported housing catalogue cards',
     );
   }
-  return listings.slice(0, MAX_ITEMS);
+  return listings;
 }
