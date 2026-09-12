@@ -87,6 +87,51 @@ function stationNamedAfterItsPlace(countryCode, cityName, stationName) {
   return canonicalCityName(countryCode, stationName) === canonicalCityName(countryCode, cityName);
 }
 
+/**
+ * A place whose alias is just some other city's name is a false anchor.
+ *
+ * Catalogued streets and landmarks are routinely named after other cities, and
+ * the imported alias lists carry that bare city name alongside the real one —
+ * Kyiv's "Чернівецька вулиця" lists "Чернівці". Because an unscoped scan walks
+ * every city in the country and lets the first hit set the city, a post that
+ * merely says which city it is in ("Чернівці, центр") was resolved to a street
+ * in Kyiv and the listing placed in a third city entirely.
+ *
+ * The matched text, not the entry name, is what has to be judged: the full name
+ * "Чернівецька вулиця" is a legitimate street, while the bare "Чернівці" is the
+ * city. This is the same rule stationNamedAfterItsPlace applies to metro.
+ */
+function matchedOtherCityName(countryCode, cityName, matchedText) {
+  const matched = String(matchedText || '').trim();
+  if (!matched) return false;
+  const canonical = canonicalCityName(countryCode, matched);
+  // canonicalCityName echoes anything it does not recognise as a city.
+  if (!canonical || canonical === matched) return false;
+  return canonical !== canonicalCityName(countryCode, cityName);
+}
+
+/**
+ * Imported alias lists also carry stub aliases of one or two letters — Lviv's
+ * "Поперечна вулиця" lists "По" — which match ordinary prepositions and
+ * particles. "(по плану)" is not a street reference in any of these languages,
+ * and no catalogued place is identified by two letters, so a match that short
+ * anchors nothing.
+ */
+const MIN_ANCHOR_CHARS = 3;
+
+function matchedTooShort(matchedText) {
+  // The alias regex captures its boundary characters, so trim to the name.
+  const bare = String(matchedText || '').replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+  return bare.length < MIN_ANCHOR_CHARS;
+}
+
+/** Rejects entries anchored only on another city's name or a stub alias. */
+function notOtherCity(countryCode, cityName) {
+  return (_entry, matchedText) =>
+    !matchedTooShort(matchedText)
+    && !matchedOtherCityName(countryCode, cityName, matchedText);
+}
+
 /** Whether any occurrence of `re` in the text carries explicit metro wording. */
 function hasContextualMetroMention(text, re) {
   if (!re) return false;
@@ -280,23 +325,30 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     // Parent-aware Central Asia resolver found only ambiguous city candidates.
     // Do not fall back to first-match-wins across the whole country.
     ordered = [];
+  } else if (preferredCity && cities[preferredCity]) {
+    // A caller-stated city is scope, not merely a preference. Ranking it first
+    // and then continuing through the country still let a street absent from
+    // that city be supplied by another one — "вул. Чорновола" resolved out of
+    // Kalush for a Chernivtsi listing, and set the city to Kalush with it.
+    // Treat it like a resolved city: a street the stated city does not have is
+    // not this listing's street.
+    ordered = [[preferredCity, cities[preferredCity]]];
   } else {
-    ordered = preferredCity && cities[preferredCity]
-      ? [[preferredCity, cities[preferredCity]], ...Object.entries(cities).filter(([name]) => name !== preferredCity)]
-      : Object.entries(cities);
+    ordered = Object.entries(cities);
   }
 
   for (const [cityName, data] of ordered) {
-    const district = matchFirstEntry(data.districts, text);
-    const microdistrict = matchFirstEntry(data.microdistricts, text);
+    const accept = notOtherCity(countryCode, cityName);
+    const district = matchFirstEntry(data.districts, text, accept);
+    const microdistrict = matchFirstEntry(data.microdistricts, text, accept);
     const metro = matchMetro(text, data.metro, microdistrict?.name || null, cityName, countryCode);
     const residentialComplex = countryCode === 'UZ' && cityName === 'Tashkent'
       ? matchTashkentResidentialComplex(text)
-      : matchFirstEntry(data.residentialComplexes, text);
-    const street = matchFirstEntry(data.streets, text);
+      : matchFirstEntry(data.residentialComplexes, text, accept);
+    const street = matchFirstEntry(data.streets, text, accept);
     const landmark = countryCode === 'UZ' && cityName === 'Tashkent'
       ? matchTashkentPoi(text)
-      : matchFirstEntry(data.landmarks, text);
+      : matchFirstEntry(data.landmarks, text, accept);
 
     if (!result.district && district) result.district = district.name;
     if (!result.microdistrict && microdistrict) result.microdistrict = microdistrict.name;

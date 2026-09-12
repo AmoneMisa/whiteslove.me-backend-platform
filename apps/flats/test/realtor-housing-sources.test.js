@@ -39,7 +39,10 @@ test('Domza catalog discovery follows offer pages and parses their JSON-LD', () 
   assert.match(customScraper, /function extractDomzaOfferUrls/);
   assert.match(customScraper, /async function scrapeDomzaCatalog/);
   assert.match(customScraper, /DOMZA_DETAIL_CONCURRENCY/);
-  assert.match(customScraper, /extractJsonLd\(detailBody, country, detailUrl\.href\)/);
+  // The detail pages are parsed with the curated source's declared deal type,
+  // so the catalogue contract reaches normalization instead of being patched
+  // on afterwards.
+  assert.match(customScraper, /extractJsonLd\(detailBody, country, detailUrl\.href, sourceDealType\)/);
   assert.match(customScraper, /RealEstateListing JSON-LD/);
 });
 
