@@ -1,7 +1,21 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { matchFirstEntry } from '@whiteslove/parsing-lexicon/alias-prefilter';
 import { parseLocation, cityLocations } from '../src/geo/locations.js';
 import { makeListing } from '../src/listing/normalize.js';
+
+// The dictionary guards below reject a hit through matchFirstEntry's accept
+// predicate. A lexicon that predates that parameter ignores it silently — the
+// guards simply stop running and listings quietly resolve to the wrong city
+// again. Assert the contract directly so a stale dependency says so, instead
+// of surfacing as a confusing behavioural failure.
+test('the installed lexicon supports the accept predicate', () => {
+  const entries = [
+    Object.freeze({ name: 'Alpha Street', aliases: ['Alpha Street'], re: /(?:^|[^\p{L}\p{N}_])alpha street(?:$|[^\p{L}\p{N}_])/iu }),
+  ];
+  assert.equal(matchFirstEntry(entries, 'on Alpha Street today')?.name, 'Alpha Street');
+  assert.equal(matchFirstEntry(entries, 'on Alpha Street today', () => false), undefined);
+});
 
 test('parseLocation propagates multiple shared dictionary entity types', () => {
   const loc = parseLocation('Юнусабад 19, ЖК Хон Сарой, рядом метро Шахристан', 'UZ');
