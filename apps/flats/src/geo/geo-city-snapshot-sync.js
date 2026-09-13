@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {createRequire} from 'node:module';
 
 import {canonicalCityName, COUNTRIES, COUNTRY_CODES} from './countries.js';
 import {cityLocations} from './locations.js';
@@ -14,11 +15,17 @@ import {
   withGeoSnapshotBuildLock,
 } from '../infrastructure/database/geoSnapshotRepository.js';
 import {
+  loadGeoCityProjectionInputHashes,
   upsertGeoCityProjection,
   verifyGeoCityProjectionVersions,
 } from '../infrastructure/database/geoProjectionWriter.js';
 
 const SNAPSHOT_SCHEMA_VERSION = 2;
+
+// district-zones.js resolves every zone/marker through this package's pinned
+// lexicon data. Folding its version into the input hash means a dependency
+// bump forces a rebuild even though nothing else about a city changed.
+const GEO_CATALOG_VERSION = createRequire(import.meta.url)('@whiteslove/geo-catalog/package.json').version;
 
 function snapshotLocales() {
   const configured = String(process.env.GEO_SNAPSHOT_LOCALES || 'ru')
@@ -81,6 +88,21 @@ function contentHash(kind, data) {
     .digest('hex');
 }
 
+// Cheap signature of everything that can change a city/locale's computed
+// zones and options, available before doing any of that expensive work. A
+// match against the previous build's stored input hash means the output would
+// be identical, so the rebuild can skip straight to reusing it.
+function cityInputHash(country, city, locale, baseLocation) {
+  return contentHash('input', {
+    geoCatalogVersion: GEO_CATALOG_VERSION,
+    country,
+    city,
+    locale,
+    districts: [...new Set(baseLocation.districts)].sort(),
+    metro: [...new Set(baseLocation.metro)].sort(),
+  });
+}
+
 async function buildAllSnapshots({strict = false, verify = true} = {}) {
   const locales = snapshotLocales();
   const keep = [];
@@ -88,6 +110,7 @@ async function buildAllSnapshots({strict = false, verify = true} = {}) {
   const skippedPruneCountries = [];
   let snapshots = 0;
   let cities = 0;
+  let skipped = 0;
   let deletedSnapshots = 0;
   let deletedOptions = 0;
   const startedAt = performance.now();
@@ -109,19 +132,53 @@ async function buildAllSnapshots({strict = false, verify = true} = {}) {
     const input = countryInputs.get(country);
     const countryKeep = [];
     const countryStartedAt = performance.now();
+    // Cheap signatures from the previous successful build. A city/locale whose
+    // signature still matches would recompute to byte-identical zones/options,
+    // so it can reuse those rows instead of paying for lexicon resolution again.
+    const previousInputHashes = await loadGeoCityProjectionInputHashes(country);
 
     console.log(`[geo-snapshot] ${country} started: ${input.cities.length} cities`);
 
     for (const city of input.cities) {
       const cityStartedAt = performance.now();
       const baseLocation = input.locations[city] || {districts: [], metro: []};
-      const canonicalZones = mapZonesFor(country, city, baseLocation.districts);
-      const canonicalOptions = locationOptionsFromZones(baseLocation, canonicalZones);
       cities += 1;
 
-      for (const locale of locales) {
-        const zones = localizedMapZones(canonicalZones, locale, country, city);
-        const options = localizedLocationOptions(canonicalOptions, locale, country, city);
+      const localeChecks = locales.map((locale) => {
+        const inputHash = cityInputHash(country, city, locale, baseLocation);
+        const previous = previousInputHashes.get(`${city}\0${locale}`);
+        return {locale, inputHash, previous, unchanged: previous?.inputHash === inputHash};
+      });
+
+      // mapZonesFor resolves every zone/marker through the lexicon and is the
+      // expensive step observed to dominate build time; it does not depend on
+      // locale. Skip it entirely when every configured locale for this city is
+      // already up to date.
+      let canonicalZones = null;
+      let canonicalOptions = null;
+      if (localeChecks.some((check) => !check.unchanged)) {
+        canonicalZones = mapZonesFor(country, city, baseLocation.districts);
+        canonicalOptions = locationOptionsFromZones(baseLocation, canonicalZones);
+      }
+
+      for (const check of localeChecks) {
+        if (check.unchanged) {
+          const key = {
+            country,
+            city,
+            locale: check.locale,
+            zonesHash: check.previous.zonesHash,
+            optionsHash: check.previous.optionsHash,
+          };
+          keep.push(key);
+          countryKeep.push(key);
+          snapshots += 1;
+          skipped += 1;
+          continue;
+        }
+
+        const zones = localizedMapZones(canonicalZones, check.locale, country, city);
+        const options = localizedLocationOptions(canonicalOptions, check.locale, country, city);
         const zonesHash = contentHash('zones', zones);
         const optionsHash = contentHash('options', options);
 
@@ -131,14 +188,15 @@ async function buildAllSnapshots({strict = false, verify = true} = {}) {
         await upsertGeoCityProjection({
           country,
           city,
-          locale,
+          locale: check.locale,
           zones,
           zonesSourceHash: zonesHash,
           options,
           optionsSourceHash: optionsHash,
+          inputHash: check.inputHash,
         });
 
-        const key = {country, city, locale, zonesHash, optionsHash};
+        const key = {country, city, locale: check.locale, zonesHash, optionsHash};
         keep.push(key);
         countryKeep.push(key);
         snapshots += 1;
@@ -185,6 +243,10 @@ async function buildAllSnapshots({strict = false, verify = true} = {}) {
   return {
     cities,
     snapshots,
+    // Rows whose input hash matched the previous build and were reused
+    // unchanged, without recomputing zones/options. Named distinctly from the
+    // build-lock `skipped` flag `syncGeoCitySnapshots` adds around this result.
+    skippedCities: skipped,
     deleted: deletedSnapshots + deletedOptions,
     deletedSnapshots,
     deletedOptions,

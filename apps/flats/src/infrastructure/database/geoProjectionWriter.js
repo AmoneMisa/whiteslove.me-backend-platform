@@ -60,17 +60,20 @@ export async function upsertGeoCityProjection({
   zonesSourceHash,
   options,
   optionsSourceHash,
+  inputHash,
 }) {
   const columns = optionsColumns(options);
+  const normalizedInputHash = String(inputHash || '').slice(0, 64) || null;
   const result = await pool.query(
     `WITH zones_upsert AS (
        INSERT INTO geo_city_snapshots (
-         country, city, locale, zones, source_hash, built_at
+         country, city, locale, zones, source_hash, input_hash, built_at
        )
-       VALUES ($1, $2, $3, $4::jsonb, $5, NOW())
+       VALUES ($1, $2, $3, $4::jsonb, $5, $17, NOW())
        ON CONFLICT (country, city, locale) DO UPDATE SET
          zones = EXCLUDED.zones,
          source_hash = EXCLUDED.source_hash,
+         input_hash = EXCLUDED.input_hash,
          built_at = CASE
            WHEN geo_city_snapshots.source_hash IS DISTINCT FROM EXCLUDED.source_hash
              THEN NOW()
@@ -93,6 +96,7 @@ export async function upsertGeoCityProjection({
          areas,
          area_labels,
          source_hash,
+         input_hash,
          built_at
        )
        VALUES (
@@ -102,7 +106,7 @@ export async function upsertGeoCityProjection({
          $10::text[], $11::text[],
          $12::text[], $13::text[],
          $14::text[], $15::text[],
-         $16, NOW()
+         $16, $17, NOW()
        )
        ON CONFLICT (country, city, locale) DO UPDATE SET
          districts = EXCLUDED.districts,
@@ -116,6 +120,7 @@ export async function upsertGeoCityProjection({
          areas = EXCLUDED.areas,
          area_labels = EXCLUDED.area_labels,
          source_hash = EXCLUDED.source_hash,
+         input_hash = EXCLUDED.input_hash,
          built_at = CASE
            WHEN geo_city_options.source_hash IS DISTINCT FROM EXCLUDED.source_hash
              THEN NOW()
@@ -147,9 +152,41 @@ export async function upsertGeoCityProjection({
       columns.areas,
       columns.areaLabels,
       String(optionsSourceHash || '').slice(0, 64),
+      normalizedInputHash,
     ],
   );
   return result.rows[0] || null;
+}
+
+// Read the previous build's cheap input signature alongside the output hashes
+// it produced, so the builder can skip recomputing a city/locale whose inputs
+// have not changed instead of re-deriving zones/options just to find that out.
+export async function loadGeoCityProjectionInputHashes(country) {
+  const result = await pool.query(
+    `SELECT
+       snapshot.city,
+       snapshot.locale,
+       snapshot.input_hash,
+       snapshot.source_hash AS zones_hash,
+       option_row.source_hash AS options_hash
+     FROM geo_city_snapshots snapshot
+     JOIN geo_city_options option_row USING (country, city, locale)
+     WHERE snapshot.country = $1
+       AND snapshot.input_hash IS NOT NULL
+       AND option_row.input_hash IS NOT NULL
+       AND snapshot.input_hash = option_row.input_hash;`,
+    [normalizedCountry(country)],
+  );
+
+  const byKey = new Map();
+  for (const row of result.rows) {
+    byKey.set(`${row.city}\0${normalizedLocale(row.locale)}`, {
+      inputHash: row.input_hash,
+      zonesHash: row.zones_hash,
+      optionsHash: row.options_hash,
+    });
+  }
+  return byKey;
 }
 
 // Deployment verification checks not only that both rows exist, but that both
