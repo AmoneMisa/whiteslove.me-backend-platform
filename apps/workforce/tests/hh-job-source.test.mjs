@@ -24,7 +24,7 @@ test('HH public vacancy cards map into the shared jobs contract', () => {
     id: '123',
     name: 'Node.js разработчик',
     alternate_url: 'https://tashkent.hh.uz/vacancy/123',
-    published_at: '2026-08-30T10:00:00+0500',
+    published_at: new Date(Date.now() - 2 * 86_400_000).toISOString(),
     employer: { name: 'Example' },
     area: { name: 'Ташкент' },
     salary: { from: 12_000_000, to: 18_000_000, currency: 'UZS', gross: false },
@@ -61,7 +61,7 @@ test('HH exposes each configured area as its own shared-crawler queue target', a
       id,
       name: `Vacancy ${id}`,
       alternate_url: `https://tashkent.hh.uz/vacancy/${id}`,
-      published_at: '2026-08-30T10:00:00+0500',
+      published_at: new Date(Date.now() - 2 * 86_400_000).toISOString(),
       employer: { name: 'Example' },
       area: { name: 'Ташкент' },
     })
