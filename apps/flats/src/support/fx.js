@@ -12,11 +12,11 @@ const RATES_URL = 'https://open.er-api.com/v6/latest/USD';
 const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 // Approximate fallback rates (units per 1 USD). Only used until a live fetch
-// succeeds. Covers every currency the supported countries (RO, UA, KZ, KG,
-// UZ) actually price listings in — KGS was missing entirely, so a KG listing
-// silently failed to convert to USD (toUsd returns null with no rate) any
+// succeeds. Covers every currency the supported source countries use
+// (apps/flats/src/geo/countries.js) — KGS was missing, so listings from
+// Kyrgyzstan silently failed to convert to USD (toUsd returned null) any
 // time the live API was unreachable.
-const FALLBACK = { USD: 1, EUR: 0.92, RON: 4.57, UAH: 41.5, KZT: 470, KGS: 87.5, UZS: 11790 };
+const FALLBACK = { USD: 1, EUR: 0.92, RON: 4.57, UAH: 41.5, KZT: 470, UZS: 12600, KGS: 87.5 };
 
 const RETRY_MS = 60_000;
 let cache = { at: 0, base: 'USD', rates: {...FALLBACK} };
