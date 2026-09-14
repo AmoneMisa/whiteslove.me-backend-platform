@@ -3,6 +3,7 @@ import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structur
 import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
 import { makeListing } from '../listing/normalize.js';
 import { parseHousingPrice as parsePriceFromText } from '@whiteslove/parsing-lexicon/housing-money';
+import { moneyCurrencyPattern } from '@whiteslove/parsing-lexicon/currency';
 import {
   parseHousingRoomsFromText as parseRoomsFromText,
   parseHousingAreaFromText as parseAreaFromText,
@@ -26,7 +27,6 @@ const OWNER_HOSTS = new Set([
   'kn.kz',
   'krisha.kz',
   'kvarto.app',
-  'arendator.kg',
   'myhouse.kg',
   'sutochno.kg',
 ]);
@@ -81,10 +81,13 @@ const HREF_CARD_HOSTS = new Map([
 ]);
 
 const HOUSING_RE = /(apartament|garsonier|studio|квартир|квартира|будин|житл|пәтер|uy\b|xona|хона|chirie|rent|оренд|аренд|ijara|жалдау)/iu;
-// у.е. ("условные единицы" / conventional units, a common CIS-market USD
-// stand-in — e.g. uybor.uz prices everything as "799 у.е./мес.") is a price
-// currency token too, not just the ISO/symbol forms below.
-const PRICE_RE = /(?:\$|€|₴|₸|грн|uah|usd|eur|lei|ron|сум|so['’]?m|uzs|сом|kgs|тенге|kzt|у\.\s?е\.|\bмлн\b|\bmln\b)/iu;
+// Sourced from the lexicon's own currency term list (money-lexicon.js) rather
+// than a hand-copied set of symbols/codes, so a currency form the lexicon
+// already knows about (e.g. "у.е.", a common CIS-market USD stand-in) can
+// never silently go missing here the way a hand-maintained list did before.
+// "млн"/"mln" are added separately since they're a magnitude word, not a
+// currency term.
+const PRICE_RE = new RegExp(`(?:${moneyCurrencyPattern()}|\\bмлн\\b|\\bmln\\b)`, 'iu');
 const BLOCK_END_RE = /<\/(?:article|li|section|div|a|p|h[1-6])>/giu;
 
 function decodeHtml(value) {

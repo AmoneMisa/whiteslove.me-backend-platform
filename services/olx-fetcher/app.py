@@ -83,7 +83,9 @@ GENERIC_FETCH_HOSTS = {
     h.strip().lower()
     for h in os.environ.get(
         "GENERIC_FETCH_HOSTS",
-        "dom.ria.com,www.dom.ria.com,lun.ua,www.lun.ua",
+        "dom.ria.com,www.dom.ria.com,lun.ua,www.lun.ua,"
+        "proprietar-direct.ro,publi24.ro,www.publi24.ro,"
+        "imobiliare.ro,www.imobiliare.ro,lajumate.ro",
     ).split(",")
     if h.strip()
 }

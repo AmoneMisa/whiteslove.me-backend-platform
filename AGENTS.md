@@ -67,6 +67,42 @@ Source adapters own request/response semantics and product normalization.
 Browser/TLS/social sidecars provide transport only. Semantic parsing belongs in
 the domain adapter or shared parsing packages, never in transport sidecars.
 
+## Using parsing-lexicon and geo-catalog
+
+Before writing a regex to detect a currency, price, room count, or any other
+housing/hiring vocabulary in a source adapter, check whether
+`@whiteslove/parsing-lexicon` already has it — it almost certainly does, and
+a hand-copied list silently drifts from the shared one. This has caused real
+bugs: a source adapter's local currency regex was missing a symbol
+(`₸`/KZT) and a token (`у.е.`) that the lexicon's own `CURRENCY_TERMS`
+already had, and a local numbered-rooms regex didn't accept the "3-room"
+hyphenated form that `parseHousingRoomsFromText` already handled. Both were
+duplicating, and drifting from, logic that already existed.
+
+- Need "does this text mention money at all" as a cheap pre-filter (e.g.
+  scanning many HTML card candidates before running the full parser)? Use
+  `moneyMentionPattern()` from `@whiteslove/parsing-lexicon/currency`, not a
+  hand-copied symbol list. See that package's README, "Money & currency".
+- Need full price/salary extraction? Use `parseHousingPrice`
+  (`./housing-money`) or `parseSalary` (`./money`).
+- Need room/area/floor extraction from free text? Use
+  `parseHousingRoomsFromText` / `parseHousingAreaFromText` /
+  `parseHousingFloorFromText` from `./housing-text`.
+- Need to resolve a location string to canonical geography (coordinates,
+  hierarchy, boundaries)? Resolve the canonical entity via
+  `@whiteslove/parsing-lexicon` first (city/district/etc. text ->
+  canonical name), then look it up in `@whiteslove/geo-catalog` via
+  `resolveLexiconGeoEntity`/`getGeoEntity`/`findGeoEntities`. Never
+  hand-maintain coordinates or aliases in a backend-platform source adapter —
+  coordinates belong in geo-catalog, aliases/vocabulary belong in
+  parsing-lexicon.
+
+If a lexicon or geo-catalog gap blocks you (a missing currency symbol, a
+missing city/district, a parsing pattern that doesn't cover a real case),
+fix it in that package's own repo and bump its version there — do not work
+around the gap with a local patch in this repo. A local patch is exactly what
+caused the drift bugs above.
+
 ## Deployment isolation
 
 Deploy by explicit service name and use the existing service-scoped deployment

@@ -180,12 +180,8 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
     }),
   ]),
   KG: Object.freeze([
-    Object.freeze({
-      key: 'arendator-bishkek-owner-rent',
-      url: 'https://arendator.kg/',
-      city: 'Bishkek',
-      dealType: 'longRent',
-    }),
+    // arendator.kg was removed here: the domain no longer resolves at all
+    // (NXDOMAIN), not merely down — it's gone, not a transient outage.
     Object.freeze({
       key: 'myhouse-kyrgyzstan-owner-rent',
       url: 'https://myhouse.kg/rent/apartment/',

@@ -48,7 +48,14 @@ const MAX_BYTES = 4 * 1024 * 1024; // cap the response we'll parse (4 MB)
 // Hosts known to WAF-block a plain server fetch, routed through the curl_cffi
 // sidecar instead. Keep in sync with GENERIC_FETCH_HOSTS in
 // services/olx-fetcher/app.py.
-const CFFI_FETCH_HOSTS = new Set(['dom.ria.com', 'www.dom.ria.com', 'lun.ua', 'www.lun.ua']);
+const CFFI_FETCH_HOSTS = new Set([
+  'dom.ria.com', 'www.dom.ria.com',
+  'lun.ua', 'www.lun.ua',
+  'proprietar-direct.ro',
+  'publi24.ro', 'www.publi24.ro',
+  'imobiliare.ro', 'www.imobiliare.ro',
+  'lajumate.ro',
+]);
 const CFFI_FETCHER_URL = process.env.OLX_FETCHER_URL || '';
 
 // Hosts whose catalogue is client-rendered, routed through the
