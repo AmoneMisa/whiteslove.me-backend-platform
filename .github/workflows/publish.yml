@@ -37,6 +37,7 @@ jobs:
             flats:
               - 'apps/flats/**'
               - 'services/olx-fetcher/**'
+              - 'services/housing-browser-fetcher/**'
               - 'docker-compose.geo.yml'
               - 'deploy.sh'
             social:
@@ -108,6 +109,10 @@ jobs:
             context: services/olx-fetcher
             dockerfile: services/olx-fetcher/Dockerfile
             enabled: flats
+          - name: housing-browser-fetcher
+            context: services/housing-browser-fetcher
+            dockerfile: services/housing-browser-fetcher/Dockerfile
+            enabled: flats
           - name: social-fetcher
             context: services/social-fetcher
             dockerfile: services/social-fetcher/Dockerfile
@@ -176,10 +181,10 @@ jobs:
         run: |
           services=()
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            services+=(flats-migrate flats-api flats-worker flats-olx-fetcher flats-olx-fetcher-ua ai-worker social-fetcher workforce-queue-migrate vacancies-migrate vacancies-api vacancies-worker cv-migrate cv-api cv-worker subscriptions-migrate subscription-bot platform-elasticsearch)
+            services+=(flats-migrate flats-api flats-worker flats-olx-fetcher flats-olx-fetcher-ua housing-browser-fetcher ai-worker social-fetcher workforce-queue-migrate vacancies-migrate vacancies-api vacancies-worker cv-migrate cv-api cv-worker subscriptions-migrate subscription-bot platform-elasticsearch)
           else
             [[ "${{ needs.changes.outputs.ai }}" == "true" ]] && services+=(ai-worker)
-            [[ "${{ needs.changes.outputs.flats }}" == "true" ]] && services+=(flats-migrate flats-api flats-worker flats-olx-fetcher flats-olx-fetcher-ua)
+            [[ "${{ needs.changes.outputs.flats }}" == "true" ]] && services+=(flats-migrate flats-api flats-worker flats-olx-fetcher flats-olx-fetcher-ua housing-browser-fetcher)
             [[ "${{ needs.changes.outputs.social }}" == "true" ]] && services+=(social-fetcher)
             if [[ "${{ needs.changes.outputs.vacancies }}" == "true" || "${{ needs.changes.outputs.crawler_core }}" == "true" || "${{ needs.changes.outputs.workforce_shared }}" == "true" ]]; then
               services+=(workforce-queue-migrate vacancies-migrate vacancies-api vacancies-worker)

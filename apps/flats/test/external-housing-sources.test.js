@@ -54,13 +54,17 @@ test('crawl plan queues every external source with its seller policy intact', ()
 });
 
 test('known mixed SSR catalogues preserve explicit realtor signals', () => {
+  // uybor.uz's real cards have no stable CSS class (build-hashed CSS-in-JS
+  // utility classes), only a stable /listings/<id> href — see HREF_CARD_HOSTS
+  // in owner-html.js. Use that same href shape here so this fixture exercises
+  // the actual extraction path instead of the generic <article> fallback.
   const html = [
     '<article>',
-    '<a href="/listing/1"><h3>2-комнатная квартира</h3></a>',
+    '<a href="/listings/1"><h3>2-комнатная квартира</h3></a>',
     '<p>Аренда 2 комнаты 65 м² 700 USD/мес. Риелтор</p>',
     '</article>',
     '<article>',
-    '<a href="/listing/2"><h3>2-комнатная квартира</h3></a>',
+    '<a href="/listings/2"><h3>2-комнатная квартира</h3></a>',
     '<p>Аренда 2 комнаты 55 м² 600 USD/мес. Частник</p>',
     '</article>',
   ].join('');

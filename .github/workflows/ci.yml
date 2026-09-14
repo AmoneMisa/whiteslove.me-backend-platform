@@ -36,6 +36,7 @@ jobs:
               - 'apps/flats/**'
               - 'services/olx-fetcher/**'
               - 'services/olx-router/**'
+              - 'services/housing-browser-fetcher/**'
               - 'docker-compose.geo.yml'
               - 'deploy.sh'
               - '.github/workflows/ci.yml'
@@ -141,6 +142,7 @@ jobs:
           PG_STATEMENT_TIMEOUT_MS: '120000'
       - run: docker build apps/flats
       - run: docker build services/olx-fetcher
+      - run: docker build services/housing-browser-fetcher
 
   social:
     needs: changes

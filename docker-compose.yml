@@ -347,6 +347,7 @@ services:
       OLX_FETCHER_URL_0: http://flats-olx-fetcher:4020
       OLX_FETCHER_URL_1: http://flats-olx-fetcher-ua:4020
       SOCIAL_FETCHER_URL: http://social-fetcher:4040
+      HOUSING_BROWSER_FETCHER_URL: http://housing-browser-fetcher:4040
       QUEUE_PROTOCOL_VERSION: ${FLATS_QUEUE_PROTOCOL_VERSION:-3}
       QUEUE_SHARDS: ${FLATS_QUEUE_SHARDS:-2}
       QUEUE_REFRESH_SECONDS: ${FLATS_QUEUE_REFRESH_SECONDS:-1800}
@@ -364,6 +365,7 @@ services:
       flats-migrate: { condition: service_completed_successfully }
       flats-olx-router: { condition: service_healthy }
       social-fetcher: { condition: service_healthy }
+      housing-browser-fetcher: { condition: service_healthy }
     networks: [ platform ]
     healthcheck:
       test: ["CMD-SHELL", "kill -0 1"]
@@ -441,6 +443,27 @@ services:
       timeout: 5s
       retries: 5
       start_period: 30s
+
+  housing-browser-fetcher:
+    build: { context: ./services/housing-browser-fetcher }
+    image: ${HOUSING_BROWSER_FETCHER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-housing-browser-fetcher:latest}
+    restart: unless-stopped
+    environment:
+      HOUSING_BROWSER_TIMEOUT_MS: ${HOUSING_BROWSER_TIMEOUT_MS:-30000}
+      HOUSING_BROWSER_SETTLE_MS: ${HOUSING_BROWSER_SETTLE_MS:-1500}
+      HOUSING_BROWSER_CONCURRENCY: ${HOUSING_BROWSER_CONCURRENCY:-2}
+      PLAYWRIGHT_FETCH_HOSTS: ${PLAYWRIGHT_FETCH_HOSTS:-domza.uz,uybor.uz}
+    shm_size: ${HOUSING_BROWSER_SHM_SIZE:-256mb}
+    networks: [ platform ]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:4040/health',timeout=3).status==200 else 1)"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    labels:
+      me.whiteslove.platform.domain: flats
+      me.whiteslove.platform.role: transport
 
   job-browser-fetcher:
     build: { context: ./services/job-browser-fetcher }

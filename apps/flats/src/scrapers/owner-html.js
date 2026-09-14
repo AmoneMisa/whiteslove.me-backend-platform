@@ -62,8 +62,29 @@ const DIV_CARD_HOSTS = new Map([
   ['uz.m2bomber.com', 'item-card-long'],
 ]);
 
+// Hosts whose listing cards are themselves an <a class="..."> wrapper (the
+// whole card is a link), keyed by the card's marker class. Unlike the div
+// hosts above, these close cleanly with a matching </a>, so they're parsed
+// as real balanced blocks instead of the div hosts' next-marker heuristic.
+const ANCHOR_CARD_HOSTS = new Map([
+  ['ostona.app', 'card'],
+]);
+
+// Hosts whose listing cards carry no stable CSS class (e.g. build-hashed
+// CSS-in-JS utility classes that regenerate every deploy) but do link to each
+// listing through a stable, semantic href pattern. Keyed by a regex matched
+// against each <a href="...">; parsed with the same next-marker heuristic as
+// DIV_CARD_HOSTS since (unlike ANCHOR_CARD_HOSTS) the card itself isn't the
+// anchor tag.
+const HREF_CARD_HOSTS = new Map([
+  ['uybor.uz', /^\/listings\/\d+(?:[/?#]|$)/i],
+]);
+
 const HOUSING_RE = /(apartament|garsonier|studio|квартир|квартира|будин|житл|пәтер|uy\b|xona|хона|chirie|rent|оренд|аренд|ijara|жалдау)/iu;
-const PRICE_RE = /(?:\$|€|₴|₸|грн|uah|usd|eur|lei|ron|сум|so['’]?m|uzs|сом|kgs|тенге|kzt|\bмлн\b|\bmln\b)/iu;
+// у.е. ("условные единицы" / conventional units, a common CIS-market USD
+// stand-in — e.g. uybor.uz prices everything as "799 у.е./мес.") is a price
+// currency token too, not just the ISO/symbol forms below.
+const PRICE_RE = /(?:\$|€|₴|₸|грн|uah|usd|eur|lei|ron|сум|so['’]?m|uzs|сом|kgs|тенге|kzt|у\.\s?е\.|\bмлн\b|\bmln\b)/iu;
 const BLOCK_END_RE = /<\/(?:article|li|section|div|a|p|h[1-6])>/giu;
 
 function decodeHtml(value) {
@@ -147,7 +168,9 @@ function heading(fragment, fallbackText) {
 
 function plausibleCard(text, country) {
   if (!text || text.length < 18 || text.length > 2200) return false;
-  if (!HOUSING_RE.test(text) && !/(?:\d+)\s*(?:rooms?|camere|комнат|кімнат|xona|хона)/iu.test(text)) {
+  // "3-room" (a hyphen, not whitespace, between the digit and the word) is
+  // common English card copy (e.g. ostona.app); accept either separator.
+  if (!HOUSING_RE.test(text) && !/(?:\d+)[\s-]*(?:rooms?|camere|комнат|кімнат|xona|хона)/iu.test(text)) {
     return false;
   }
   if (!PRICE_RE.test(text)) return false;
@@ -219,6 +242,42 @@ function divBlocks(html, cardClass) {
   return blocks;
 }
 
+// Cards on HREF_CARD_HOSTS have no stable class to key off, only a stable
+// href pattern (which can appear more than once per card, e.g. one <a> around
+// the thumbnail and another around the title). Slicing marker-to-marker still
+// works: a marker whose next sibling marker is the *same* listing produces a
+// near-empty, plausibleCard-rejected block, and the one that reaches the next
+// listing's first marker captures that card's real content.
+function hrefMarkerBlocks(html, hrefPattern) {
+  const marker = /<a\b[^>]*\bhref=["']([^"']+)["']/giu;
+  const starts = [];
+  let match;
+  while ((match = marker.exec(html))) {
+    if (hrefPattern.test(decodeHtml(match[1]))) starts.push(match.index);
+  }
+
+  const blocks = [];
+  for (let i = 0; i < starts.length; i += 1) {
+    const end = i + 1 < starts.length ? starts[i + 1] : Math.min(html.length, starts[i] + 4000);
+    blocks.push(html.slice(starts[i], end));
+  }
+  return blocks;
+}
+
+// Cards on ANCHOR_CARD_HOSTS are the <a> tag itself, closing cleanly with a
+// matching </a> (no nested anchors inside), so a non-greedy match up to the
+// next </a> pairs correctly — unlike DIV_CARD_HOSTS' unbounded div wrappers.
+function anchorBlocks(html, cardClass) {
+  const re = new RegExp(
+    `<a\\b[^>]*\\bclass=["'][^"']*(?<![\\w-])${cardClass}(?![\\w-])[^"']*["'][^>]*>[\\s\\S]*?<\\/a>`,
+    'giu',
+  );
+  const blocks = [];
+  let match;
+  while ((match = re.exec(html))) blocks.push(match[0]);
+  return blocks;
+}
+
 function textWindows(html) {
   const text = stripHtml(html);
   const lines = text.split('\n').map((line) => line.trim()).filter(Boolean);
@@ -260,8 +319,18 @@ export function extractKnownOwnerHtml(html, country, sourceUrl, sourceDealType =
   // (AGENTS.md); how far the catalogue is traversed is the crawler's decision,
   // not this extractor's.
   const divCardClass = DIV_CARD_HOSTS.get(host);
+  const anchorCardClass = ANCHOR_CARD_HOSTS.get(host);
+  const hrefCardPattern = HREF_CARD_HOSTS.get(host);
   if (divCardClass) {
     for (const block of divBlocks(String(html || ''), divCardClass)) {
+      add(block, stripHtml(block));
+    }
+  } else if (anchorCardClass) {
+    for (const block of anchorBlocks(String(html || ''), anchorCardClass)) {
+      add(block, stripHtml(block));
+    }
+  } else if (hrefCardPattern) {
+    for (const block of hrefMarkerBlocks(String(html || ''), hrefCardPattern)) {
       add(block, stripHtml(block));
     }
   } else {

@@ -18,6 +18,13 @@
 // 403s a plain Node fetch by TLS/JA3 fingerprint — the same problem OLX has.
 // Those go through the olx-fetcher sidecar's generic /fetch/html endpoint
 // (curl_cffi, Chrome impersonation) instead of the raw Node request below.
+//
+// A different set of hosts (domza.uz, uybor.uz) rebuilt their catalogue as a
+// client-rendered SPA: a plain fetch gets an empty shell because the listing
+// cards are populated by a client-side data fetch after mount. Those go
+// through the housing-browser-fetcher sidecar's /fetch/html endpoint instead,
+// which loads the page in a real headless browser and waits for that fetch to
+// settle before handing back the rendered DOM.
 
 import dns from 'node:dns/promises';
 import net from 'node:net';
@@ -43,6 +50,20 @@ const MAX_BYTES = 4 * 1024 * 1024; // cap the response we'll parse (4 MB)
 // services/olx-fetcher/app.py.
 const CFFI_FETCH_HOSTS = new Set(['dom.ria.com', 'www.dom.ria.com', 'lun.ua', 'www.lun.ua']);
 const CFFI_FETCHER_URL = process.env.OLX_FETCHER_URL || '';
+
+// Hosts whose catalogue is client-rendered, routed through the
+// housing-browser-fetcher sidecar's generic /fetch/html endpoint instead.
+// Keep in sync with PLAYWRIGHT_FETCH_HOSTS in
+// services/housing-browser-fetcher/app.py. domza.uz is deliberately NOT
+// listed here: only its catalogue page is client-rendered (its offer detail
+// pages still server-render JSON-LD), so scrapeDomzaCatalog calls the sidecar
+// directly for that one fetch instead of routing every domza.uz request
+// (hundreds of per-offer detail fetches) through a real browser.
+const PLAYWRIGHT_FETCH_HOSTS = new Set(['uybor.uz', 'www.uybor.uz']);
+const PLAYWRIGHT_FETCHER_URL = process.env.HOUSING_BROWSER_FETCHER_URL || '';
+// Rendering a real browser is much slower than curl_cffi; give the sidecar
+// room to load the page, wait for its data fetch to settle, and respond.
+const PLAYWRIGHT_FETCH_TIMEOUT_FLOOR_MS = 35_000;
 
 // A realistic browser UA — many sites 403 an obvious bot UA outright.
 const BROWSER_UA =
@@ -197,9 +218,35 @@ async function fetchViaCffiSidecar(u, timeoutMs) {
   return data.html;
 }
 
+// Fetch a client-rendered host's HTML through the housing-browser-fetcher
+// sidecar instead of the raw Node request, which only ever sees the
+// pre-render SPA shell.
+async function fetchViaPlaywrightSidecar(u, timeoutMs) {
+  if (!PLAYWRIGHT_FETCHER_URL) {
+    throw new SourceError('Source requires JS rendering, which is not configured');
+  }
+  const base = PLAYWRIGHT_FETCHER_URL.replace(/\/$/, '');
+  const params = new URLSearchParams({ url: u.href });
+  let res;
+  try {
+    res = await fetch(`${base}/fetch/html?${params}`, {
+      signal: AbortSignal.timeout(Math.max(timeoutMs, PLAYWRIGHT_FETCH_TIMEOUT_FLOOR_MS)),
+    });
+  } catch {
+    throw new SourceError('Could not reach source');
+  }
+  if (!res.ok) throw new SourceError('Could not reach source');
+  const data = await res.json();
+  if (typeof data?.html !== 'string') throw new SourceError('Could not reach source');
+  return data.html;
+}
+
 async function fetchText(u, timeoutMs = FETCH_TIMEOUT_MS) {
   if (CFFI_FETCH_HOSTS.has(u.hostname.toLowerCase())) {
     return fetchViaCffiSidecar(u, timeoutMs);
+  }
+  if (PLAYWRIGHT_FETCH_HOSTS.has(u.hostname.toLowerCase())) {
+    return fetchViaPlaywrightSidecar(u, timeoutMs);
   }
 
   const startedAt = Date.now();
@@ -248,6 +295,12 @@ async function fetchText(u, timeoutMs = FETCH_TIMEOUT_MS) {
 // ---- extraction ------------------------------------------------------------
 
 // Flatten JSON-LD graphs (@graph / arrays) into a flat list of typed nodes.
+// Also descends into schema.org's ItemList/ListItem wrapping — a common way
+// paginated catalogues (e.g. rentli.uz) nest each listing inside
+// itemListElement[].item instead of exposing it as a top-level node. Only
+// itemListElement/item are followed (not every nested property) so a
+// listing's own nested Offer/PostalAddress nodes are never mistaken for
+// separate top-level listings.
 function flattenLd(node, out) {
   if (!node) return;
   if (Array.isArray(node)) {
@@ -256,6 +309,10 @@ function flattenLd(node, out) {
   }
   if (typeof node !== 'object') return;
   if (Array.isArray(node['@graph'])) flattenLd(node['@graph'], out);
+  if (Array.isArray(node.itemListElement)) flattenLd(node.itemListElement, out);
+  if (String(node['@type'] || '').toLowerCase() === 'listitem' && node.item) {
+    flattenLd(node.item, out);
+  }
   if (node['@type']) out.push(node);
 }
 
@@ -535,7 +592,10 @@ async function concurrentMap(values, concurrency, mapper) {
 }
 
 async function scrapeDomzaCatalog(safe, country, sourceDealType) {
-  const body = await fetchText(safe, DOMZA_FETCH_TIMEOUT_MS);
+  // Domza's catalogue is client-rendered — a plain fetch sees an empty SPA
+  // shell with zero offer links. Only this one request needs a real browser;
+  // each offer's own detail page below still server-renders JSON-LD.
+  const body = await fetchViaPlaywrightSidecar(safe, DOMZA_FETCH_TIMEOUT_MS);
   const offerUrls = extractDomzaOfferUrls(body, safe.href);
   if (!offerUrls.length) {
     throw new SourceError('No Domza offer links found in the catalog');

@@ -6,7 +6,9 @@ export const REALTOR_HOUSING_SOURCES = Object.freeze({
   UZ: Object.freeze([
     Object.freeze({
       key: 'hata-tashkent-rent',
-      url: 'https://www.hata.uz/listings/rent/tashkent',
+      // hata.uz's TLS certificate has no SAN for the www subdomain, so
+      // https://www.hata.uz/... fails hostname verification outright.
+      url: 'https://hata.uz/listings/rent/tashkent',
       city: 'Tashkent',
     }),
     Object.freeze({
