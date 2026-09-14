@@ -4,6 +4,7 @@ import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing'
 import { makeListing } from '../listing/normalize.js';
 import { parseHousingPrice as parsePriceFromText } from '@whiteslove/parsing-lexicon/housing-money';
 import { moneyCurrencyPattern } from '@whiteslove/parsing-lexicon/currency';
+import { canonicalCity } from '@whiteslove/parsing-lexicon/geography';
 import {
   parseHousingRoomsFromText as parseRoomsFromText,
   parseHousingAreaFromText as parseAreaFromText,
@@ -40,6 +41,8 @@ const MIXED_HOSTS = new Set([
   'lalafo.kg',
   'lun.ua',
   'rieltor.ua',
+  'x-estate.com',
+  'blagovist.ua',
   'imobiliare.ro',
   'anuntul.ro',
   'lajumate.ro',
@@ -60,6 +63,9 @@ const DIV_CARD_HOSTS = new Map([
   ['ua.m2bomber.com', 'item-card-long'],
   ['kz.m2bomber.com', 'item-card-long'],
   ['uz.m2bomber.com', 'item-card-long'],
+  ['blagovist.ua', 'search-item'],
+  ['rieltor.ua', 'catalog-card'],
+  ['myhouse.kg', 'it-grid-item'],
 ]);
 
 // Hosts whose listing cards are themselves an <a class="..."> wrapper (the
@@ -78,6 +84,10 @@ const ANCHOR_CARD_HOSTS = new Map([
 // anchor tag.
 const HREF_CARD_HOSTS = new Map([
   ['uybor.uz', /^\/listings\/\d+(?:[/?#]|$)/i],
+  // x-estate.com's React catalogue also uses build-hashed styled-components
+  // classes (e.g. "OfferItem__OfferItemContainerLink-sc-1h65yyr-1 fliOdX"),
+  // only the /offers/<hex-id> card href stays stable across deploys.
+  ['x-estate.com', /^\/offers\/[0-9a-f]+(?:[/?#]|$)/i],
 ]);
 
 const HOUSING_RE = /(apartament|garsonier|studio|квартир|квартира|будин|житл|пәтер|uy\b|xona|хона|chirie|rent|оренд|аренд|ijara|жалдау)/iu;
@@ -102,10 +112,19 @@ function decodeHtml(value) {
     .replace(/&#x([0-9a-f]+);/gi, (_, code) => String.fromCodePoint(parseInt(code, 16)));
 }
 
-// Some cards (e.g. m2bomber) render the same price re-quoted in every
-// supported currency as visible toggle-button text (e.g. "L $ €"), which
-// would otherwise confuse price/currency parsing on the flattened text.
-const CURRENCY_TOGGLE_RE = /<div\b[^>]*\bclass=["'][^"']*price-currency[^"']*["'][^>]*>[\s\S]*?<\/div>/giu;
+// Some cards (e.g. m2bomber's "price-currency", blagovist.ua's "m-dollar"/
+// "m-euro") render the same price re-quoted in every supported currency as
+// visible toggle-button text (e.g. "L $ €", or "1 200 $ (1$=44.81 грн.)"),
+// which would otherwise confuse price/currency parsing on the flattened text.
+const CURRENCY_TOGGLE_RE = /<div\b[^>]*\bclass=["'][^"']*(?:price-currency|m-dollar|m-euro)[^"']*["'][^>]*>[\s\S]*?<\/div>/giu;
+
+// Agency catalogues (e.g. blagovist.ua) commonly print an internal reference
+// code next to the card ("Код объекта: G-305826"). That code is an arbitrary
+// listing id, not a price, but a bare multi-digit id can otherwise outrank
+// the real (currency-suffixed) price in the shared lexicon's bare-amount
+// fallback once anything breaks the explicit-currency match — e.g. a
+// regulatory disclaimer asterisk right after the amount ("53 800* грн.").
+const LISTING_CODE_RE = /(?:код\s*об[ъ'’ʼ]?[еє]кта|object\s*code)\s*:?\s*\S+/giu;
 
 function stripHtml(fragment) {
   return decodeHtml(
@@ -120,6 +139,7 @@ function stripHtml(fragment) {
     .replace(/[ \t]+/g, ' ')
     .replace(/\s*\n\s*/g, '\n')
     .replace(/\n{2,}/g, '\n')
+    .replace(LISTING_CODE_RE, ' ')
     .trim();
 }
 
@@ -156,6 +176,61 @@ function images(fragment, sourceUrl) {
   return result;
 }
 
+// Some catalogues tag each card with its own city explicitly (dobalux.com
+// renders <a class="card-city-link">Київ</a> per card), which is both cheap
+// to read and far more reliable than inferring a city from free text.
+const CARD_CITY_LINK_RE = /<a\b[^>]*\bclass=["'][^"']*\bcard-city-link\b[^"']*["'][^>]*>([^<]+)<\/a>/iu;
+
+function cityFromCardLink(fragment) {
+  const match = String(fragment || '').match(CARD_CITY_LINK_RE);
+  return match ? decodeHtml(match[1]).trim() : null;
+}
+
+// Ukrainian catalogues commonly render a card's address as
+// "<Район> ,  м. <Місто>" (norieltor.com.ua and others). The comma before
+// "м." is what distinguishes this from an unrelated "м. <metro station>"
+// mention elsewhere in the same card (e.g. "м. Харківська, (1000 м)" for a
+// subway stop), so it is required, not optional. The capture stops at the
+// first non-letter (space, comma, digit) rather than running to the next
+// comma: once whitespace-normalized to one line, that city is immediately
+// followed by more card text with nothing but a space between them (e.g.
+// "м. Київ м. Харківська" for the metro-station mention above), so a wider
+// capture would swallow that trailing text as part of the city name.
+const UA_CITY_MARKER_RE = /,\s*м\.\s*(\p{Lu}[\p{L}''’-]*)/u;
+
+function cityFromUaMarker(text) {
+  const match = String(text || '').match(UA_CITY_MARKER_RE);
+  return match ? match[1].trim() : null;
+}
+
+// Some catalogues encode the city directly in a URL path segment: either the
+// card's own href (ro.m2bomber.com: "/obj/<id>/view/flat-rent/ramnicu-valcea-
+// <ids>/...") or the search page's own URL (anuntul.ro: ".../particular-
+// bucuresti/", imobiliare-anunturi.ro: ".../bucuresti/proprietar"). Testing
+// every short run of path tokens against the lexicon's own (small) city
+// catalog is cheap — a URL path has a handful of tokens, nothing like
+// scanning free text against a country's full district/street dictionary.
+function cityFromUrlPath(pathname, countryCode) {
+  const tokens = String(pathname || '').split(/[/-]+/u).filter(Boolean);
+  for (let start = 0; start < tokens.length; start += 1) {
+    for (let len = Math.min(3, tokens.length - start); len >= 1; len -= 1) {
+      const candidate = tokens.slice(start, start + len).join('-');
+      if (/^\d+$/.test(candidate)) continue;
+      const canonical = canonicalCity(candidate, countryCode);
+      if (canonical) return canonical;
+    }
+  }
+  return null;
+}
+
+function cityFromUrl(url, countryCode) {
+  try {
+    return cityFromUrlPath(new URL(url).pathname, countryCode);
+  } catch {
+    return null;
+  }
+}
+
 function heading(fragment, fallbackText) {
   const raw = String(fragment || '');
   const headingMatch = raw.match(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/iu);
@@ -182,7 +257,7 @@ function plausibleCard(text, country) {
   return parsed?.amount != null;
 }
 
-function toListing(fragment, text, country, sourceUrl, index, ownerHost, sourceDealType) {
+function toListing(fragment, text, country, sourceUrl, index, ownerHost, sourceDealType, city) {
   const parsedPrice = parsePriceFromText(text, country?.currency || '');
   const url = firstHref(fragment, sourceUrl) || sourceUrl;
   const agency = !ownerHost && parseHousingSeller(text).type === 'agency';
@@ -206,7 +281,7 @@ function toListing(fragment, text, country, sourceUrl, index, ownerHost, sourceD
     currency: parsedPrice.currency || country.currency,
     rooms: parseRoomsFromText(text),
     areaSqm: parseAreaFromText(text),
-    city: '',
+    city: city || '',
     lat: null,
     lng: null,
     photos: images(fragment, sourceUrl),
@@ -225,6 +300,32 @@ function structuredBlocks(html) {
   return blocks;
 }
 
+// The page's last card has no following marker to bound it, so it falls back
+// to a fixed-size window instead. Landing that cutoff mid-tag (e.g. inside a
+// long image srcset — routine on catalogues with multi-resolution photo
+// carousels) leaves a dangling unclosed tag that stripHtml's </tag> regex can
+// never match, so the whole trailing fragment survives as unstrippable raw
+// markup and reliably fails plausibleCard — silently dropping the last card
+// on every page. Retreat to the last complete '>' at or before the cap so the
+// slice always ends on a clean tag boundary instead.
+//
+// The cap itself has to be generous: a card's real title/price/address text
+// routinely sits tens of thousands of raw characters into the card on hosts
+// whose cards open with a large multi-resolution photo-gallery block (e.g.
+// rieltor.ua — observed real cards run ~35-37KB, with the first visible text
+// only starting around raw offset ~20KB). A too-small cap silently drops the
+// text-bearing tail of the page's last card even after the tag-boundary fix
+// above, since there's simply nothing usable within the window. 60000 covers
+// every host's card size seen so far with margin; plausibleCard's own 2200-
+// char post-strip cap still bounds how much of that ever becomes a listing.
+const LAST_BLOCK_CAP = 60_000;
+
+function lastBlockEnd(html, start, cap) {
+  const limit = Math.min(html.length, start + cap);
+  const lastClose = html.lastIndexOf('>', limit);
+  return lastClose > start ? lastClose + 1 : limit;
+}
+
 // Cards on DIV_CARD_HOSTS aren't wrapped in a single well-nested tag, so
 // instead of balanced parsing we slice the page at each card's marker <div>
 // up to the next one — good enough once fed through stripHtml + plausibleCard.
@@ -239,7 +340,7 @@ function divBlocks(html, cardClass) {
 
   const blocks = [];
   for (let i = 0; i < starts.length; i += 1) {
-    const end = i + 1 < starts.length ? starts[i + 1] : Math.min(html.length, starts[i] + 4000);
+    const end = i + 1 < starts.length ? starts[i + 1] : lastBlockEnd(html, starts[i], LAST_BLOCK_CAP);
     blocks.push(html.slice(starts[i], end));
   }
   return blocks;
@@ -261,7 +362,7 @@ function hrefMarkerBlocks(html, hrefPattern) {
 
   const blocks = [];
   for (let i = 0; i < starts.length; i += 1) {
-    const end = i + 1 < starts.length ? starts[i + 1] : Math.min(html.length, starts[i] + 4000);
+    const end = i + 1 < starts.length ? starts[i + 1] : lastBlockEnd(html, starts[i], LAST_BLOCK_CAP);
     blocks.push(html.slice(starts[i], end));
   }
   return blocks;
@@ -305,6 +406,13 @@ export function extractKnownOwnerHtml(html, country, sourceUrl, sourceDealType =
   const ownerHost = OWNER_HOSTS.has(host);
   if (!ownerHost && !MIXED_HOSTS.has(host)) return [];
 
+  // Catalogues whose URL scopes the whole page to one city (anuntul.ro:
+  // ".../particular-bucuresti/", imobiliare-anunturi.ro: ".../bucuresti/
+  // proprietar") apply that city to every card that has no more specific
+  // per-card signal of its own. Computed once — it's a handful of cheap
+  // lexicon lookups against a single short URL, not a per-card cost.
+  const pageCity = cityFromUrl(sourceUrl, country?.code);
+
   const listings = [];
   const seen = new Set();
   const add = (fragment, text) => {
@@ -313,8 +421,13 @@ export function extractKnownOwnerHtml(html, country, sourceUrl, sourceDealType =
     const key = normalized.toLocaleLowerCase().slice(0, 420);
     if (seen.has(key)) return;
     seen.add(key);
+    const cardHref = firstHref(fragment, sourceUrl);
+    const city = cityFromCardLink(fragment)
+      || (cardHref && cityFromUrl(cardHref, country?.code))
+      || cityFromUaMarker(normalized)
+      || pageCity;
     listings.push(
-      toListing(fragment, normalized, country, sourceUrl, listings.length, ownerHost, sourceDealType),
+      toListing(fragment, normalized, country, sourceUrl, listings.length, ownerHost, sourceDealType, city),
     );
   };
 

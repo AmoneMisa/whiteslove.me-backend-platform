@@ -334,7 +334,20 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
     // not this listing's street.
     ordered = [[preferredCity, cities[preferredCity]]];
   } else {
-    ordered = Object.entries(cities);
+    // No city signal at all (no region/central-asia match, no caller-stated
+    // city). Country is already known reliably from the source's own domain
+    // (norieltor.com.ua, dobalux.com/uk, .ro/.kg hosts, etc. each hard-map to
+    // one country upstream), so guessing a city by testing every district/
+    // microdistrict/residentialComplex/street/landmark across every city in
+    // the country is not worth its cost: for UA alone that's 95 cities and
+    // ~54k combined entries, and scanning them via matchFirstEntry lazily
+    // compiles a large, distinct, unicode-flagged regex per surviving
+    // candidate (see aliasesToRegex in the lexicon) for every one of those
+    // entries — on a catalogue page with dozens of city-less cards this was
+    // enough repeated compilation to exhaust the heap. Leaving city/district/
+    // etc. unresolved here is a known, accepted trade-off, not a bug: a
+    // caller that actually knows the city should pass it as `preferredCity`.
+    ordered = [];
   }
 
   for (const [cityName, data] of ordered) {

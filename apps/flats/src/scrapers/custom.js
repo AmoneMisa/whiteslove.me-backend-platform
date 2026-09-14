@@ -66,7 +66,12 @@ const CFFI_FETCHER_URL = process.env.OLX_FETCHER_URL || '';
 // pages still server-render JSON-LD), so scrapeDomzaCatalog calls the sidecar
 // directly for that one fetch instead of routing every domza.uz request
 // (hundreds of per-offer detail fetches) through a real browser.
-const PLAYWRIGHT_FETCH_HOSTS = new Set(['uybor.uz', 'www.uybor.uz']);
+const PLAYWRIGHT_FETCH_HOSTS = new Set([
+  'uybor.uz', 'www.uybor.uz',
+  // x-estate.com's real catalogue lives at /offers, rendered client-side by a
+  // React bundle into an empty #root — a plain fetch sees no cards at all.
+  'x-estate.com', 'www.x-estate.com',
+]);
 const PLAYWRIGHT_FETCHER_URL = process.env.HOUSING_BROWSER_FETCHER_URL || '';
 // Rendering a real browser is much slower than curl_cffi; give the sidecar
 // room to load the page, wait for its data fetch to settle, and respond.
@@ -316,10 +321,29 @@ function flattenLd(node, out) {
   }
   if (typeof node !== 'object') return;
   if (Array.isArray(node['@graph'])) flattenLd(node['@graph'], out);
-  if (Array.isArray(node.itemListElement)) flattenLd(node.itemListElement, out);
+  if (node.itemListElement) flattenLd(node.itemListElement, out);
   if (String(node['@type'] || '').toLowerCase() === 'listitem' && node.item) {
     flattenLd(node.item, out);
   }
+
+  // Some catalogues (e.g. parklane.ua) wrap every real per-unit listing
+  // inside a single page-level SEO node instead of exposing them as sibling
+  // top-level nodes: RealEstateListing.mainEntity -> ItemList.itemListElement
+  // (a lone Product, not an array) -> Product.offers.offers[] -> each unit as
+  // its own Offer/Apartment node. Once a wrapper's nested listings have been
+  // followed, the wrapper itself must NOT also be pushed as a listing: it has
+  // no per-unit price/url of its own, only the page's generic title/URL (the
+  // root) or an AggregateOffer lowPrice/highPrice summary (the Product) that
+  // isn't any single unit's actual price.
+  if (node.mainEntity) {
+    flattenLd(node.mainEntity, out);
+    return;
+  }
+  if (Array.isArray(node.offers?.offers)) {
+    flattenLd(node.offers.offers, out);
+    return;
+  }
+
   if (node['@type']) out.push(node);
 }
 
@@ -439,7 +463,7 @@ function mapLdNode(node, country, sourceUrl, idx, sourceDealType) {
   });
 }
 
-function extractJsonLd(html, country, sourceUrl, sourceDealType) {
+export function extractJsonLd(html, country, sourceUrl, sourceDealType) {
   const re = /<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
   const nodes = [];
   let m;
@@ -501,6 +525,103 @@ function extractFeed(xml, country, sourceUrl, sourceDealType) {
     );
   }
   return items;
+}
+
+// ---- Next.js __NEXT_DATA__ catalogues --------------------------------------
+
+// Hosts whose catalogue is a Next.js page that embeds its full result page as
+// getServerSideProps JSON in <script id="__NEXT_DATA__">, rather than
+// schema.org JSON-LD or SSR card markup. Keyed to the property path (relative
+// to props.pageProps) holding the array of listing items.
+const NEXT_DATA_HOSTS = new Map([
+  ['atlanta.ua', 'realtyList.data'],
+]);
+
+function readPath(object, path) {
+  return path.split('.').reduce((value, key) => (value == null ? undefined : value[key]), object);
+}
+
+function numFromNextData(value) {
+  if (value == null) return null;
+  const n = Number(String(value).replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+// atlanta.ua quotes every listing's price in USD (confirmed against the
+// rendered page — the site shows "$ <amount>" and a separate UAH toggle that
+// isn't part of this JSON), with no currency field of its own in the data.
+function mapAtlantaItem(item, country, sourceUrl, idx, sourceDealType) {
+  const rooms = numFromNextData(item.preview?.rooms_count?.value);
+  const url = (() => {
+    try {
+      return item.url ? new URL(item.url, sourceUrl).href : sourceUrl;
+    } catch {
+      return sourceUrl;
+    }
+  })();
+  // makeListing has no dedicated floor/totalFloors input field — like the
+  // rest of this pipeline, floor is read back out of free text by the shared
+  // normalizer. The preview's own "19/24" floor value is folded into the
+  // description text (in its native "поверх/поверховість" phrasing) so that
+  // still happens here instead of being silently dropped.
+  const floorsValue = item.preview?.floors?.value;
+  const description = [item.shortDescription, floorsValue ? `Поверх/Поверховість: ${floorsValue}` : '']
+    .filter(Boolean)
+    .join('. ');
+
+  return makeListing({
+    id: `custom-${hash(sourceUrl + '|' + url + '|' + idx)}`,
+    source: 'custom',
+    country: country.code,
+    title: item.title ?? 'Listing',
+    description,
+    propertyType: 'flat',
+    dealType: sourceDealType ?? null,
+    price: numFromNextData(item.price?.rentPrice),
+    currency: 'USD',
+    rooms,
+    areaSqm: numFromNextData(item.preview?.square_total?.value),
+    city: String(item.preview?.address?.value || '').split(',').pop()?.trim() || '',
+    lat: numFromNextData(item.coords?.coord_x),
+    lng: numFromNextData(item.coords?.coord_y),
+    photos: Array.isArray(item.galleryDataAll) ? item.galleryDataAll.filter((s) => /^https?:\/\//i.test(s)) : [],
+    url,
+    createdAt: null,
+  });
+}
+
+const NEXT_DATA_MAPPERS = new Map([
+  ['atlanta.ua', mapAtlantaItem],
+]);
+
+export function extractNextData(html, country, sourceUrl, sourceDealType) {
+  let host;
+  try {
+    host = new URL(sourceUrl).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return [];
+  }
+  const dataPath = NEXT_DATA_HOSTS.get(host);
+  const mapper = NEXT_DATA_MAPPERS.get(host);
+  if (!dataPath || !mapper) return [];
+
+  const match = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+  if (!match) return [];
+  let payload;
+  try {
+    payload = JSON.parse(match[1]);
+  } catch {
+    return [];
+  }
+  const items = readPath(payload?.props?.pageProps, dataPath);
+  if (!Array.isArray(items)) return [];
+
+  const listings = [];
+  items.forEach((item, idx) => {
+    const listing = mapper(item, country, sourceUrl, idx, sourceDealType);
+    if (listing.price != null) listings.push(listing);
+  });
+  return listings;
 }
 
 function tag(block, name) {
@@ -679,6 +800,7 @@ export async function scrapeCustomUrl(url, country, { dealType = null } = {}) {
   const body = await fetchText(safe);
   let listings = extractJsonLd(body, country, safe.href, dealType);
   if (!listings.length) listings = extractFeed(body, country, safe.href, dealType);
+  if (!listings.length) listings = extractNextData(body, country, safe.href, dealType);
   if (!listings.length) listings = extractKnownOwnerHtml(body, country, safe.href, dealType);
 
   if (!listings.length) {

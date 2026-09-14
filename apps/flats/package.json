@@ -23,8 +23,8 @@
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.1",
-    "@whiteslove/geo-catalog": "^0.9.16",
-    "@whiteslove/parsing-lexicon": "^0.9.8",
+    "@whiteslove/geo-catalog": "^0.9.17",
+    "@whiteslove/parsing-lexicon": "^0.9.9",
     "cors": "^2.8.6",
     "express": "^5.2.1",
     "pg": "^8.23.0"

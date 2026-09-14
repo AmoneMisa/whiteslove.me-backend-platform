@@ -59,6 +59,29 @@ test('owner SSR fallback accepts Kyrgyz som daily cards', () => {
   assert.equal(listings[0].byAgency, false);
 });
 
+test('owner SSR fallback splits myhouse.kg cards by their it-grid-item marker', () => {
+  // myhouse.kg's real card is a bare <div class="j-item it-grid-item ...">
+  // (no <article>/<li>), so before the DIV_CARD_HOSTS entry existed the
+  // generic structuredBlocks() scan found nothing and fell through to the
+  // text-window fallback, which produced duplicate near-identical windows
+  // around the single price mention.
+  const html = [
+    '<div class="it-list j-list"><div class="it-view-gallery">',
+    '<div class="j-item it-grid-item rp-it-grid-item" data-id="529">',
+    '<a class="it-item-title" href="/bishkek/rent/apartment/1-komnata-529.html">1 комната, Бишкек</a>',
+    '<span>Аренда 1 комн. 30 м²</span>',
+    '<span>7 000 сом</span>',
+    '</div>',
+    '</div></div>',
+  ].join('');
+
+  const listings = extractKnownOwnerHtml(html, COUNTRIES.KG, 'https://myhouse.kg/rent/apartment/');
+  assert.equal(listings.length, 1);
+  assert.equal(listings[0].rooms, 1);
+  assert.equal(listings[0].areaSqm, 30);
+  assert.match(listings[0].url, /1-komnata-529\.html$/);
+});
+
 test('owner SSR fallback does not run on arbitrary custom domains', () => {
   const html = '<article><h3>Apartment</h3><p>Rent 2 rooms 500 USD</p></article>';
   assert.deepEqual(

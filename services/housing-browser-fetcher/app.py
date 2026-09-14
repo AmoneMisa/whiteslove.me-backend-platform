@@ -33,7 +33,7 @@ SETTLE_TIMEOUT_MS = max(0, int(os.environ.get("HOUSING_BROWSER_SETTLE_MS", "1500
 # trusted to be a real housing site, not an SSRF target picked by a caller.
 ALLOWED_HOSTS = {
     h.strip().lower()
-    for h in os.environ.get("PLAYWRIGHT_FETCH_HOSTS", "domza.uz,uybor.uz").split(",")
+    for h in os.environ.get("PLAYWRIGHT_FETCH_HOSTS", "domza.uz,uybor.uz,x-estate.com").split(",")
     if h.strip()
 }
 

@@ -25,7 +25,12 @@ export const REALTOR_HOUSING_SOURCES = Object.freeze({
   UA: Object.freeze([
     Object.freeze({
       key: 'x-estate-ukraine-rent',
-      url: 'https://www.x-estate.com/orenduvaty-kvartyru',
+      // /orenduvaty-kvartyru is a marketing landing page with no listing
+      // cards at all (confirmed via its own sitemap.xml, which lists no
+      // catalogue path). /offers is the real client-rendered catalogue —
+      // robots.txt disallows it for organic crawlers but explicitly allows
+      // AdsBot, which is how it was found.
+      url: 'https://www.x-estate.com/offers?type=rent',
       city: null,
     }),
     Object.freeze({
@@ -35,7 +40,11 @@ export const REALTOR_HOUSING_SOURCES = Object.freeze({
     }),
     Object.freeze({
       key: 'blagovist-kyiv-rent',
-      url: 'https://blagovist.ua/search/apartment/rent',
+      // The bare /rent URL only renders the filter form plus a handful of
+      // "promo" teaser objects — the real SSR result grid only appears once
+      // a filter path segment is present. cur_3 (currency=UAH) is the
+      // lightest filter that still returns every room count.
+      url: 'https://blagovist.ua/search/apartment/rent/cur_3',
       city: 'Kyiv',
     }),
     Object.freeze({
