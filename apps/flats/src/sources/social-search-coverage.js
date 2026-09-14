@@ -58,8 +58,9 @@ export const SOCIAL_HOUSING_COUNTRIES = Object.freeze({
 });
 
 const SEARCH_TOPIC_ENTITIES = Object.freeze([
-  { entity: HOUSING_DEAL_TYPES.find((item) => item.canonical === 'longRent'), limit: 3 },
+  { entity: HOUSING_DEAL_TYPES.find((item) => item.canonical === 'longRent'), limit: 4 },
   { entity: HOUSING_DEAL_TYPES.find((item) => item.canonical === 'shortRent'), limit: 3 },
+  { entity: HOUSING_DEAL_TYPES.find((item) => item.canonical === 'sale'), limit: 3 },
   { entity: PROPERTY_TYPES.find((item) => item.canonical === 'flat'), limit: 1 },
   { entity: PROPERTY_TYPES.find((item) => item.canonical === 'house'), limit: 1 },
 ].filter((item) => item.entity));
@@ -69,8 +70,11 @@ const SEARCH_TOPIC_ENTITIES = Object.freeze([
 // high-signal offer/short-stay phrases so generic aliases cannot crowd them out.
 const CURATED_SEARCH_ALIASES = Object.freeze({
   longRent: Object.freeze({
-    ru: Object.freeze(['аренда', 'сдам', 'сдаю']),
-    uk: Object.freeze(['оренда', 'здам', 'здаю']),
+    // 'сдаётся'/'здається' are the passive offer form people use as often as
+    // the first-person 'сдам'/'здам' -- already in the shared lexicon's
+    // classifier, just missing from what we actively search for.
+    ru: Object.freeze(['аренда', 'сдам', 'сдаю', 'сдаётся']),
+    uk: Object.freeze(['оренда', 'здам', 'здаю', 'здається']),
     uzLatn: Object.freeze(['ijara', 'ijaraga beriladi', 'kvartira ijaraga']),
     uzCyrl: Object.freeze(['ижара', 'ижарага берилади', 'квартира ижарага']),
     kk: Object.freeze(['жалдау', 'жалға беріледі', 'пәтер жалға']),
@@ -83,6 +87,17 @@ const CURATED_SEARCH_ALIASES = Object.freeze({
     uzCyrl: Object.freeze(['кунлик ижара', 'суткалик ижара', 'кунлик квартира']),
     kk: Object.freeze(['тәуліктік жалға', 'тәулікке пәтер', 'тәуліктік пәтер']),
     ro: Object.freeze(['regim hotelier', 'pe noapte', 'închiriere pe termen scurt']),
+  }),
+  // 'sale' is a fully supported deal type (tagged "for sale" throughout the
+  // app) that had no social search coverage at all -- posts using only
+  // 'продаётся'/'продається' were never searched for.
+  sale: Object.freeze({
+    ru: Object.freeze(['продажа', 'продам', 'продаётся']),
+    uk: Object.freeze(['продаж', 'продам', 'продається']),
+    uzLatn: Object.freeze(['sotiladi', 'sotuv', 'sotaman']),
+    uzCyrl: Object.freeze(['сотилади', 'сотув', 'сотаман']),
+    kk: Object.freeze(['сатылады', 'сату', 'сатамын']),
+    ro: Object.freeze(['de vânzare', 'vând', 'vanzare']),
   }),
 });
 
