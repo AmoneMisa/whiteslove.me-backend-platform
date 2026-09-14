@@ -48,6 +48,9 @@ const DEFAULT_GREENHOUSE = [
   'honeycomb:Honeycomb', 'liveperson:LivePerson', 'metalab:MetaLab',
   'muckrack:Muck Rack', 'octopusdeploy:Octopus Deploy', 'okta:Okta',
   'openzeppelin:OpenZeppelin', 'platformsh:Platform.sh', 'rocketchat:Rocket.Chat',
+  // job-boards.eu.greenhouse.io/justmarkets confirmed against the documented
+  // boards-api.greenhouse.io host (region subdomain is UI-only).
+  'justmarkets:JustMarkets',
 ].join(',')
 
 const DEFAULT_LEVER = [
@@ -90,6 +93,12 @@ const DEFAULT_ASHBY = [
   'helpscout:Help Scout', 'lightspeedhq:Lightspeed', 'mapbox:Mapbox',
   'mux:Mux', 'percona:Percona', 'pleo:Pleo', 'quora:Quora',
   'recharge:ReCharge',
+].join(',')
+
+// Confirmed live against Workable's public widget API
+// (apply.workable.com/api/v1/widget/accounts/<handle>).
+const DEFAULT_WORKABLE = [
+  'colibrix-one:COLIBRIX ONE', 'platinum-list:Platinumlist',
 ].join(',')
 
 const DEFAULT_CAREERS_PAGES = [
@@ -164,6 +173,10 @@ const DEFAULT_CAREERS_PAGES = [
   'Sarnova|https://jobs.dayforcehcm.com/en-US/sarnova/CANDIDATEPORTAL',
   'World Duty Free|https://resourcebank.avature.net/worlddutyfreejobs/SearchJobs',
   'Dubai Duty Free|https://www.dubaidutyfree.com/DDF_Careers',
+  // No hosted ATS found (own Next.js careers page); kept on the generic
+  // anchor/JSON-LD fallback rather than a dedicated fetcher.
+  'Puffy|https://careers.puffy.com/',
+  'The Flex|https://theflex.global/careers/jobs',
 ].join(',')
 
 const DUTY_FREE_UZ_URL = 'https://dutyfree.uz/ru/careers'
@@ -172,7 +185,7 @@ const DEFAULT_DOU_COMPANIES = [
   'macpaw:MacPaw', 'uklon:Uklon', 'genesis-technology-partners:Genesis',
 ].join(',')
 
-type HostedKind = 'greenhouse' | 'lever' | 'smartrecruiters' | 'ashby'
+type HostedKind = 'greenhouse' | 'lever' | 'smartrecruiters' | 'ashby' | 'workable'
 type HostedBoard = { handle: string; label: string }
 type CareerPage = { label: string; url: string }
 
@@ -219,6 +232,7 @@ const SEED_BY_KIND: Record<HostedKind, string> = {
   lever: DEFAULT_LEVER,
   smartrecruiters: DEFAULT_SMARTRECRUITERS,
   ashby: DEFAULT_ASHBY,
+  workable: DEFAULT_WORKABLE,
 }
 
 const ENV_BY_KIND: Record<HostedKind, string> = {
@@ -226,6 +240,7 @@ const ENV_BY_KIND: Record<HostedKind, string> = {
   lever: 'LEVER_COMPANIES',
   smartrecruiters: 'SMARTRECRUITERS_COMPANIES',
   ashby: 'ASHBY_COMPANIES',
+  workable: 'WORKABLE_COMPANIES',
 }
 
 function hostedBoards(kind: HostedKind): HostedBoard[] {
@@ -267,7 +282,7 @@ function slug(value: string): string {
 
 function configuredTargets(): CompanyTarget[] {
   const targets: CompanyTarget[] = []
-  for (const kind of ['greenhouse', 'lever', 'smartrecruiters', 'ashby'] as HostedKind[]) {
+  for (const kind of ['greenhouse', 'lever', 'smartrecruiters', 'ashby', 'workable'] as HostedKind[]) {
     for (const board of hostedBoards(kind)) {
       targets.push({ kind, key: `${kind}:${board.handle}`, ...board })
     }
@@ -416,6 +431,27 @@ async function fetchAshbyBoard(handle: string, label: string): Promise<Job[]> {
         description: stripHtml(job.descriptionPlain || job.descriptionHtml).slice(0, DESC_MAX),
       }
     })
+}
+
+async function fetchWorkableBoard(handle: string, label: string): Promise<Job[]> {
+  const data = await fetchJson<{ jobs?: any[] }>(
+    `https://apply.workable.com/api/v1/widget/accounts/${encodeURIComponent(handle)}`,
+  )
+  return (data.jobs || []).map((job) => {
+    const location = [job.city, job.country].filter(Boolean).join(', ') || 'See listing'
+    return {
+      id: `companies-workable-${handle}-${job.shortcode || job.code || job.url}`,
+      title: job.title,
+      company: label,
+      location,
+      url: job.url,
+      source: 'companies' as const,
+      remote: job.telecommuting === true || /remote|anywhere|distributed/i.test(`${job.title} ${location}`),
+      tags: [label, job.department, job.function].filter(Boolean),
+      postedAt: new Date(job.published_on || job.created_at || Date.now()).toISOString(),
+      employmentType: job.employment_type,
+    }
+  })
 }
 
 function phenomParams(pageUrl: string): { country: string; lang: string } {
@@ -593,6 +629,8 @@ async function fetchEmbeddedAts(html: string, label: string): Promise<Job[]> {
   if (match?.[1]) return fetchAshbyBoard(match[1], label)
   match = html.match(/(?:careers|jobs)\.smartrecruiters\.com\/([A-Za-z0-9]{2,})/)
   if (match?.[1]) return fetchSmartRecruitersBoard(match[1], label)
+  match = html.match(/apply\.workable\.com\/([A-Za-z0-9_-]{2,})/)
+  if (match?.[1]) return fetchWorkableBoard(match[1], label)
   return []
 }
 
@@ -847,6 +885,7 @@ export async function fetchCoreCompanyTarget(target: string): Promise<Job[]> {
   if (config.kind === 'lever') return fetchLeverBoard(config.handle, config.label)
   if (config.kind === 'smartrecruiters') return fetchSmartRecruitersBoard(config.handle, config.label)
   if (config.kind === 'ashby') return fetchAshbyBoard(config.handle, config.label)
+  if (config.kind === 'workable') return fetchWorkableBoard(config.handle, config.label)
   if (config.kind === 'career') return fetchCareerPage(config.url, config.label)
   if (config.kind === 'dutyfree-uz') return fetchDutyFreeUz(config.url, config.label)
   return fetchDouCompany(config.handle, config.label)
