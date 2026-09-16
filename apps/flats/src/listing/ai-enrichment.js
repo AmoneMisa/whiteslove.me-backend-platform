@@ -20,6 +20,8 @@ import {
   dictionaryLocationLists,
 } from '../geo/location-dictionary-resolver.js';
 import { newestFirst } from './enrichment-priority.js';
+import { mayAiOverwrite } from './field-provenance.js';
+import { createProvenance } from '@whiteslove/parsing-lexicon/provenance';
 
 // Bump when prompts, schema or the merge rules change, so already-enriched
 // listings are re-evaluated instead of keeping an answer from the old contract.
@@ -239,10 +241,22 @@ export function mergeApartmentAi(listing, result, countryCode = null) {
     Array.isArray(listing?.ai?.derivedFields) ? listing.ai.derivedFields.map(String) : [],
   );
 
+  // AI fills gaps only. Blankness was already the guard; mayAiOverwrite states
+  // the rule against recorded provenance as well, so a value a deterministic
+  // parser established can never be replaced by a model answer.
+  const fieldProvenance = { ...(listing?.fieldProvenance ?? {}) };
+  const aiObservedAt = new Date().toISOString();
+  const takeFromAi = (field, value) => {
+    if (!blank(merged[field]) || blank(value)) return false;
+    if (!mayAiOverwrite(fieldProvenance[field])) return false;
+    merged[field] = value;
+    derivedFields.add(field);
+    fieldProvenance[field] = createProvenance({ source: 'ai_enrichment', parser: 'ai.apartment', observedAt: aiObservedAt });
+    return true;
+  };
+
   for (const [aiField, listingField] of Object.entries(SCALAR_FIELDS)) {
-    if (!blank(merged[listingField]) || blank(data[aiField])) continue;
-    merged[listingField] = data[aiField];
-    derivedFields.add(listingField);
+    takeFromAi(listingField, data[aiField]);
   }
 
   const district = blank(merged.district)
@@ -303,6 +317,7 @@ export function mergeApartmentAi(listing, result, countryCode = null) {
     derivedFields: [...derivedFields].sort(),
     updatedAt: new Date().toISOString(),
   };
+  merged.fieldProvenance = Object.freeze(fieldProvenance);
   return merged;
 }
 

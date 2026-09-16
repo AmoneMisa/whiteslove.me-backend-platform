@@ -1,4 +1,5 @@
 import { parseHousingListingEnrichment } from '@whiteslove/parsing-lexicon/housing-listing-enrichment';
+import { chooseField, collectFieldProvenance, FIELD_SOURCES } from './field-provenance.js';
 
 function locationName(value) {
   if (value == null) return null;
@@ -193,6 +194,52 @@ export function enrichListingDetails(listing) {
     ...parsedNearby,
   ])];
 
+  // Provenance mirrors the choice each `??` chain below makes, recording which
+  // tier supplied the value rather than changing it. Only the fields whose
+  // priority is genuinely contested are tracked; a field with a single source
+  // needs no adjudication.
+  const S = FIELD_SOURCES;
+  const chosen = {
+    rooms: chooseField(
+      { value: boundedCount(source.rooms, 12), source: S.structured },
+      { value: enrichment.rooms, source: S.description, parser: 'housing.listing-enrichment' },
+      { value: compactLayout?.rooms, source: S.description, parser: 'housing.compact-layout' },
+    ),
+    areaSqm: chooseField(
+      { value: enrichment.areaSqm, source: S.labelled, parser: 'housing.listing-enrichment' },
+      { value: source.areaSqm != null ? Number(source.areaSqm) : null, source: S.structured },
+      { value: parseAreaShorthand(text), source: S.description, parser: 'housing.area-shorthand' },
+    ),
+    floor: chooseField(
+      { value: source.floor != null ? Number(source.floor) : null, source: S.structured },
+      { value: enrichment.floor, source: S.description, parser: 'housing.listing-enrichment' },
+      { value: compactLayout?.floor, source: S.description, parser: 'housing.compact-layout' },
+    ),
+    totalFloors: chooseField(
+      { value: source.totalFloors != null ? Number(source.totalFloors) : null, source: S.structured },
+      { value: enrichment.totalFloors, source: S.description, parser: 'housing.listing-enrichment' },
+      { value: compactLayout?.totalFloors, source: S.description, parser: 'housing.compact-layout' },
+    ),
+    address: chooseField(
+      { value: source.address, source: S.structured },
+      { value: enrichment.address, source: S.description, parser: 'housing.listing-enrichment' },
+    ),
+    commissionPercent: chooseField(
+      { value: commissionPercent, source: S.description, parser: 'housing.commission-percent' },
+      { value: source.commissionPercent, source: S.structured },
+      { value: enrichment.commissionPercent, source: S.description, parser: 'housing.listing-enrichment' },
+      { value: effectiveCommissionPercent(enrichment.commissionAmount, source.price, source.currency), source: S.description, parser: 'housing.commission-derived' },
+    ),
+    district: chooseField(
+      { value: locationName(source.district), source: S.structured },
+      { value: enrichment.district, source: S.description, parser: 'housing.listing-enrichment' },
+    ),
+    metro: chooseField(
+      { value: locationName(source.metro), source: S.structured },
+      { value: enrichment.metro, source: S.description, parser: 'housing.listing-enrichment' },
+    ),
+  };
+
   const enriched = {
     ...source,
     rooms: boundedCount(source.rooms, 12) ?? enrichment.rooms ?? compactLayout?.rooms ?? null,
@@ -227,6 +274,9 @@ export function enrichListingDetails(listing) {
     metro: locationName(source.metro) ?? enrichment.metro ?? null,
   };
   enriched.potentiallyUnsafe = source.potentiallyUnsafe === true || classifyPotentiallyUnsafe(enriched, text, roomOnly);
+  // Merged with anything the caller already carried, so provenance recorded by
+  // an earlier stage (a source adapter, a previous enrichment) is not lost.
+  enriched.fieldProvenance = Object.freeze({ ...(source.fieldProvenance ?? {}), ...collectFieldProvenance(chosen) });
   return enriched;
 }
 
