@@ -380,6 +380,12 @@ async function processQueueTaskInner(task) {
         country,
         segment,
         crawlGeneration: task.crawlGeneration,
+        // What the source actually returned, before our own filtering. A chain
+        // that terminates having returned nothing is a suspect scan, not proof
+        // that the segment is empty.
+        observedCount: pageResult.rawCount,
+        pageLimitReached,
+        terminal: true,
       });
     }
 
