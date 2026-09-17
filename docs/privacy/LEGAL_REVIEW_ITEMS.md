@@ -19,4 +19,4 @@
 | 11 | **Retention periods** | Especially the 36-month classes | `PRIVACY_RETENTION_POLICY_APPROVED` |
 | 12 | **Publishing the privacy contact address** | A personal mailbox on a public page is permanently scrapeable; a forwarding alias can be used instead | `PRIVACY_CONTACT_EMAIL` |
 | 13 | **Supervisory authority named in the privacy notice** | The right to complain applies to the authority of the person's residence, work or the alleged infringement; which authorities to name depends on item 3 | Privacy notice text |
-| 14 | **Reviewer authentication** | The admin API uses one shared key with a self-declared reviewer name; the audit trail is only as reliable as that name | — |
+| 14 | **Human review** — **decided:** no admin pages and no human decisions | With no reviewer, `authorizeIntegrityAction` never permits a high-impact action, so nothing is taken against a person; only neutral listing labels are automatic. Data-rights requests arrive by email (the `/data-rights` form prepares one) and still need answering within a month. The admin API stays unused | — |
