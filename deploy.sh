@@ -230,6 +230,13 @@ done
 "${COMPOSE[@]}" pull "${unique_pull[@]}"
 
 if contains_requested flats-api; then
+  # Legal identity and open review decisions. Report-only unless
+  # IDENTITY_FEATURES_ENABLED=true, in which case unmet requirements stop the
+  # deploy before anything is migrated or cut over. Runs in the flats-api
+  # service because that is the one that receives the application .env.
+  echo '=== flats preflight: legal readiness ==='
+  "${COMPOSE[@]}" run --rm --no-deps flats-api node src/check-legal-readiness.js
+
   echo '=== flats phase 1/5: migrate schema ==='
   "${COMPOSE[@]}" run --rm --no-deps flats-migrate
 

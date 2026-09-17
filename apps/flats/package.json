@@ -19,7 +19,9 @@
     "sync:geo-snapshots": "node src/sync-geo-snapshots.js",
     "backfill:location-canonicals": "node src/backfill-location-canonicals.js",
     "backfill:residential-coordinates": "node src/backfill-residential-coordinates.js",
-    "regeocode": "node src/regeocode.js"
+    "regeocode": "node src/regeocode.js",
+    "legal:check": "node src/check-legal-readiness.js",
+    "retention:run": "node src/run-retention.js"
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.1",
