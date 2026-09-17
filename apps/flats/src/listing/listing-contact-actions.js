@@ -21,6 +21,36 @@ export function contactPointsForPublicListing(listing) {
   return contactPointsFromListing(listing);
 }
 
+/**
+ * Attaches `listingLine` to a page of listings (see identity/listing-line.js).
+ *
+ * Best effort: the line is a hint, so if the lookup fails the feed is served
+ * without lines rather than failing the search.
+ */
+export async function attachListingLines(listings, { loadInputs, resolveLine, log = console.warn } = {}) {
+  if (!Array.isArray(listings) || !listings.length) return listings;
+  const contacts = [];
+  for (const listing of listings) {
+    const contact = typeof listing?.contact === 'string' ? listing.contact.trim() : '';
+    if (!contact) continue;
+    const [point] = contactPointsForPublicListing(listing);
+    contacts.push({ contact, type: point?.type, canonicalValue: point?.canonicalValue });
+  }
+  if (!contacts.length) return listings;
+  try {
+    const inputs = await loadInputs(contacts);
+    return listings.map((listing) => {
+      const input = inputs.get(typeof listing?.contact === 'string' ? listing.contact.trim() : '');
+      if (!input) return listing;
+      const { line } = resolveLine(input);
+      return line ? { ...listing, listingLine: line } : listing;
+    });
+  } catch (error) {
+    log(`[listing-line] skipped: ${error?.code ?? error?.name ?? 'error'}`);
+    return listings;
+  }
+}
+
 export function attachContactActions(listing) {
   if (!listing || typeof listing !== 'object') return listing;
   const contactActions = buildContactActions(contactPointsForPublicListing(listing));

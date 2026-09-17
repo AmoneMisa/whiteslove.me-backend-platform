@@ -45,5 +45,5 @@ test('feed and single-listing responses both carry contact buttons', async () =>
   const routes = await readFile(new URL('../src/routes/listing-routes.js', import.meta.url), 'utf8');
   const detail = await readFile(new URL('../src/routes/listing-public.js', import.meta.url), 'utf8');
   assert.match(routes, /listings = listings\.map\(attachContactActions\)/u);
-  assert.match(detail, /return attachContactActions\(prepared\)/u);
+  assert.match(detail, /attachListingLines\(\[attachContactActions\(prepared\)\]/u);
 });
