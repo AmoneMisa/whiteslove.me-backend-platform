@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
 import { config } from './config.mjs';
+import { runSubscriptionRetention } from './retention.mjs';
 
 const { Pool } = pg;
 const pool = new Pool({
@@ -361,6 +362,12 @@ export async function markSubscriptionInitialized(id) {
 export async function touchSubscription(id) {
   await ensureSchema();
   await pool.query(`UPDATE ${schema}.subscriptions SET last_checked_at = NOW() WHERE id = $1`, [id]);
+}
+
+/** One retention pass over subscription data; see retention.mjs. */
+export async function runRetentionPass() {
+  await ensureSchema();
+  return runSubscriptionRetention(pool, schema);
 }
 
 export async function closeDatabase() {

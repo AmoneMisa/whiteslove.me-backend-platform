@@ -118,7 +118,7 @@ detection, not faces. This must stay true — see DPIA risk R9.
 | Recipient | What it receives | Role | Transfer |
 |---|---|---|---|
 | Hosting provider | Everything | Processor | **OPERATOR INPUT** — provider and location |
-| AI gateway (self-hosted FreeLLMAPI) routing to configured providers: Groq, Google Gemini, NVIDIA, Hugging Face, LLM7, OpenRouter, Mistral, Cloudflare Workers AI, optional Apinex | Listing/vacancy/CV **text with contacts redacted** (`apps/ai-worker/src/util/privacy.js`); **translation requests are not redacted**; listing **photos** for vision | Processor (subject to each provider's terms) | Mostly US-based — **OPERATOR INPUT**: which providers are enabled in production, their data-use terms (free tiers may train on inputs), and the Chapter V mechanism for each |
+| AI gateway (self-hosted FreeLLMAPI) routing to configured providers: Groq, Google Gemini, NVIDIA, Hugging Face, LLM7, OpenRouter, Mistral, Cloudflare Workers AI, optional Apinex | Listing/vacancy/CV **text with contacts redacted** (`apps/ai-worker/src/util/privacy.js`); translation text with contacts **masked and restored** (`maskContacts`); listing **photos** for vision | Processor (subject to each provider's terms) | Mostly US-based — **OPERATOR INPUT**: which providers are enabled in production, their data-use terms (free tiers may train on inputs), and the Chapter V mechanism for each |
 | Valhalla routing (public endpoint by default) | Coordinates of listings and metro stations | Third party | No personal data sent |
 | OpenStreetMap tile servers | Visitor IP, map area | Independent controller | From the visitor's browser |
 | Telegram | Subscription messages | Independent controller | — |
@@ -146,9 +146,9 @@ added, this audit and the consent requirement must be revisited first.
 
 1. **Candidate `gender` and `age`** are kept by operator decision
    (LEGAL_REVIEW_ITEMS §7) and are listed in the privacy notice.
-2. **Translation requests send unredacted text** (including phone numbers) to
-   AI providers, because the prompt must preserve contacts in the output.
-   Recommend placeholder substitution with restoration — DPIA R6.
+2. **Translation requests** — resolved: contacts are replaced by placeholders
+   before the free translator or any LLM provider sees the text, and restored
+   in the translation (`apps/ai-worker/src/util/privacy.js` maskContacts).
 3. **`FACEBOOK_COOKIES`** in `.env.example` allows crawling as a logged-in
    account, contradicting `services/social-fetcher/README.md` ("No account
    login, cookies"). Crawling behind a login is harder to reconcile with
@@ -156,4 +156,6 @@ added, this audit and the consent requirement must be revisited first.
    Recommend leaving it unset — LEGAL_REVIEW_ITEMS §8.
 4. **Vision sends listing photos** to external providers; photos can show
    people, documents or number plates — DPIA R6.
-5. **Log retention** is not configured in the repository — RETENTION_POLICY_DRAFT.
+5. **Log retention** — resolved: every container in both compose files rotates
+   its logs (json-file, 3 × 10 MB). Host and reverse-proxy logs outside Docker
+   are OPERATOR INPUT.

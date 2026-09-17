@@ -11,6 +11,7 @@ import { canonicalCityValue } from '../../../shared/locationCatalog'
 import { hiringStatisticGroupsForProfessions } from '../../../shared/hiringStatisticGroups'
 import { expandHiringProfessionFilters } from '../../../shared/hiringProfessionGroups'
 import { convertCurrency } from '../../utils/support/currency'
+import { purgeStaleCandidates, type CandidateRetentionReport } from '../../../shared/privacy/candidateRetention'
 import { BoundedTtlCache } from '../../utils/support/boundedTtlCache'
 import {
   publicCandidateGender,
@@ -46,6 +47,14 @@ function schema(): string {
 
 export function hiringDbEnabled(): boolean {
   return Boolean((process.env.HIRING_DATABASE_URL || '').trim())
+}
+
+/** One candidate retention pass; see shared/privacy/candidateRetention.ts. */
+export async function purgeStaleCandidatesNow(): Promise<CandidateRetentionReport> {
+  await ensureSchema()
+  const report = await purgeStaleCandidates(db(), schema())
+  if (report.deleted) hiringStatsCache.clear()
+  return report
 }
 
 /** Lightweight readiness probe used by the workforce API container. */

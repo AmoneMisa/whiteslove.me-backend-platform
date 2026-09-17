@@ -12,6 +12,7 @@ import {
 import { allHiringTargets, refreshHiringTarget } from './hiringRuntime'
 import { communityJobBoardHosts, configuredSources, refreshSource } from './jobsRuntime'
 import { WORKER_HEALTH_ID, workerHealthReporter } from './workerHealthRuntime'
+import { hiringDbEnabled, purgeStaleCandidatesNow } from '../server/hiring/infrastructure/database'
 
 const POLL_MS = Math.max(250, Number(process.env.JOBS_QUEUE_POLL_MS) || Number(process.env.JOBS_QUEUE_POLL_SECONDS || 1) * 1000)
 const ERROR_RETRY_MS = Math.max(1_000, Number(process.env.JOBS_QUEUE_ERROR_RETRY_MS) || 5_000)
@@ -34,6 +35,10 @@ const ALLOWED_TASK_TYPES = WORKFORCE_DOMAIN === 'vacancies'
 let stopping = false
 let lastDispatchAt = 0
 let lastPruneAt = 0
+// CV retention runs in the cv worker only, every 6 hours by default. It deletes
+// nothing until the retention policy is approved.
+const CANDIDATE_RETENTION_INTERVAL_MS = Math.max(60 * 60_000, Number(process.env.CANDIDATE_RETENTION_INTERVAL_SECONDS || 21_600) * 1000)
+let lastCandidateRetentionAt = 0
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -359,6 +364,14 @@ async function main() {
         if (pruned) console.log(`[jobs:worker] pruned ${pruned} completed queue tasks`)
         lastPruneAt = Date.now()
         workerHealthReporter.markPrune()
+      }
+
+      if (WORKFORCE_DOMAIN === 'cv' && hiringDbEnabled() && now - lastCandidateRetentionAt >= CANDIDATE_RETENTION_INTERVAL_MS) {
+        lastCandidateRetentionAt = Date.now()
+        const retention = await purgeStaleCandidatesNow()
+        if (retention.approved) {
+          console.log(`[jobs:worker] candidate retention deleted=${retention.deleted} batches=${retention.batches}${retention.exhausted ? ' (continues next pass)' : ''}`)
+        }
       }
 
       const processed = await processOneTask()

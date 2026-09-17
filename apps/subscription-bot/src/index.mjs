@@ -22,6 +22,7 @@ import {
   touchSubscription,
   updateSubscriptionSearch,
   upsertUser,
+  runRetentionPass,
 } from './db.mjs';
 import {
   fetchSubscriptionItems,
@@ -574,6 +575,23 @@ await api('setMyCommands', {
 }).catch((error) => console.warn('[subscription-bot] setMyCommands failed:', error.message));
 
 console.log(`[subscription-bot] started; scan every ${config.pollSeconds}s`);
+
+// Retention every 6 hours (and once shortly after start). Personal-data
+// deletion only runs once the retention policy is approved; see retention.mjs.
+async function retentionTick() {
+  try {
+    const report = await runRetentionPass();
+    console.log(
+      `[subscription-bot] retention approved=${report.approved} users=${report.users} ` +
+      `deliveries=${report.deliveries} expiredSessions=${report.expiredSessions} expiredHandoffs=${report.expiredHandoffs}`,
+    );
+  } catch (error) {
+    console.warn(`[subscription-bot] retention failed: ${error?.code ?? error?.name ?? 'error'}`);
+  }
+}
+const retentionTimer = setInterval(() => void retentionTick(), 6 * 60 * 60_000);
+retentionTimer.unref?.();
+setTimeout(() => void retentionTick(), 60_000).unref?.();
 const scanTimer = setInterval(() => void scanAll(), config.pollSeconds * 1000);
 scanTimer.unref?.();
 void scanAll();
@@ -582,6 +600,7 @@ for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     stopping = true;
     clearInterval(scanTimer);
+    clearInterval(retentionTimer);
     void closeDatabase().catch((error) => {
       console.error('[subscription-bot] closeDatabase failed:', error.message);
     });

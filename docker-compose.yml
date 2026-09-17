@@ -3,8 +3,18 @@ name: whiteslove-backend-platform
 # Deployment invariant: every deployable process has its own image/build
 # context. Domain deploys select explicit service names and use --no-deps;
 # changing one domain must not recreate unrelated APIs or workers.
+# Container logs contain client IPs and request details (personal data), so
+# they are rotated rather than kept forever: at most 3 files of 10 MB per
+# container. See docs/privacy/RETENTION_POLICY_DRAFT.md ("technical logs").
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   freellmapi:
+    logging: *default-logging
     # Pin the runtime code; FreeLLMAPI still refreshes its signed free-model
     # catalog independently, so provider/model data can stay current without a
     # surprise application-code upgrade during deploy.
@@ -136,6 +146,7 @@ services:
       start_period: 15s
 
   ai-worker:
+    logging: *default-logging
     build:
       context: ./apps/ai-worker
     image: ${AI_WORKER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-ai-worker:latest}
@@ -234,6 +245,7 @@ services:
       start_period: 15s
 
   platform-postgres:
+    logging: *default-logging
     image: postgres:18-alpine
     restart: unless-stopped
     # Safety net against client-side connection leaks (any service, present or
@@ -255,6 +267,7 @@ services:
       retries: 10
 
   platform-elasticsearch:
+    logging: *default-logging
     build:
       context: ./services/elasticsearch
     image: ${ELASTICSEARCH_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-elasticsearch:latest}
@@ -274,6 +287,7 @@ services:
       start_period: 40s
 
   flats-migrate:
+    logging: *default-logging
     build: { context: ./apps/flats }
     image: ${FLATS_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-flats:latest}
     command: ["node", "src/migrate.js"]
@@ -293,6 +307,7 @@ services:
       me.whiteslove.platform.role: migration
 
   flats-api:
+    logging: *default-logging
     build: { context: ./apps/flats }
     image: ${FLATS_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-flats:latest}
     restart: unless-stopped
@@ -329,6 +344,7 @@ services:
       me.whiteslove.platform.role: api
 
   flats-worker:
+    logging: *default-logging
     build: { context: ./apps/flats }
     image: ${FLATS_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-flats:latest}
     command: ["node", "src/worker.js"]
@@ -378,6 +394,7 @@ services:
       me.whiteslove.platform.role: worker
 
   flats-olx-fetcher:
+    logging: *default-logging
     build: { context: ./services/olx-fetcher }
     image: ${OLX_FETCHER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-olx-fetcher:latest}
     restart: unless-stopped
@@ -399,6 +416,7 @@ services:
       start_period: 15s
 
   flats-olx-fetcher-ua:
+    logging: *default-logging
     build: { context: ./services/olx-fetcher }
     image: ${OLX_FETCHER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-olx-fetcher:latest}
     restart: unless-stopped
@@ -407,6 +425,7 @@ services:
     healthcheck: *olx-healthcheck
 
   flats-olx-router:
+    logging: *default-logging
     image: nginx:1.27-alpine
     restart: unless-stopped
     volumes:
@@ -422,6 +441,7 @@ services:
       retries: 10
 
   social-fetcher:
+    logging: *default-logging
     build: { context: ./services/social-fetcher }
     image: ${SOCIAL_FETCHER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-social-fetcher:latest}
     restart: unless-stopped
@@ -445,6 +465,7 @@ services:
       start_period: 30s
 
   housing-browser-fetcher:
+    logging: *default-logging
     build: { context: ./services/housing-browser-fetcher }
     image: ${HOUSING_BROWSER_FETCHER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-housing-browser-fetcher:latest}
     restart: unless-stopped
@@ -466,6 +487,7 @@ services:
       me.whiteslove.platform.role: transport
 
   job-browser-fetcher:
+    logging: *default-logging
     build: { context: ./services/job-browser-fetcher }
     image: ${JOB_BROWSER_FETCHER_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-job-browser-fetcher:latest}
     restart: unless-stopped
@@ -487,6 +509,7 @@ services:
       me.whiteslove.platform.role: transport
 
   workforce-queue-migrate:
+    logging: *default-logging
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
     image: ${WORKFORCE_QUEUE_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-vacancies:latest}
     command: ["node", "--experimental-transform-types", "./scripts/migrate-database.ts"]
@@ -502,6 +525,7 @@ services:
       me.whiteslove.platform.role: migration
 
   vacancies-migrate:
+    logging: *default-logging
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
     image: ${VACANCIES_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-vacancies:latest}
     command: ["node", "--experimental-transform-types", "./scripts/migrate-database.ts"]
@@ -517,6 +541,7 @@ services:
       me.whiteslove.platform.role: migration
 
   cv-migrate:
+    logging: *default-logging
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
     image: ${CV_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-cv:latest}
     command: ["node", "--experimental-transform-types", "./scripts/migrate-database.ts"]
@@ -532,6 +557,7 @@ services:
       me.whiteslove.platform.role: migration
 
   vacancies-api:
+    logging: *default-logging
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
     image: ${VACANCIES_API_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-vacancies:latest}
     command: ["node", "--experimental-transform-types", "--import", "./jobs-worker/alias-loader.mjs", "./api/vacancies.ts"]
@@ -567,6 +593,7 @@ services:
       me.whiteslove.platform.role: api
 
   cv-api:
+    logging: *default-logging
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
     image: ${CV_API_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-cv:latest}
     command: ["node", "--experimental-transform-types", "--import", "./jobs-worker/alias-loader.mjs", "./api/cv.ts"]
@@ -602,6 +629,7 @@ services:
       me.whiteslove.platform.role: api
 
   vacancies-worker:
+    logging: *default-logging
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
     image: ${VACANCIES_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-vacancies:latest}
     command: ["node", "--experimental-transform-types", "--import", "./jobs-worker/alias-loader.mjs", "--import", "./jobs-worker/workerHealthBootstrap.ts", "./jobs-worker/vacancies.ts"]
@@ -639,6 +667,7 @@ services:
       me.whiteslove.platform.role: worker
 
   cv-worker:
+    logging: *default-logging
     build: { context: ./apps/workforce, dockerfile: jobs-worker/Dockerfile }
     image: ${CV_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-cv:latest}
     command: ["node", "--experimental-transform-types", "--import", "./jobs-worker/alias-loader.mjs", "--import", "./jobs-worker/workerHealthBootstrap.ts", "./jobs-worker/cv.ts"]
@@ -664,6 +693,7 @@ services:
       me.whiteslove.platform.role: worker
 
   subscriptions-migrate:
+    logging: *default-logging
     build: { context: ./apps/subscription-bot }
     image: ${SUBSCRIPTION_BOT_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-subscription-bot:latest}
     command: ["node", "src/migrate.mjs"]
@@ -679,6 +709,7 @@ services:
       me.whiteslove.platform.role: migration
 
   subscription-bot:
+    logging: *default-logging
     build: { context: ./apps/subscription-bot }
     image: ${SUBSCRIPTION_BOT_IMAGE:-ghcr.io/amonemisa/whiteslove.me-backend-platform-subscription-bot:latest}
     restart: unless-stopped

@@ -22,9 +22,9 @@
 | Closed disputes | 36 months after closure | Delete | `retention:run` | As above |
 | Source scan runs | 6 months | Delete | `retention:run` | Operational metrics, no personal data |
 | Legacy registry rows | 18 months uncorroborated | Delete | **Not implemented** | Legacy labels without new evidence expire |
-| Telegram subscribers | On unsubscribe; 12 months inactive | Delete | **Not implemented** (subscription-bot) | Contract ended |
-| Candidate profiles | 6 months after inactive at source | Delete | **Not implemented** (workforce) | Candidate no longer publishing |
-| Technical logs | 30 days | Delete | **Not configured** (deployment log rotation) | Debugging only |
+| Telegram subscribers | 30 days after the last subscription is removed; 12 months with only paused subscriptions | Delete | subscription-bot, every 6 h (delivery history 12 months; expired one-time tokens always) | Contract ended |
+| Candidate profiles | 6 months after last seen at source | Delete | workforce cv worker, every 6 h (index: hiring migration 003) | Candidate no longer publishing |
+| Technical logs | Size-capped: 3 × 10 MB per container | Rotate | docker-compose `x-logging` on every service (both repos); host/nginx logs: OPERATOR INPUT | Debugging only; Docker rotates by size, not age |
 
 Evidence and contacts under an open dispute are never deleted by retention
 until the dispute is decided. Aggregation and anonymisation are listed as

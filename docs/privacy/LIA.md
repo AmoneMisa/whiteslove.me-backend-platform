@@ -82,8 +82,8 @@ A and B.
 ([ARTICLE14_EXEMPTION.md](ARTICLE14_EXEMPTION.md)).
 
 **Safeguards still required before go-live.** Public privacy notice and
-data-rights page published; objection flag honoured end-to-end (DPIA R10);
-DPIA approved.
+data-rights page published (done); objection flag honoured end-to-end (done,
+DPIA R10); DPIA approved.
 
 **Provisional conclusion:** **undetermined** until the DPIA is completed. Do
 not enable identity or risk features on this LIA alone.
@@ -103,10 +103,11 @@ likely expects. Profiles from public search snippets (LinkedIn) are weaker
 still.
 
 **Provisional conclusion:** **undetermined.** Following source removal
-promptly (6-month retention after inactive) is the main safeguard.
+promptly (deleted six months after last seen at the source) is the main
+safeguard.
 
 ## E. Security logging (P13)
 
 Standard and low-impact, provided logs are kept briefly and not used for
-other purposes. **Provisional conclusion:** not overridden, subject to
-configuring log retention.
+other purposes. Container logs rotate at 3 × 10 MB per service. **Provisional
+conclusion:** not overridden.
