@@ -6,6 +6,7 @@ import { looksCommercialHousing, looksParkingOnly } from '@whiteslove/parsing-le
 import { looksHousingRoomOnly } from '@whiteslove/parsing-lexicon/housing';
 import { dedupeHousingNearbyMentions } from '@whiteslove/parsing-lexicon/housing-card-fields';
 import { parsePrimaryContact } from '@whiteslove/parsing-lexicon/contact';
+import { canonicalListingContact } from './contact-canonical.js';
 import { parseHousingAreaFromText } from '@whiteslove/parsing-lexicon/housing-text';
 import { parseHousingListingFields } from '@whiteslove/parsing-lexicon/housing-listing-fields';
 import {
@@ -152,7 +153,9 @@ export function makeListing(partial) {
   const buildingYear = partial.buildingYear != null ? Number(partial.buildingYear) : listingFields.buildingYear ?? null;
   const bedrooms = partial.bedrooms != null ? Number(partial.bedrooms) : listingFields.bedrooms ?? null;
   const audience = partial.audience ?? classifyAudience(combined);
-  const contact = partial.contact ?? parsePrimaryContact(combined);
+  // Stored in one form per contact (E.164 by the listing's country, or
+  // @username), so the same advertiser matches across listings and sources.
+  const contact = canonicalListingContact(partial.contact ?? parsePrimaryContact(combined), country);
   const sourceCity = parseCanonicalCity(country, partial.city || '');
   const explicitDistrict = parseExplicitDistrict(combined, country);
   const loc = parseLocation(combined, country, sourceCity || null);

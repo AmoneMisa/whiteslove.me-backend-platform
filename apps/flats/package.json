@@ -19,6 +19,7 @@
     "sync:geo-snapshots": "node src/sync-geo-snapshots.js",
     "backfill:location-canonicals": "node src/backfill-location-canonicals.js",
     "backfill:residential-coordinates": "node src/backfill-residential-coordinates.js",
+    "backfill:listing-contacts": "node src/backfill-listing-contacts.js",
     "regeocode": "node src/regeocode.js",
     "legal:check": "node src/check-legal-readiness.js",
     "retention:run": "node src/run-retention.js"
