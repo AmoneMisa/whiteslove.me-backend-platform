@@ -78,19 +78,23 @@ A and B.
   who decided what.
 - Retention per class; nothing kept indefinitely.
 
-**Safeguards still required before go-live.** Article 14 approach decided and
-applied; objection flag honoured end-to-end (DPIA R10); DPIA approved.
+**Transparency.** No individual notices; public notice under Art 14(5)(b)
+([ARTICLE14_EXEMPTION.md](ARTICLE14_EXEMPTION.md)).
 
-**Provisional conclusion:** **undetermined** until the DPIA is completed and
-the Article 14 approach decided. Do not enable identity or risk features on
-this LIA alone.
+**Safeguards still required before go-live.** Public privacy notice and
+data-rights page published; objection flag honoured end-to-end (DPIA R10);
+DPIA approved.
+
+**Provisional conclusion:** **undetermined** until the DPIA is completed. Do
+not enable identity or risk features on this LIA alone.
 
 ## D. Candidate profiles and deduplication (P8, P9)
 
 **Purpose.** Help employers find candidates who published CVs to be found.
 
-**Necessity.** Profile fields beyond professional ones are not necessary.
-`gender` and `age` in particular are not necessary for this purpose.
+**Necessity.** Profile fields are those the candidate published. `gender` and
+`age` are kept by operator decision, as published by the candidate at the
+source; they are never inferred.
 
 **Balancing.** A CV is published to be found by employers, but usually on a
 specific platform under its privacy settings. Republishing it elsewhere, and
@@ -98,9 +102,8 @@ keeping it after it is removed at the source, goes beyond what the candidate
 likely expects. Profiles from public search snippets (LinkedIn) are weaker
 still.
 
-**Provisional conclusion:** **undetermined.** Recommend removing gender and
-age, following source removal promptly, and legal review of whether
-aggregation of candidate profiles is supportable at all (LEGAL_REVIEW_ITEMS §7).
+**Provisional conclusion:** **undetermined.** Following source removal
+promptly (6-month retention after inactive) is the main safeguard.
 
 ## E. Security logging (P13)
 

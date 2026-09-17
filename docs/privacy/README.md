@@ -15,6 +15,7 @@ Primary source: Regulation (EU) 2016/679 (GDPR). Articles referenced: 5, 6,
 | [DATA_INVENTORY.md](DATA_INVENTORY.md) | What personal data exists, where it comes from, where it goes (Art 30 record, cookie audit) | Draft |
 | [LEGAL_BASIS_MATRIX.md](LEGAL_BASIS_MATRIX.md) | One legal basis per processing purpose, never a blanket basis (Art 6) | Draft |
 | [LIA.md](LIA.md) | Legitimate-interests assessment for purposes relying on Art 6(1)(f) | Draft — `PRIVACY_LIA_STATUS` |
+| [ARTICLE14_EXEMPTION.md](ARTICLE14_EXEMPTION.md) | Why no individual Article 14 notices are sent, and the safeguards that requires | Operator decision — `PRIVACY_ARTICLE14_APPROACH` |
 | [DPIA_DRAFT.md](DPIA_DRAFT.md) | Data protection impact assessment for identity and risk features (Art 35) | **Draft — not complete** — `PRIVACY_DPIA_STATUS` |
 | [RETENTION_POLICY_DRAFT.md](RETENTION_POLICY_DRAFT.md) | Retention per data class (Art 5(1)(e)) | Draft — `PRIVACY_RETENTION_POLICY_APPROVED` |
 | [LEGAL_REVIEW_ITEMS.md](LEGAL_REVIEW_ITEMS.md) | Decisions that need the operator and legal advice | Open |

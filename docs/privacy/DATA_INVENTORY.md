@@ -144,9 +144,8 @@ added, this audit and the consent requirement must be revisited first.
 
 ## 7. Findings requiring action
 
-1. **Candidate `gender` and `age`.** Not special-category, but storing and
-   filtering candidates by them invites discriminatory use and is hard to
-   justify as necessary. Recommend dropping or not exposing them — LEGAL_REVIEW_ITEMS §7.
+1. **Candidate `gender` and `age`** are kept by operator decision
+   (LEGAL_REVIEW_ITEMS §7) and are listed in the privacy notice.
 2. **Translation requests send unredacted text** (including phone numbers) to
    AI providers, because the prompt must preserve contacts in the output.
    Recommend placeholder substitution with restoration — DPIA R6.
