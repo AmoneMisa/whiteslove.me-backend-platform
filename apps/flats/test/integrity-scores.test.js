@@ -295,3 +295,14 @@ test('migration 054 adds the resolved state, keyset index and audit table', asyn
   assert.match(sql, /review_audit_events[\s\S]*fillfactor = 100/u);
   assert.match(sql, /USING brin \(created_at\)/u);
 });
+
+test('evidence loaded for scoring carries the subject\'s restriction or objection', async () => {
+  const client = fakeClient([evidenceRow(1, { processing_restricted: true }), evidenceRow(2, { actor_id: '4', processing_restricted: false })]);
+  const byActor = await loadActorEvidence([3, 4], client);
+  assert.match(client.calls[0].sql, /JOIN platform\.actor_identities a ON a\.id = e\.actor_id/u);
+  assert.equal(byActor.get(3)[0].processingRestricted, true);
+  assert.equal(byActor.get(4)[0].processingRestricted, undefined);
+  // And the scorer then keeps that subject out of anything external.
+  const evidence = [{ ...byActor.get(3)[0], dimension: 'provenance_risk', reasonCode: 'repeated_fresh_relisting', reviewState: 'open', lastObservedAt: NOW.toISOString() }];
+  assert.deepEqual([...publicIntegrityStates(resolveIntegrityScores(evidence, { now: NOW }), evidence, { now: NOW })], []);
+});

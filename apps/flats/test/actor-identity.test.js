@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { contactPointsFromListing, observedRoleForListing } from '../src/listing/contact-points.js';
 import {
   upsertContactPoints, linkActorContactPoints, recordActorRoles,
-  findActorsByContactPoints, createActors, __actorIdentityTest,
+  findActorsByContactPoints, findRestrictedContactPoints, createActors, __actorIdentityTest,
 } from '../src/infrastructure/database/actorIdentityRepository.js';
 
 /** Records what the repository would send, so the batch shape is testable
@@ -180,4 +180,38 @@ test('the dedupe helper keeps the first record and the newest sighting', () => {
   assert.equal(merged.length, 2);
   assert.equal(merged[0].value, 1);
   assert.equal(merged[0].observedAt.toISOString(), new Date('2026-02-01').toISOString());
+});
+
+// --- restriction and objection (Articles 18 and 21) ------------------------------
+
+test('a restricted contact point is never observed again', async () => {
+  const client = fakeClient([]);
+  await upsertContactPoints([{ type: 'phone', canonicalValue: '+998901234567', observedAt }], client);
+  assert.match(client.calls[0].text, /AND platform\.contact_points\.processing_restricted_at IS NULL/);
+});
+
+test('no links are recorded for restricted contacts or objecting subjects', async () => {
+  const client = fakeClient();
+  await linkActorContactPoints([{ actorId: 1, contactPointId: 2, observedAt }], client);
+  const sql = client.calls[0].text;
+  assert.match(sql, /a\.processing_restricted_at IS NOT NULL OR a\.processing_objection_at IS NOT NULL/);
+  assert.match(sql, /c\.id = t\.contact_point_id AND c\.processing_restricted_at IS NOT NULL/);
+});
+
+test('no roles are recorded for a subject who restricted or objected', async () => {
+  const client = fakeClient();
+  await recordActorRoles([{ actorId: 1, role: 'owner', observedAt }], client);
+  assert.match(client.calls[0].text, /a\.processing_restricted_at IS NOT NULL OR a\.processing_objection_at IS NOT NULL/);
+});
+
+test('ingest can find contacts to skip entirely, in one query', async () => {
+  const client = fakeClient([{ id: '7' }]);
+  const skip = await findRestrictedContactPoints([7, 7, 8], client);
+  assert.equal(client.calls.length, 1);
+  assert.deepEqual(client.calls[0].params[0], [7, 8]);
+  assert.match(client.calls[0].text, /c\.processing_restricted_at IS NOT NULL/);
+  assert.match(client.calls[0].text, /a\.processing_objection_at IS NOT NULL/, 'an objecting actor makes their contacts skipped too');
+  assert.deepEqual([...skip], [7]);
+  assert.equal((await findRestrictedContactPoints([], client)).size, 0);
+  assert.equal(client.calls.length, 1);
 });

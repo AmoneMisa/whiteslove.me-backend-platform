@@ -66,10 +66,14 @@ export async function loadActorEvidence(actorIds, client = pool) {
   if (!ids.length) return new Map();
   const result = await client.query(
     `
-      SELECT id, actor_id, polarity, reason_code, dimension, independent_count,
-             detail, review_state, reviewed_by, reviewed_at, first_observed_at, last_observed_at
-      FROM platform.actor_evidence
-      WHERE actor_id = ANY($1::bigint[])
+      SELECT e.id, e.actor_id, e.polarity, e.reason_code, e.dimension, e.independent_count,
+             e.detail, e.review_state, e.reviewed_by, e.reviewed_at, e.first_observed_at, e.last_observed_at,
+             -- Scoring still sees the evidence, but integrity-scores keeps
+             -- restricted subjects out of public states and actions.
+             (a.processing_restricted_at IS NOT NULL OR a.processing_objection_at IS NOT NULL) AS processing_restricted
+      FROM platform.actor_evidence e
+      JOIN platform.actor_identities a ON a.id = e.actor_id
+      WHERE e.actor_id = ANY($1::bigint[])
     `,
     [ids],
   );
@@ -175,6 +179,7 @@ function mapEvidence(row) {
     reviewedAt: row.reviewed_at ?? null,
     firstObservedAt: row.first_observed_at,
     lastObservedAt: row.last_observed_at,
+    ...(row.processing_restricted === true ? { processingRestricted: true } : {}),
   };
 }
 
