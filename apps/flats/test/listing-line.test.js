@@ -49,14 +49,16 @@ test('payment and identity risk alone never make a card red', () => {
   assert.notEqual(line({ evidence }), 'phantom_risk');
 });
 
-// --- yellow -------------------------------------------------------------------
+// --- no yellow ----------------------------------------------------------------
 
-test('inconsistencies worth checking are yellow', () => {
-  assert.equal(line({ evidence: [risk('repeated_fresh_relisting', 'provenance_risk', 1)] }), 'check');
+test('there is no yellow line; inconsistencies only withhold green', () => {
+  assert.equal(line({ evidence: [risk('repeated_fresh_relisting', 'provenance_risk', 1)] }), null);
+  assert.equal(line({ evidence: [risk('repeated_fresh_relisting', 'provenance_risk', 1), trust('stable_identity', 'identity_risk', 20)] }), null);
 });
 
-test('red and yellow outrank purple', () => {
-  assert.equal(line({ otherProperties: 5, evidence: [risk('repeated_fresh_relisting', 'provenance_risk', 1)] }), 'check');
+test('red outranks purple', () => {
+  assert.equal(line({ otherProperties: 5, evidence: [risk('phantom_unavailable_inventory', 'availability_credibility', 9)] }), 'phantom_risk');
+  assert.equal(line({ otherProperties: 5, evidence: [risk('repeated_fresh_relisting', 'provenance_risk', 1)] }), 'multi_listing');
 });
 
 // --- green ---------------------------------------------------------------------

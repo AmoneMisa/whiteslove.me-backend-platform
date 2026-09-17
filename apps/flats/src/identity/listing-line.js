@@ -1,14 +1,13 @@
-import { resolveIntegrityScores, publicIntegrityStates } from './integrity-scores.js';
+import { resolveIntegrityScores } from './integrity-scores.js';
 
 /**
  * The coloured line on a listing card.
  *
- * One of five, and every one describes the listing and its advertising
+ * One of four, and every one describes the listing and its advertising
  * behaviour, never a verdict about a person (§35; operator decision: listing
  * wording, no human review):
  *
  *   steady        green   long, clean, consistent advertising history
- *   check         yellow  inconsistencies worth checking before contacting
  *   phantom_risk  red     strong phantom / clone pattern across properties
  *   multi_listing purple  the contact advertises other properties too
  *   null          grey    nothing to say
@@ -21,7 +20,9 @@ import { resolveIntegrityScores, publicIntegrityStates } from './integrity-score
  *    processing, produce no line at all.
  */
 
-export const LISTING_LINES = Object.freeze(['steady', 'check', 'phantom_risk', 'multi_listing']);
+// There is no yellow "worth checking" line: the operator removed it as
+// unnecessary. Evidence that would have produced it still blocks green.
+export const LISTING_LINES = Object.freeze(['steady', 'phantom_risk', 'multi_listing']);
 
 /** Distinct properties the evidence must span before red is shown. One flat
  * that rented fast, or one copied listing, is not a pattern. */
@@ -68,9 +69,6 @@ export function resolveListingLine(input = {}) {
   if (phantomScore && phantomProperties >= PHANTOM_MIN_PROPERTIES) {
     return Object.freeze({ line: 'phantom_risk', reasons: Object.freeze(phantomRows.map((row) => row.reasonCode)) });
   }
-
-  const states = publicIntegrityStates(result, evidence, options);
-  if (states.length) return Object.freeze({ line: 'check', reasons: states });
 
   const hasRisk = evidence.some((row) => row.polarity === 'risk');
   const steadyRows = evidence.filter((row) => row.polarity === 'trust' && STEADY_REASONS.has(row.reasonCode));
