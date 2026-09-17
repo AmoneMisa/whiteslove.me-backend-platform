@@ -12,6 +12,7 @@ import { VACANCY_SYSTEM, vacancyPayload } from '../prompts/vacancy.js';
 import { CANDIDATE_SYSTEM, candidatePayload } from '../prompts/candidate.js';
 import { TRANSLATION_SYSTEM, translationPayload } from '../prompts/translation.js';
 import { tryFreeTranslation } from './free-translation.js';
+import { maskContacts } from '../util/privacy.js';
 
 export const EXTRACTION_KINDS = Object.freeze({
   apartment: {
@@ -46,7 +47,21 @@ export const EXTRACTION_KINDS = Object.freeze({
 
 export const PUBLIC_EXTRACTION_KINDS = Object.freeze(Object.keys(EXTRACTION_KINDS));
 
+/**
+ * Runs one extraction. Translation text has its contacts masked first, so
+ * phone numbers, emails, usernames and links never reach the free translator
+ * (sent in its URL) or LLM providers, and are restored in the translated
+ * text. Other kinds are already redacted by the caller.
+ */
 export async function extract(kind, input) {
+  if (kind !== 'translation') return extractUnmasked(kind, input);
+  const mask = maskContacts(input?.text);
+  const result = await extractUnmasked(kind, { ...input, text: mask.text });
+  if (!mask.count) return result;
+  return { ...result, data: { ...result.data, translatedText: mask.restore(result.data?.translatedText) } };
+}
+
+async function extractUnmasked(kind, input) {
   const definition = EXTRACTION_KINDS[kind];
   if (!definition) throw Object.assign(new Error(`unknown kind ${kind}`), { code: 'BAD_KIND' });
 
