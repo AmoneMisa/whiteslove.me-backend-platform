@@ -10,6 +10,7 @@ import {installMobileListingRoutes} from './routes/mobile-listing-routes.js';
 import {installStatisticsRoutes} from './support/statistics-snapshot.js';
 import {installCatalogRoutes} from './routes/catalog-routes.js';
 import {installMediaRoutes} from './routes/media-routes.js';
+import {installPrivacyRoutes} from './routes/privacy-routes.js';
 import {checkRate} from './support/request-rate-limit.js';
 import {registerMobileSubscriptionRoutes} from './mobile/mobile-subscriptions.js';
 import {registerMobileSavedStateRoutes} from './mobile/mobile-saved-state.js';
@@ -49,6 +50,7 @@ export function createApp() {
   installListingItemRoutes(app);
   installCatalogRoutes(app);
   installMediaRoutes(app);
+  installPrivacyRoutes(app);
   registerMobileSubscriptionRoutes(app);
   registerMobileSavedStateRoutes(app);
 

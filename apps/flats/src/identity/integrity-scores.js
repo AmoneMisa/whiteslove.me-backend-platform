@@ -158,6 +158,10 @@ export function resolveIntegrityScores(evidence, options = {}) {
   });
 }
 
+/** Evidence that may have external effect: not under an open dispute and not
+ * about a subject who has restricted or objected to processing. */
+const publiclyUsable = (row) => row && row.underDispute !== true && row.processingRestricted !== true;
+
 /** Threshold above which a dimension produces a public state. */
 export const PUBLIC_STATE_THRESHOLD = 0.5;
 
@@ -169,10 +173,18 @@ export const PUBLIC_STATE_THRESHOLD = 0.5;
  * accusation an automated score cannot support. Those dimensions exist for
  * review only.
  */
-export function publicIntegrityStates(result, evidence = []) {
+export function publicIntegrityStates(result, evidence = [], options = {}) {
   const states = [];
-  const scores = result?.scores ?? {};
-  const live = (evidence ?? []).filter((row) => row && !['dismissed', 'resolved'].includes(row.reviewState ?? 'open'));
+  const rows = (evidence ?? []).filter(Boolean);
+  // Evidence under an open dispute (accuracy contested, Article 18(1)(a)) or
+  // about a subject who restricted processing still counts internally but
+  // must not reach a public page. If any is present, the public states are
+  // derived from the remaining evidence alone.
+  const eligible = rows.filter(publiclyUsable);
+  const scores = eligible.length === rows.length
+    ? (result?.scores ?? {})
+    : resolveIntegrityScores(eligible, options).scores;
+  const live = eligible.filter((row) => !['dismissed', 'resolved'].includes(row.reviewState ?? 'open'));
 
   if (scores.availabilityCredibility !== null && scores.availabilityCredibility !== undefined && scores.availabilityCredibility <= 1 - PUBLIC_STATE_THRESHOLD) {
     states.push('listing_availability_uncertain');
@@ -209,7 +221,7 @@ export const AUTOMATIC_ACTIONS = Object.freeze(['queue_for_review', 'show_public
 export function authorizeIntegrityAction(action, evidence = []) {
   if (AUTOMATIC_ACTIONS.includes(action)) return Object.freeze({ allowed: true, requiresHumanReview: false });
   if (!HIGH_IMPACT_ACTIONS.includes(action)) return Object.freeze({ allowed: false, requiresHumanReview: true, reason: 'unknown_action' });
-  const confirmed = (evidence ?? []).filter((row) => row?.polarity === 'risk' && row.reviewState === 'confirmed' && row.reviewedBy);
+  const confirmed = (evidence ?? []).filter((row) => row?.polarity === 'risk' && row.reviewState === 'confirmed' && row.reviewedBy && publiclyUsable(row));
   return confirmed.length
     ? Object.freeze({ allowed: true, requiresHumanReview: true, confirmedEvidenceIds: Object.freeze(confirmed.map((row) => row.id ?? null)) })
     : Object.freeze({ allowed: false, requiresHumanReview: true, reason: 'no_confirmed_evidence' });
