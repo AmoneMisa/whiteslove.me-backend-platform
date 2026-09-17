@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto';
-import {createRequire} from 'node:module';
 
 import {canonicalCityName, COUNTRIES, COUNTRY_CODES} from './countries.js';
+import {readInstalledPackageVersion} from './geo-catalog-version.js';
 import {cityLocations} from './locations.js';
 import {mapZonesFor} from './district-zones.js';
 import {
@@ -25,7 +25,7 @@ const SNAPSHOT_SCHEMA_VERSION = 2;
 // district-zones.js resolves every zone/marker through this package's pinned
 // lexicon data. Folding its version into the input hash means a dependency
 // bump forces a rebuild even though nothing else about a city changed.
-const GEO_CATALOG_VERSION = createRequire(import.meta.url)('@whiteslove/geo-catalog/package.json').version;
+const GEO_CATALOG_VERSION = readInstalledPackageVersion('@whiteslove/geo-catalog');
 
 function snapshotLocales() {
   const configured = String(process.env.GEO_SNAPSHOT_LOCALES || 'ru')
