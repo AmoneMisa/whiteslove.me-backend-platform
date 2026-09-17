@@ -102,7 +102,9 @@ export async function refreshListingLines({ client = pool, now = new Date(), res
   }
 
   const lineByContact = new Map();
+  const restrictedContacts = [];
   for (const [key, input] of inputs) {
+    if (input.restricted) restrictedContacts.push(key);
     const { line } = resolveLine({ ...input, now });
     if (line) lineByContact.set(key, { line, otherProperties: input.otherProperties });
   }
@@ -163,7 +165,160 @@ export async function refreshListingLines({ client = pool, now = new Date(), res
     contacts: lineByContact.size,
     upserted: written.rows[0]?.upserted ?? 0,
     removed: written.rows[0]?.removed ?? 0,
+    // For the owners refresh, which must skip these contacts too.
+    restrictedContacts,
     durationMs: Date.now() - startedAt,
+  };
+}
+
+/** Stored contacts owner collections are built from: normalised phones and
+ * Telegram handles only, never free text that happens to repeat. */
+const OWNER_CONTACT_PATTERN = '^(\\+[1-9][0-9]{6,14}|@[a-z0-9_]{5,32})$';
+
+/**
+ * Rebuilds platform.listing_owners: contacts with two or more distinct active
+ * properties, in one statement. Runs after refreshListingLines so each owner's
+ * line comes from the fresh listing lines, and skips contacts whose subject
+ * restricted or objected to processing.
+ *
+ * The aggregate scans the migration 056 contact index; country, city and the
+ * newest listing are then read only for owners that qualified.
+ */
+export async function refreshListingOwners({ client = pool, restrictedContacts = [] } = {}) {
+  const startedAt = Date.now();
+  const result = await client.query(
+    `
+      WITH multi AS (
+        SELECT data->>'contact' AS contact,
+               count(DISTINCT dedupe_key)::int AS properties,
+               count(*)::int AS listings
+        FROM listings
+        WHERE active = TRUE
+          AND data->>'contact' IS NOT NULL
+          AND data->>'contact' ~ $2
+        GROUP BY data->>'contact'
+        HAVING count(DISTINCT dedupe_key) >= 2
+      ),
+      input AS (
+        SELECT left(encode(sha256(convert_to(m.contact, 'UTF8')), 'hex'), 24) AS owner_key,
+               m.contact, m.properties, m.listings,
+               stats.country, stats.city, stats.sample_listing_id,
+               ll.line
+        FROM multi m
+        CROSS JOIN LATERAL (
+          SELECT mode() WITHIN GROUP (ORDER BY l.country) AS country,
+                 mode() WITHIN GROUP (ORDER BY l.city) FILTER (WHERE l.city IS NOT NULL) AS city,
+                 max(l.id) AS sample_listing_id
+          FROM listings l
+          WHERE l.active = TRUE AND l.data->>'contact' = m.contact
+        ) stats
+        LEFT JOIN platform.listing_lines ll ON ll.listing_id = stats.sample_listing_id
+        WHERE NOT (m.contact = ANY($1::text[]))
+      ),
+      upserted AS (
+        INSERT INTO platform.listing_owners
+          (owner_key, contact, country, city, properties, listings, line, sample_listing_id, computed_at)
+        SELECT owner_key, contact, country, city, properties, listings, line, sample_listing_id, NOW() FROM input
+        ON CONFLICT (owner_key) DO UPDATE
+          SET country = EXCLUDED.country, city = EXCLUDED.city, properties = EXCLUDED.properties,
+              listings = EXCLUDED.listings, line = EXCLUDED.line,
+              sample_listing_id = EXCLUDED.sample_listing_id, computed_at = EXCLUDED.computed_at
+          -- Unchanged owners are not rewritten.
+          WHERE (platform.listing_owners.country, platform.listing_owners.city, platform.listing_owners.properties,
+                 platform.listing_owners.listings, platform.listing_owners.line, platform.listing_owners.sample_listing_id)
+            IS DISTINCT FROM
+                (EXCLUDED.country, EXCLUDED.city, EXCLUDED.properties,
+                 EXCLUDED.listings, EXCLUDED.line, EXCLUDED.sample_listing_id)
+        RETURNING 1
+      ),
+      removed AS (
+        DELETE FROM platform.listing_owners o
+        WHERE NOT EXISTS (SELECT 1 FROM input i WHERE i.owner_key = o.owner_key)
+        RETURNING 1
+      )
+      SELECT (SELECT count(*) FROM input)::int AS owners,
+             (SELECT count(*) FROM upserted)::int AS upserted,
+             (SELECT count(*) FROM removed)::int AS removed
+    `,
+    [restrictedContacts, OWNER_CONTACT_PATTERN],
+  );
+  const row = result.rows[0] ?? {};
+  return { owners: row.owners ?? 0, upserted: row.upserted ?? 0, removed: row.removed ?? 0, durationMs: Date.now() - startedAt };
+}
+
+const OWNER_KEY_RE = /^[0-9a-f]{24}$/u;
+
+/** Whether a value is a well-formed owner key, checked before it reaches SQL. */
+export const isOwnerKey = (value) => typeof value === 'string' && OWNER_KEY_RE.test(value);
+
+/** Parses an owners-page cursor ("<properties>:<ownerKey>"). */
+export function parseOwnerCursor(value) {
+  const match = /^(\d{1,9}):([0-9a-f]{24})$/u.exec(String(value ?? ''));
+  return match ? { properties: Number(match[1]), ownerKey: match[2] } : null;
+}
+
+/**
+ * One page of owners for a country, largest first. Keyset on
+ * (properties DESC, owner_key), served by listing_owners_country_page_idx; one
+ * extra row is read instead of counting.
+ */
+export async function listOwners({ country, limit = 24, after = null } = {}, client = pool) {
+  const code = typeof country === 'string' && /^[A-Z]{2}$/u.test(country) ? country : null;
+  if (!code) return { owners: [], next: null };
+  const size = Math.min(60, Math.max(1, Math.floor(Number(limit) || 24)));
+  const params = [code, size + 1];
+  let cursor = '';
+  if (after && Number.isSafeInteger(after.properties) && isOwnerKey(after.ownerKey)) {
+    params.push(after.properties, after.ownerKey);
+    cursor = 'AND (o.properties < $3 OR (o.properties = $3 AND o.owner_key > $4))';
+  }
+  const result = await client.query(
+    `
+      SELECT o.owner_key, o.contact, o.country, o.city, o.properties, o.listings, o.line,
+             l.id AS sample_public_id, l.data->>'title' AS sample_title,
+             COALESCE(NULLIF(l.data->>'photo', ''), l.data->'photos'->>0) AS sample_photo
+      FROM platform.listing_owners o
+      LEFT JOIN listings l ON l.id = o.sample_listing_id
+      WHERE o.country = $1 ${cursor}
+      ORDER BY o.properties DESC, o.owner_key
+      LIMIT $2
+    `,
+    params,
+  );
+  const owners = result.rows.slice(0, size).map(mapOwner);
+  const last = owners.at(-1);
+  return {
+    owners,
+    next: result.rows.length > size && last ? `${last.properties}:${last.ownerKey}` : null,
+  };
+}
+
+/** One owner, for the breadcrumb of an owner's collection. */
+export async function getOwner(ownerKey, client = pool) {
+  if (!isOwnerKey(ownerKey)) return null;
+  const result = await client.query(
+    `
+      SELECT owner_key, contact, country, city, properties, listings, line
+      FROM platform.listing_owners
+      WHERE owner_key = $1
+    `,
+    [ownerKey],
+  );
+  return result.rows[0] ? mapOwner(result.rows[0]) : null;
+}
+
+function mapOwner(row) {
+  return {
+    ownerKey: row.owner_key,
+    contact: row.contact,
+    country: row.country,
+    city: row.city ?? null,
+    properties: Number(row.properties),
+    listings: Number(row.listings),
+    listingLine: row.line ?? null,
+    sample: row.sample_public_id
+      ? { publicId: Number(row.sample_public_id), title: row.sample_title ?? '', photo: row.sample_photo ?? null }
+      : null,
   };
 }
 

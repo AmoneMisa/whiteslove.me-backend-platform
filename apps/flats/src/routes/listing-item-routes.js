@@ -7,7 +7,7 @@ import {fetchOlxOffer} from '../scrapers/olx.js';
 import {validateCustomSource} from '../sources/custom-source-queue.js';
 import {checkRate} from '../support/request-rate-limit.js';
 import {pool} from '../infrastructure/database/pool.js';
-import {findContactListings, loadStoredListingLines} from '../infrastructure/database/listingLineRepository.js';
+import {findContactListings, getOwner, isOwnerKey, listOwners, loadStoredListingLines, parseOwnerCursor} from '../infrastructure/database/listingLineRepository.js';
 import {attachContactActions, attachListingLines} from '../listing/listing-contact-actions.js';
 import {
   mergeStoredFreshListing,
@@ -92,6 +92,39 @@ export function installListingItemRoutes(app) {
     } catch (err) {
       console.warn(`[contact-listings] failed: ${err?.code ?? err?.name ?? 'error'}`);
       return res.status(502).json({error: 'Contact listings unavailable'});
+    }
+  });
+
+  // Owner collections: advertisers with two or more distinct active
+  // properties, per country, largest first.
+  app.get('/api/owners', async (req, res) => {
+    if (!checkRate(req, res, 'owners', 300)) return;
+    const country = String(req.query.country || '').toUpperCase();
+    if (!COUNTRY_CODES.includes(country)) return res.status(400).json({error: 'Unknown country'});
+    try {
+      const page = await listOwners({
+        country,
+        limit: req.query.limit,
+        after: parseOwnerCursor(req.query.cursor),
+      });
+      res.set('Cache-Control', 'public, max-age=60');
+      return res.json(page);
+    } catch (err) {
+      console.warn(`[owners] failed: ${err?.code ?? err?.name ?? 'error'}`);
+      return res.status(502).json({error: 'Owners unavailable'});
+    }
+  });
+
+  app.get('/api/owners/:ownerKey', async (req, res) => {
+    if (!isOwnerKey(req.params.ownerKey)) return res.status(400).json({error: 'Invalid owner'});
+    try {
+      const owner = await getOwner(req.params.ownerKey);
+      if (!owner) return res.status(404).json({error: 'Owner not found'});
+      res.set('Cache-Control', 'public, max-age=60');
+      return res.json({owner});
+    } catch (err) {
+      console.warn(`[owners] lookup failed: ${err?.code ?? err?.name ?? 'error'}`);
+      return res.status(502).json({error: 'Owner unavailable'});
     }
   });
 

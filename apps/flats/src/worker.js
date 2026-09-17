@@ -19,7 +19,7 @@ import {verifyDueListingAvailability} from './availability/availability-sweep.js
 import {deactivateExpiredListings} from './listing/listing-lifecycle.js';
 import {refreshStatisticsSnapshot} from './support/statistics-snapshot.js';
 import {syncGeoCitySnapshots} from './geo/geo-city-snapshot-sync.js';
-import {refreshListingLines} from './infrastructure/database/listingLineRepository.js';
+import {refreshListingLines, refreshListingOwners} from './infrastructure/database/listingLineRepository.js';
 
 const REFRESH_SECONDS = Math.max(60, Number(process.env.QUEUE_REFRESH_SECONDS) || 1800);
 const POLL_MS = Math.max(200, Number(process.env.QUEUE_POLL_SECONDS || 1) * 1000);
@@ -226,9 +226,12 @@ async function listingLinesTick() {
   listingLinesRunning = true;
   try {
     const result = await refreshListingLines();
+    // Owners read each owner's line from the lines just written.
+    const owners = await refreshListingOwners({restrictedContacts: result.restrictedContacts});
     console.log(
       `[flat:worker] listing lines contacts=${result.contacts} listings=${result.listings} ` +
-      `upserted=${result.upserted} removed=${result.removed} durationMs=${result.durationMs}`,
+      `upserted=${result.upserted} removed=${result.removed} durationMs=${result.durationMs} ` +
+      `owners=${owners.owners} ownersDurationMs=${owners.durationMs}`,
     );
   } catch (error) {
     // Code only: the refresh handles contact values.

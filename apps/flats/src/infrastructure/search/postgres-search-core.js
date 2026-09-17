@@ -178,6 +178,10 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
   // Listing lines (platform.listing_lines, migration 057); see the fast path.
   if (filters.trustedOnly === true) where.push(`l.id IN (SELECT ll.listing_id FROM platform.listing_lines ll WHERE ll.line = 'steady')`);
   if (filters.hideDanger === true) where.push(`NOT EXISTS (SELECT 1 FROM platform.listing_lines ll WHERE ll.listing_id = l.id AND ll.line = 'phantom_risk')`);
+  // Owner collection; see the fast path.
+  if (filters.owner) {
+    where.push(`l.data->>'contact' = (SELECT o.contact FROM platform.listing_owners o WHERE o.owner_key = ${add(filters.owner)})`);
+  }
   if (filters.withPhotos === true) {
     where.push(`(
       COALESCE(NULLIF(BTRIM(l.data->>'photo'), ''), '') <> ''

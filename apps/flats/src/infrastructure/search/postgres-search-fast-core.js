@@ -45,7 +45,7 @@ const BOOLEAN_FILTERS = [
 
 function hasSecondaryFilters(filters) {
   if (
-    filters.customSources?.length || filters.customSites?.length || filters.query ||
+    filters.customSources?.length || filters.customSites?.length || filters.query || filters.owner ||
     filters.city || filters.district ||
     filters.region || filters.microdistrict || filters.quartal || filters.area || filters.metro
   ) return true;
@@ -185,6 +185,12 @@ export function buildMemberWhere({filters, countries, maxAgeDays, rates}) {
   // is a primary-key anti-join probe.
   if (filters.trustedOnly === true) where.push("m.listing_id IN (SELECT ll.listing_id FROM platform.listing_lines ll WHERE ll.line = 'steady')");
   if (filters.hideDanger === true) where.push("NOT EXISTS (SELECT 1 FROM platform.listing_lines ll WHERE ll.listing_id = m.listing_id AND ll.line = 'phantom_risk')");
+  // Owner collection (platform.listing_owners, migration 058): the owner key
+  // resolves to one stored contact, whose active listings come from the
+  // migration 056 contact index.
+  if (filters.owner) {
+    where.push(`m.listing_id IN (SELECT ol.id FROM listings ol WHERE ol.active = TRUE AND ol.data->>'contact' = (SELECT o.contact FROM platform.listing_owners o WHERE o.owner_key = ${add(filters.owner)}))`);
+  }
 
   const booleanFilters = [
     ['dishwasher', 'dishwasher'], ['airConditioner', 'air_conditioner'], ['parking', 'parking'], ['internet', 'internet'],

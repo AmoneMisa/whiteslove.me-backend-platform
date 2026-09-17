@@ -131,6 +131,8 @@ export function parseListingFilters(q) {
     // Listing-line toggles: only green (steady) listings, and hiding red
     // (phantom_risk) ones. Both read platform.listing_lines.
     trustedOnly: bool(q.trustedOnly),
+    // Owner collection: listings of one advertiser, by opaque owner key.
+    owner: /^[0-9a-f]{24}$/u.test(String(q.owner || '')) ? String(q.owner) : '',
     hideDanger: bool(q.hideDanger),
     newBuilding: bool(q.newBuilding),
     dishwasher: bool(q.dishwasher),
