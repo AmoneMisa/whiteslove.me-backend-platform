@@ -6,6 +6,7 @@ import {refreshAll} from '../scheduling/scheduler.js';
 import {searchPostgresListings} from '../support/postgres-search-fast.js';
 import {searchPostgresMapPoints} from './map-feed.js';
 import {attachMarketComparisons} from '../geo/market-comparison.js';
+import {attachContactActions} from '../listing/listing-contact-actions.js';
 import {searchListingMatches} from '../infrastructure/search/elasticsearch.js';
 import {checkRate} from '../support/request-rate-limit.js';
 import {prepareCustomSources} from '../sources/custom-source-queue.js';
@@ -265,6 +266,10 @@ async function tryPostgresSearch({filters, codes, force}) {
       marketComparisonMs = Math.round((performance.now() - marketStartedAt) * 10) / 10;
     }
   }
+
+  // Contact buttons on every card, so renters reach owners directly. Built
+  // from the contact already parsed at ingest, so this stays cheap per page.
+  listings = listings.map(attachContactActions);
 
   // Keep the list endpoint cheap. Nearby transport is intentionally hydrated
   // only by the single-listing response pipeline (preparePublicListing), where

@@ -1,4 +1,5 @@
 import {enrichListingDetails} from '../listing/listing-enrichment.js';
+import {attachContactActions} from '../listing/listing-contact-actions.js';
 import {geocodeListings} from '../geo/geocode.js';
 import {getRates} from '../support/fx.js';
 import {attachMarketComparisons} from '../geo/market-comparison.js';
@@ -133,7 +134,7 @@ export async function preparePublicListing(listing, country, {refreshGeo = false
   }
   prepared = await attachMarketComparison(prepared);
   await attachTransport(prepared, country);
-  return prepared;
+  return attachContactActions(prepared);
 }
 
 export const __listingPublicTest = {
