@@ -7,8 +7,7 @@ import {searchPostgresListings} from '../support/postgres-search-fast.js';
 import {searchPostgresMapPoints} from './map-feed.js';
 import {attachMarketComparisons} from '../geo/market-comparison.js';
 import {attachContactActions, attachListingLines} from '../listing/listing-contact-actions.js';
-import {loadListingLineInputs} from '../infrastructure/database/listingLineRepository.js';
-import {resolveListingLine} from '../identity/listing-line.js';
+import {loadStoredListingLines} from '../infrastructure/database/listingLineRepository.js';
 import {searchListingMatches} from '../infrastructure/search/elasticsearch.js';
 import {checkRate} from '../support/request-rate-limit.js';
 import {prepareCustomSources} from '../sources/custom-source-queue.js';
@@ -129,6 +128,10 @@ export function parseListingFilters(q) {
     totalFloorsMax: num(q.totalFloorsMax),
     yearMin: num(q.yearMin),
     yearMax: num(q.yearMax),
+    // Listing-line toggles: only green (steady) listings, and hiding red
+    // (phantom_risk) ones. Both read platform.listing_lines.
+    trustedOnly: bool(q.trustedOnly),
+    hideDanger: bool(q.hideDanger),
     newBuilding: bool(q.newBuilding),
     dishwasher: bool(q.dishwasher),
     airConditioner: bool(q.airConditioner),
@@ -272,8 +275,8 @@ async function tryPostgresSearch({filters, codes, force}) {
   // Contact buttons on every card, so renters reach owners directly. Built
   // from the contact already parsed at ingest, so this stays cheap per page.
   listings = listings.map(attachContactActions);
-  // Coloured card lines: two batched queries for the whole page.
-  listings = await attachListingLines(listings, {loadInputs: loadListingLineInputs, resolveLine: resolveListingLine});
+  // Coloured card lines, as stored by the worker: one primary-key lookup.
+  listings = await attachListingLines(listings, {loadLines: loadStoredListingLines});
 
   // Keep the list endpoint cheap. Nearby transport is intentionally hydrated
   // only by the single-listing response pipeline (preparePublicListing), where

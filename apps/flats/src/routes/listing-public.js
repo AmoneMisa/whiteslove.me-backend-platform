@@ -1,7 +1,6 @@
 import {enrichListingDetails} from '../listing/listing-enrichment.js';
 import {attachContactActions, attachListingLines} from '../listing/listing-contact-actions.js';
-import {loadListingLineInputs} from '../infrastructure/database/listingLineRepository.js';
-import {resolveListingLine} from '../identity/listing-line.js';
+import {loadStoredListingLines} from '../infrastructure/database/listingLineRepository.js';
 import {geocodeListings} from '../geo/geocode.js';
 import {getRates} from '../support/fx.js';
 import {attachMarketComparisons} from '../geo/market-comparison.js';
@@ -136,7 +135,7 @@ export async function preparePublicListing(listing, country, {refreshGeo = false
   }
   prepared = await attachMarketComparison(prepared);
   await attachTransport(prepared, country);
-  const [withLine] = await attachListingLines([attachContactActions(prepared)], {loadInputs: loadListingLineInputs, resolveLine: resolveListingLine});
+  const [withLine] = await attachListingLines([attachContactActions(prepared)], {loadLines: loadStoredListingLines});
   return withLine;
 }
 

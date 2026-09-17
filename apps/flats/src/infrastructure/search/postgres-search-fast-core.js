@@ -39,7 +39,7 @@ const NUMERIC_FILTERS = [
 const BOOLEAN_FILTERS = [
   'newBuilding', 'dishwasher', 'airConditioner', 'parking', 'internet', 'gas',
   'balcony', 'terrace', 'privateYard', 'pets', 'children', 'roomOnly', 'withPhotos',
-  'noElevator', 'noDeposit', 'communalIncluded', 'noCommission',
+  'noElevator', 'noDeposit', 'communalIncluded', 'noCommission', 'trustedOnly', 'hideDanger',
   'tv', 'microwave', 'oven', 'bidet', 'walkInCloset', 'bathtub', 'shower', 'euroLayout',
 ];
 
@@ -180,6 +180,11 @@ export function buildMemberWhere({filters, countries, maxAgeDays, rates}) {
   if (filters.children === true) where.push('m.children_allowed IS DISTINCT FROM FALSE');
   if (filters.roomOnly === true) where.push('m.room_only = TRUE');
   if (filters.withPhotos === true) where.push('m.has_photos = TRUE');
+  // Listing lines (platform.listing_lines, migration 057). Trusted is a
+  // semi-join over the small green range of (line, listing_id); hiding danger
+  // is a primary-key anti-join probe.
+  if (filters.trustedOnly === true) where.push("m.listing_id IN (SELECT ll.listing_id FROM platform.listing_lines ll WHERE ll.line = 'steady')");
+  if (filters.hideDanger === true) where.push("NOT EXISTS (SELECT 1 FROM platform.listing_lines ll WHERE ll.listing_id = m.listing_id AND ll.line = 'phantom_risk')");
 
   const booleanFilters = [
     ['dishwasher', 'dishwasher'], ['airConditioner', 'air_conditioner'], ['parking', 'parking'], ['internet', 'internet'],

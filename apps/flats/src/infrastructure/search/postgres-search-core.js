@@ -175,6 +175,9 @@ export function buildSearchContext({ filters, countries, rates, searchMatches })
   if (filters.pets === true) where.push(`l.data @> '{"petsAllowed":true}'::jsonb`);
   if (filters.children === true) where.push(`COALESCE(l.data->>'childrenAllowed', '') <> 'false'`);
   if (filters.roomOnly === true) where.push(`l.room_only`);
+  // Listing lines (platform.listing_lines, migration 057); see the fast path.
+  if (filters.trustedOnly === true) where.push(`l.id IN (SELECT ll.listing_id FROM platform.listing_lines ll WHERE ll.line = 'steady')`);
+  if (filters.hideDanger === true) where.push(`NOT EXISTS (SELECT 1 FROM platform.listing_lines ll WHERE ll.listing_id = l.id AND ll.line = 'phantom_risk')`);
   if (filters.withPhotos === true) {
     where.push(`(
       COALESCE(NULLIF(BTRIM(l.data->>'photo'), ''), '') <> ''

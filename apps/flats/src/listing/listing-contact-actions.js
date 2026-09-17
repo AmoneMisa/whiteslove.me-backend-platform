@@ -22,28 +22,30 @@ export function contactPointsForPublicListing(listing) {
 }
 
 /**
- * Attaches `listingLine` to a page of listings (see identity/listing-line.js).
+ * Attaches `listingLine` and `contactListingCount` to a page of listings from
+ * the stored lines the worker computes (platform.listing_lines), so the card
+ * shows exactly the line the "Trusted ads" / "Hide danger" filters used.
  *
- * Best effort: the line is a hint, so if the lookup fails the feed is served
- * without lines rather than failing the search.
+ * `contactListingCount` is how many other properties the same contact
+ * advertises; the popup offers a tab for them when it is above zero.
+ *
+ * Best effort: if the lookup fails the feed is served without lines rather
+ * than failing the search.
  */
-export async function attachListingLines(listings, { loadInputs, resolveLine, log = console.warn } = {}) {
+export async function attachListingLines(listings, { loadLines, log = console.warn } = {}) {
   if (!Array.isArray(listings) || !listings.length) return listings;
-  const contacts = [];
-  for (const listing of listings) {
-    const contact = typeof listing?.contact === 'string' ? listing.contact.trim() : '';
-    if (!contact) continue;
-    const [point] = contactPointsForPublicListing(listing);
-    contacts.push({ contact, type: point?.type, canonicalValue: point?.canonicalValue });
-  }
-  if (!contacts.length) return listings;
+  const ids = listings.map((listing) => Number(listing?.publicId)).filter((id) => Number.isSafeInteger(id) && id > 0);
+  if (!ids.length) return listings;
   try {
-    const inputs = await loadInputs(contacts);
+    const stored = await loadLines(ids);
     return listings.map((listing) => {
-      const input = inputs.get(typeof listing?.contact === 'string' ? listing.contact.trim() : '');
-      if (!input) return listing;
-      const { line } = resolveLine(input);
-      return line ? { ...listing, listingLine: line } : listing;
+      const entry = stored.get(Number(listing?.publicId));
+      if (!entry) return listing;
+      return {
+        ...listing,
+        listingLine: entry.line,
+        ...(entry.otherProperties > 0 ? { contactListingCount: entry.otherProperties } : {}),
+      };
     });
   } catch (error) {
     log(`[listing-line] skipped: ${error?.code ?? error?.name ?? 'error'}`);

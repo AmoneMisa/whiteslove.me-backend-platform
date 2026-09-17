@@ -7,6 +7,8 @@ import {fetchOlxOffer} from '../scrapers/olx.js';
 import {validateCustomSource} from '../sources/custom-source-queue.js';
 import {checkRate} from '../support/request-rate-limit.js';
 import {pool} from '../infrastructure/database/pool.js';
+import {findContactListings, loadStoredListingLines} from '../infrastructure/database/listingLineRepository.js';
+import {attachContactActions, attachListingLines} from '../listing/listing-contact-actions.js';
 import {
   mergeStoredFreshListing,
   preparePublicListing,
@@ -69,6 +71,27 @@ export function installListingItemRoutes(app) {
       });
     } catch (err) {
       return res.status(502).json({error: err.message});
+    }
+  });
+
+  // The same contact's other listings, one per property, for the popup's
+  // "other listings from this contact" tab.
+  app.get('/api/listing/by-public-id/:publicId/contact-listings', async (req, res) => {
+    if (!checkRate(req, res, 'contactListings', 500)) return;
+    const publicId = Number(req.params.publicId);
+    if (!Number.isInteger(publicId) || publicId <= 0) {
+      return res.status(400).json({error: 'Invalid public id'});
+    }
+    try {
+      const listings = await findContactListings(publicId, {limit: req.query.limit});
+      if (listings === null) return res.status(400).json({error: 'Invalid public id'});
+      const withActions = listings.map(attachContactActions);
+      return res.json({
+        listings: await attachListingLines(withActions, {loadLines: loadStoredListingLines}),
+      });
+    } catch (err) {
+      console.warn(`[contact-listings] failed: ${err?.code ?? err?.name ?? 'error'}`);
+      return res.status(502).json({error: 'Contact listings unavailable'});
     }
   });
 

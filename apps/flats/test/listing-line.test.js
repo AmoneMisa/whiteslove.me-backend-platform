@@ -4,7 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 import { resolveListingLine, PHANTOM_MIN_PROPERTIES, STEADY_MIN_OBSERVATIONS } from '../src/identity/listing-line.js';
 import { attachListingLines } from '../src/listing/listing-contact-actions.js';
-import { loadListingLineInputs } from '../src/infrastructure/database/listingLineRepository.js';
+import { loadStoredListingLines, refreshListingLines, findContactListings } from '../src/infrastructure/database/listingLineRepository.js';
 
 const NOW = new Date('2026-09-01T00:00:00Z');
 const seen = NOW.toISOString();
@@ -85,46 +85,145 @@ test('restriction, objection, dispute and dismissal all remove the line', () => 
   assert.equal(line({ evidence: [{ ...phantom, reviewState: 'dismissed' }] }), null);
 });
 
-// --- attaching to a feed page ------------------------------------------------------
+// --- attaching stored lines to a feed page -----------------------------------------
 
-test('lines are attached per listing, in one lookup for the page', async () => {
+test('stored lines and contact counts are attached per listing in one lookup', async () => {
   let calls = 0;
-  const listings = [{ id: '1', contact: '+998901234567' }, { id: '2', contact: '+998901234567' }, { id: '3' }];
+  const listings = [{ id: '1', publicId: 11 }, { id: '2', publicId: 12 }, { id: '3', publicId: 13 }, { id: '4' }];
   const result = await attachListingLines(listings, {
-    loadInputs: async (contacts) => { calls += 1; assert.equal(contacts.length, 2); return new Map([['+998901234567', { otherProperties: 1, evidence: [] }]]); },
-    resolveLine: resolveListingLine,
+    loadLines: async (ids) => {
+      calls += 1;
+      assert.deepEqual(ids, [11, 12, 13]);
+      return new Map([[11, { line: 'multi_listing', otherProperties: 2 }], [12, { line: 'steady', otherProperties: 0 }]]);
+    },
   });
   assert.equal(calls, 1);
-  assert.deepEqual(result.map((listing) => listing.listingLine ?? null), ['multi_listing', 'multi_listing', null]);
+  assert.deepEqual(result.map((listing) => listing.listingLine ?? null), ['multi_listing', 'steady', null, null]);
+  assert.deepEqual(result.map((listing) => listing.contactListingCount ?? null), [2, null, null, null]);
 });
 
 test('a failed lookup serves the feed without lines', async () => {
-  const listings = [{ id: '1', contact: '+998901234567' }];
+  const listings = [{ id: '1', publicId: 11, contact: '+998901234567' }];
   const logs = [];
-  const result = await attachListingLines(listings, { loadInputs: async () => { throw Object.assign(new Error('boom +998901234567'), { code: '57014' }); }, resolveLine: resolveListingLine, log: (line) => logs.push(line) });
+  const result = await attachListingLines(listings, { loadLines: async () => { throw Object.assign(new Error('boom +998901234567'), { code: '57014' }); }, log: (line) => logs.push(line) });
   assert.equal(result, listings);
   assert.deepEqual(logs, ['[listing-line] skipped: 57014'], 'no contact values in logs');
 });
 
-test('the repository counts distinct properties and excludes the listing itself', async () => {
+test('stored lines are read by primary key only', async () => {
   const calls = [];
-  const client = {
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rows: [{ listing_id: '11', line: 'steady', other_properties: 3 }] }; } };
+  const lines = await loadStoredListingLines([11, 11, 'x', -1], client);
+  assert.deepEqual(calls[0].params[0], [11]);
+  assert.match(calls[0].sql, /WHERE listing_id = ANY\(\$1::bigint\[\]\)/u);
+  assert.deepEqual(lines.get(11), { line: 'steady', otherProperties: 3 });
+  assert.equal((await loadStoredListingLines([], client)).size, 0);
+  assert.equal(calls.length, 1);
+});
+
+// --- refresh ----------------------------------------------------------------------
+
+function refreshClient({ multi = [], evidence = [], listings = [] }) {
+  const calls = [];
+  return {
+    calls,
     query: async (sql, params) => {
       calls.push({ sql, params });
-      if (/count\(DISTINCT dedupe_key\)/u.test(sql)) return { rows: [{ contact: '+998901234567', properties: 3 }, { contact: '@solo_owner', properties: 1 }] };
-      return { rows: [{ type: 'phone', value: '+998901234567', restricted: false, id: '7', polarity: 'risk', reason_code: 'copied_inventory', dimension: 'provenance_risk', independent_count: 2, review_state: 'open', last_observed_at: NOW, under_dispute: true }] };
+      if (/HAVING count\(DISTINCT dedupe_key\) > 1/u.test(sql)) return { rows: multi };
+      if (/FROM platform\.actor_evidence e/u.test(sql)) return { rows: evidence };
+      if (/SELECT id, data->>'contact' AS contact/u.test(sql)) return { rows: listings };
+      if (/INSERT INTO platform\.listing_lines/u.test(sql)) return { rows: [{ upserted: params[0].length, removed: 0 }] };
+      throw new Error(`unexpected query ${sql.slice(0, 40)}`);
     },
   };
-  const inputs = await loadListingLineInputs([
-    { contact: '+998901234567', type: 'phone', canonicalValue: '+998901234567' },
-    { contact: '+998901234567', type: 'phone', canonicalValue: '+998901234567' },
-    { contact: '@solo_owner', type: 'telegram', canonicalValue: 'solo_owner' },
-  ], client);
-  assert.equal(calls.length, 2, 'two queries for the whole page');
-  assert.deepEqual(calls[0].params[0], ['+998901234567', '@solo_owner'], 'contacts deduplicated');
-  assert.equal(inputs.get('+998901234567').otherProperties, 2);
-  assert.equal(inputs.get('@solo_owner').otherProperties, 0);
-  assert.equal(inputs.get('+998901234567').evidence[0].underDispute, true);
+}
+
+const evidenceRow = (type, value, extra = {}) => ({ type, canonical_value: value, restricted: false, id: '1', polarity: 'risk', reason_code: 'phantom_unavailable_inventory', dimension: 'availability_credibility', independent_count: 9, review_state: 'open', last_observed_at: NOW, under_dispute: false, ...extra });
+
+test('refresh resolves lines per contact and writes one row per listing', async () => {
+  const client = refreshClient({
+    multi: [{ contact: '+998900000001', properties: 3 }],
+    evidence: [evidenceRow('phone', '+998900000002'), evidenceRow('telegram', 'owner_flat')],
+    listings: [
+      { id: '1', contact: '+998900000001' },
+      { id: '2', contact: '+998900000001' },
+      { id: '3', contact: '+998900000002' },
+      { id: '4', contact: '@Owner_Flat' },
+    ],
+  });
+  const result = await refreshListingLines({ client, now: NOW });
+  const write = client.calls.find((call) => /INSERT INTO platform\.listing_lines/u.test(call.sql));
+  assert.deepEqual(write.params[0], [1, 2, 3, 4]);
+  assert.deepEqual(write.params[1], ['multi_listing', 'multi_listing', 'phantom_risk', 'phantom_risk'], 'Telegram handles match regardless of case');
+  assert.deepEqual(write.params[2], [2, 2, 0, 0], 'other properties exclude the listing itself');
+  assert.equal(result.contacts, 3);
+  const expand = client.calls.find((call) => /SELECT id, data->>'contact' AS contact/u.test(call.sql));
+  assert.deepEqual(expand.params, [['+998900000001', '+998900000002'], ['@owner_flat']]);
+});
+
+test('refresh clears the table when no contact has a line', async () => {
+  const client = refreshClient({});
+  const result = await refreshListingLines({ client, now: NOW });
+  assert.equal(result.listings, 0);
+  assert.ok(!client.calls.some((call) => /SELECT id, data->>'contact' AS contact/u.test(call.sql)), 'no expansion query without lines');
+  const write = client.calls.find((call) => /INSERT INTO platform\.listing_lines/u.test(call.sql));
+  assert.deepEqual(write.params, [[], [], []]);
+  assert.match(write.sql, /DELETE FROM platform\.listing_lines ll\s+WHERE NOT EXISTS/u, 'stale rows are removed in the same statement');
+  assert.match(write.sql, /WHERE platform\.listing_lines\.line IS DISTINCT FROM EXCLUDED\.line/u, 'unchanged rows are not rewritten');
+});
+
+test('restricted contacts get no stored line', async () => {
+  const client = refreshClient({
+    evidence: [evidenceRow('phone', '+998900000002', { restricted: true })],
+    listings: [{ id: '3', contact: '+998900000002' }],
+  });
+  const result = await refreshListingLines({ client, now: NOW });
+  assert.equal(result.contacts, 0);
+});
+
+// --- filters and contact listings ---------------------------------------------------
+
+test('trusted and hide-danger toggles are parsed and reach both search paths', async () => {
+  // The route and search modules load the encrypted geo catalog at import
+  // (unavailable without GEO_CATALOG_DECRYPTION_KEY), so they are checked by
+  // source here.
+  const routes = await readFile(new URL('../src/routes/listing-routes.js', import.meta.url), 'utf8');
+  assert.match(routes, /trustedOnly: bool\(q\.trustedOnly\),/u);
+  assert.match(routes, /hideDanger: bool\(q\.hideDanger\),/u);
+
+  const fast = await readFile(new URL('../src/infrastructure/search/postgres-search-fast-core.js', import.meta.url), 'utf8');
+  assert.match(fast, /m\.listing_id IN \(SELECT ll\.listing_id FROM platform\.listing_lines ll WHERE ll\.line = 'steady'\)/u);
+  assert.match(fast, /NOT EXISTS \(SELECT 1 FROM platform\.listing_lines ll WHERE ll\.listing_id = m\.listing_id AND ll\.line = 'phantom_risk'\)/u);
+
+  const core = await readFile(new URL('../src/infrastructure/search/postgres-search-core.js', import.meta.url), 'utf8');
+  assert.match(core, /l\.id IN \(SELECT ll\.listing_id FROM platform\.listing_lines ll WHERE ll\.line = 'steady'\)/u);
+  assert.match(core, /ll\.listing_id = l\.id AND ll\.line = 'phantom_risk'/u);
+});
+
+test('contact listings are one per property, excluding the listing itself', async () => {
+  const calls = [];
+  const client = { query: async (sql, params) => { calls.push({ sql, params }); return { rows: [{ id: '21', source: 'olx', country: 'UZ', source_id: 'a1', data: { title: 'Other flat', contact: '+998900000001' } }] }; } };
+  const listings = await findContactListings(11, { limit: 500 }, client);
+  assert.deepEqual(calls[0].params, [11, 50], 'limit is capped');
+  assert.match(calls[0].sql, /DISTINCT ON \(l\.dedupe_key\)/u);
+  assert.match(calls[0].sql, /l\.dedupe_key <> src\.dedupe_key/u);
+  assert.deepEqual(listings[0], { title: 'Other flat', contact: '+998900000001', id: 'a1', source: 'olx', country: 'UZ', publicId: 21 });
+  assert.equal(await findContactListings('nope', {}, client), null);
+  assert.equal(calls.length, 1);
+});
+
+test('migration 057 stores only lined listings with an index for the trusted filter', async () => {
+  const sql = await readFile(new URL('../migrations/057_listing_lines.sql', import.meta.url), 'utf8');
+  assert.match(sql, /listing_id BIGINT PRIMARY KEY REFERENCES listings\(id\) ON DELETE CASCADE/u);
+  assert.match(sql, /CHECK \(line IN \('steady', 'phantom_risk', 'multi_listing'\)\)/u);
+  assert.match(sql, /ON platform\.listing_lines \(line, listing_id\)/u);
+});
+
+test('the worker refreshes lines and the API serves contact listings', async () => {
+  const worker = await readFile(new URL('../src/worker.js', import.meta.url), 'utf8');
+  const routes = await readFile(new URL('../src/routes/listing-item-routes.js', import.meta.url), 'utf8');
+  assert.match(worker, /setInterval\(\(\) => void listingLinesTick\(\), LISTING_LINES_REFRESH_MS\)/u);
+  assert.match(routes, /app\.get\('\/api\/listing\/by-public-id\/:publicId\/contact-listings'/u);
 });
 
 test('migration 056 indexes active contacts for an index-only count', async () => {

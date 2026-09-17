@@ -19,6 +19,7 @@ import {verifyDueListingAvailability} from './availability/availability-sweep.js
 import {deactivateExpiredListings} from './listing/listing-lifecycle.js';
 import {refreshStatisticsSnapshot} from './support/statistics-snapshot.js';
 import {syncGeoCitySnapshots} from './geo/geo-city-snapshot-sync.js';
+import {refreshListingLines} from './infrastructure/database/listingLineRepository.js';
 
 const REFRESH_SECONDS = Math.max(60, Number(process.env.QUEUE_REFRESH_SECONDS) || 1800);
 const POLL_MS = Math.max(200, Number(process.env.QUEUE_POLL_SECONDS || 1) * 1000);
@@ -47,12 +48,20 @@ const STATISTICS_REFRESH_MS = Math.max(
   Number(process.env.STATISTICS_REFRESH_SECONDS || 600) * 1000,
 );
 
+// Listing lines feed two filters and every card. A few minutes of staleness is
+// fine for a hint; the refresh itself is a handful of index scans.
+const LISTING_LINES_REFRESH_MS = Math.max(
+  60_000,
+  Number(process.env.LISTING_LINES_REFRESH_SECONDS || 900) * 1000,
+);
+
 let stopping = false;
 let dispatching = false;
 let availabilityRunning = false;
 let lifecycleRunning = false;
 let statisticsRunning = false;
 let geoSnapshotRunning = false;
+let listingLinesRunning = false;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -212,6 +221,23 @@ async function geoSnapshotTick() {
   }
 }
 
+async function listingLinesTick() {
+  if (listingLinesRunning || stopping) return;
+  listingLinesRunning = true;
+  try {
+    const result = await refreshListingLines();
+    console.log(
+      `[flat:worker] listing lines contacts=${result.contacts} listings=${result.listings} ` +
+      `upserted=${result.upserted} removed=${result.removed} durationMs=${result.durationMs}`,
+    );
+  } catch (error) {
+    // Code only: the refresh handles contact values.
+    console.warn(`[flat:worker] listing lines refresh failed: ${error?.code ?? error?.name ?? 'error'}`);
+  } finally {
+    listingLinesRunning = false;
+  }
+}
+
 async function workerLoop(role, shard = 0) {
   const label = role === 'telegram'
     ? 'telegram'
@@ -261,6 +287,7 @@ async function main() {
   void availabilityTick();
   void lifecycleTick();
   void statisticsTick();
+  void listingLinesTick();
   // Deploys already run a dedicated flats-geo-sync-prewarm step that does this
   // exact rebuild before the worker starts. Re-running it here too meant every
   // process start -- including a plain host reboot -- paid the full ~1786-row
@@ -286,6 +313,7 @@ async function main() {
   const lifecycleTimer = setInterval(() => void lifecycleTick(), LIFECYCLE_SWEEP_MS);
   const statisticsTimer = setInterval(() => void statisticsTick(), STATISTICS_REFRESH_MS);
   const geoSnapshotTimer = setInterval(() => void geoSnapshotTick(), GEO_SNAPSHOT_REFRESH_MS);
+  const listingLinesTimer = setInterval(() => void listingLinesTick(), LISTING_LINES_REFRESH_MS);
   dispatchTimer.unref?.();
   pruneTimer.unref?.();
   placesTimer.unref?.();
@@ -293,6 +321,7 @@ async function main() {
   lifecycleTimer.unref?.();
   statisticsTimer.unref?.();
   geoSnapshotTimer.unref?.();
+  listingLinesTimer.unref?.();
 
   try {
     await Promise.all([
@@ -308,6 +337,7 @@ async function main() {
     clearInterval(lifecycleTimer);
     clearInterval(statisticsTimer);
     clearInterval(geoSnapshotTimer);
+    clearInterval(listingLinesTimer);
     await Promise.allSettled([closeElasticsearch(), closeDb()]);
   }
 }
