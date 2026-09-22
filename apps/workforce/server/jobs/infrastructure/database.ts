@@ -1,5 +1,6 @@
 import { Pool } from 'pg'
-import type { Job, JobQuery, JobResponse, JobStats } from '../../../shared/contracts/jobs'
+import type { Job, JobEmployerSummary, JobQuery, JobResponse, JobStats } from '../../../shared/contracts/jobs'
+import { MIN_EMPLOYER_ROLES, jobEmployerKey, parseJobEmployerKey } from '../../../shared/hiring/jobEmployer'
 import { publicEntityId } from '../../../shared/publicEntityId'
 import { BoundedTtlCache } from '../../utils/support/boundedTtlCache'
 import { jobProfessionArea } from '../../vacancies/domain/aggregate'
@@ -558,6 +559,105 @@ export async function getJobByPublicIdDb(publicId: string): Promise<Job | null> 
     )
     return result.rows[0]?.data || null
   } catch {
+    return null
+  }
+}
+
+/**
+ * Employer collections: companies with two or more different live roles.
+ *
+ * Counted over job_clusters, not postings: `cluster_key` is the role, so a
+ * vacancy reposted weekly stays one role. Postings with no cluster (no company
+ * or no title, see jobClusterKey) cannot be attributed to an employer and are
+ * excluded rather than grouped under an empty name.
+ */
+export async function listJobEmployersDb(
+  country: string,
+  limit = 24,
+): Promise<JobEmployerSummary[]> {
+  if (!jobsDbEnabled()) return []
+  try {
+    await ensureSchema()
+    const result = await db().query(
+      `SELECT c.company_normalized,
+              v.country,
+              COUNT(DISTINCT v.cluster_key)::int AS roles,
+              COUNT(*)::int AS postings,
+              MAX(v.posted_at) AS last_posted_at,
+              (ARRAY_AGG(v.company ORDER BY v.posted_at DESC))[1] AS display_company
+         FROM ${schema()}.vacancies v
+         JOIN ${schema()}.job_clusters c ON c.cluster_key = v.cluster_key
+        WHERE v.active = TRUE
+          AND v.cluster_key IS NOT NULL
+          AND ($1 = '' OR v.country = $1)
+        GROUP BY c.company_normalized, v.country
+       HAVING COUNT(DISTINCT v.cluster_key) >= $2
+        ORDER BY roles DESC, last_posted_at DESC
+        LIMIT $3`,
+      [country, MIN_EMPLOYER_ROLES, Math.min(Math.max(limit, 1), 100)],
+    )
+    return result.rows.flatMap((row) => {
+      const key = jobEmployerKey(row.country, row.company_normalized)
+      // normalizeCompany is idempotent, so a stored value that will not
+      // re-normalise is corrupt; skip it rather than emit an unusable key.
+      if (!key) return []
+      return [{
+        employerKey: key,
+        company: String(row.display_company || row.company_normalized),
+        country: String(row.country || ''),
+        roles: row.roles,
+        postings: row.postings,
+        lastPostedAt: row.last_posted_at ? new Date(row.last_posted_at).toISOString() : null,
+      }]
+    })
+  } catch (error) {
+    console.warn('[jobs:db] employers read failed:', (error as Error).message)
+    return []
+  }
+}
+
+/** One employer collection with its live postings, newest first. */
+export async function getJobEmployerDb(
+  employerKey: string,
+  limit = 100,
+): Promise<{ employer: JobEmployerSummary; jobs: Job[] } | null> {
+  const identity = parseJobEmployerKey(employerKey)
+  if (!jobsDbEnabled() || !identity) return null
+  try {
+    await ensureSchema()
+    const result = await db().query(
+      `SELECT v.data,
+              v.company,
+              v.posted_at,
+              COUNT(*) OVER ()::int AS postings,
+              COUNT(DISTINCT v.cluster_key) OVER ()::int AS roles
+         FROM ${schema()}.vacancies v
+         JOIN ${schema()}.job_clusters c ON c.cluster_key = v.cluster_key
+        WHERE v.active = TRUE
+          AND v.cluster_key IS NOT NULL
+          AND c.company_normalized = $1
+          AND ($2 = '' OR v.country = $2)
+        ORDER BY v.posted_at DESC
+        LIMIT $3`,
+      [identity.company, identity.country, Math.min(Math.max(limit, 1), 200)],
+    )
+    const rows = result.rows
+    // Below the threshold it is not a collection, and answering would leak a
+    // page for every one-off posting.
+    if (!rows.length || rows[0].roles < MIN_EMPLOYER_ROLES) return null
+    return {
+      employer: {
+        employerKey,
+        company: String(rows[0].company || identity.company),
+        country: identity.country,
+        roles: rows[0].roles,
+        postings: rows[0].postings,
+        lastPostedAt: rows[0].posted_at ? new Date(rows[0].posted_at).toISOString() : null,
+      },
+      jobs: rows.map((row) => row.data as Job),
+    }
+  } catch (error) {
+    console.warn('[jobs:db] employer read failed:', (error as Error).message)
     return null
   }
 }

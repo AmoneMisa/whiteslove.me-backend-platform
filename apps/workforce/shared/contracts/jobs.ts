@@ -265,3 +265,17 @@ export interface JobResponse {
   stats: JobStats
   rates?: Record<string, number>
 }
+
+/**
+ * An employer collection: one company with two or more different live roles.
+ * `roles` counts distinct job clusters, `postings` counts the vacancies behind
+ * them, so a heavily reposted single role reads as 1 role / many postings.
+ */
+export interface JobEmployerSummary {
+  employerKey: string
+  company: string
+  country: string
+  roles: number
+  postings: number
+  lastPostedAt: string | null
+}
