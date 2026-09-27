@@ -49,9 +49,18 @@ function unauthorized() {
   return Object.assign(new Error('Invalid installation credentials'), {statusCode: 401});
 }
 
-function credentialsFromRequest(req) {
+/** Account state lives under 'acct:<id>' installations (migration 059), which
+ * only linking can reach; a client may never present one as its device. */
+export const ACCOUNT_INSTALLATION_PREFIX = 'acct:';
+
+export function accountInstallationId(accountId) {
+  return `${ACCOUNT_INSTALLATION_PREFIX}${accountId}`;
+}
+
+export function credentialsFromRequest(req) {
   const deviceId = cleanSavedStateId(req.get(DEVICE_HEADER));
   const secret = cleanInstallationSecret(req.get(SECRET_HEADER));
+  if (deviceId?.startsWith(ACCOUNT_INSTALLATION_PREFIX)) return null;
   return deviceId && secret ? {deviceId, secret} : null;
 }
 
@@ -102,7 +111,11 @@ function normalizeSortedCollection(raw) {
   };
 }
 
-async function ensureInstallation(client, {deviceId, secret}) {
+/**
+ * Verifies the installation (creating it on first use) and returns the id whose
+ * saved state it reads and writes: its own, or its account's once linked.
+ */
+export async function ensureInstallation(client, {deviceId, secret}) {
   const secretHash = installationSecretHash(secret);
   await client.query(`
     INSERT INTO ${SCHEMA}.installations(device_id, sync_secret_hash)
@@ -111,7 +124,7 @@ async function ensureInstallation(client, {deviceId, secret}) {
   `, [deviceId, secretHash]);
 
   const result = await client.query(`
-    SELECT sync_secret_hash
+    SELECT sync_secret_hash, account_id
     FROM ${SCHEMA}.installations
     WHERE device_id = $1
   `, [deviceId]);
@@ -123,13 +136,15 @@ async function ensureInstallation(client, {deviceId, secret}) {
     SET updated_at = NOW()
     WHERE device_id = $1
   `, [deviceId]);
+  const accountId = result.rows[0]?.account_id;
+  return accountId ? accountInstallationId(accountId) : deviceId;
 }
 
 async function savedStateSnapshot(credentials) {
-  const {deviceId} = credentials;
   const client = await pool.connect();
   try {
-    await ensureInstallation(client, credentials);
+    // Linked to an account: read and write the account's shared rows.
+    const deviceId = await ensureInstallation(client, credentials);
     const collectionsResult = await client.query(`
       SELECT collection_id, kind, title, is_preset, preset_name
       FROM ${SCHEMA}.saved_collections
@@ -186,7 +201,7 @@ async function savedStateSnapshot(credentials) {
   }
 }
 
-async function assertImportCapacity(client, deviceId) {
+export async function assertImportCapacity(client, deviceId) {
   const result = await client.query(`
     SELECT
       (SELECT COUNT(*)::int
@@ -214,7 +229,6 @@ async function assertImportCapacity(client, deviceId) {
 }
 
 async function importLegacyState(credentials, body) {
-  const {deviceId} = credentials;
   const rawFavorites = Array.isArray(body.favorites) ? body.favorites : [];
   const rawSorted = Array.isArray(body.sorted) ? body.sorted : [];
   const rawPresets = Array.isArray(body.presets) ? body.presets : [];
@@ -248,7 +262,8 @@ async function importLegacyState(credentials, body) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await ensureInstallation(client, credentials);
+    // Linked to an account: read and write the account's shared rows.
+    const deviceId = await ensureInstallation(client, credentials);
 
     if (favorites.length) {
       await client.query(`
@@ -341,13 +356,13 @@ async function mutationCapacity(client, deviceId, op, value) {
 }
 
 async function mutateSavedState(credentials, raw) {
-  const {deviceId} = credentials;
   const value = cleanObject(raw);
   const op = String(value?.op || '');
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    await ensureInstallation(client, credentials);
+    // Linked to an account: read and write the account's shared rows.
+    const deviceId = await ensureInstallation(client, credentials);
 
     if (op === 'favorite.put') {
       const key = cleanItemKey(value.itemKey);
@@ -512,7 +527,7 @@ async function mutateSavedState(credentials, raw) {
   }
 }
 
-function sendSavedStateError(res, error, fallback) {
+export function sendSavedStateError(res, error, fallback) {
   if (error?.statusCode === 400) return res.status(400).json({error: error.message});
   if (error?.statusCode === 401) return res.status(401).json({error: 'Invalid installation credentials'});
   console.error(`[mobile-saved-state] ${fallback}:`, error);

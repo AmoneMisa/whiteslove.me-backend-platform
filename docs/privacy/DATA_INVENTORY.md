@@ -23,6 +23,7 @@
 | Site visitors | IP address in server logs; language and theme cookies; local browser storage | Yes (Article 13) |
 | Telegram subscribers | Telegram user id, chat id, username, first name, language, saved searches | Yes (Article 13) |
 | Privacy requesters | Email, identifiers they claim, request text | Yes (Article 13) |
+| App and website users who save flats | Anonymous installation id; saved flats, sorted collections and presets; optionally a Google account's subject id | Yes (Article 13) |
 
 ## 3. Personal data by processing activity
 
@@ -105,6 +106,26 @@
   `tile.openstreetmap.org` (the visitor's IP and requested map area reach the
   OpenStreetMap Foundation).
 
+### 3.8 Saved flats and accounts (apps/flats, `user_data`)
+
+- `installations`: a random device id per app install or browser and the
+  SHA-256 hash of its secret. No name, email or phone.
+- `saved_collections`, `saved_items`, `saved_presets`: the flats a user saved
+  or sorted (listing snapshots, which carry the advertiser's published
+  contact) and their saved searches with notification flags.
+- `accounts` (migration 059), only after "Sign in with Google": Google's
+  subject id (`sub`) and sign-in times. **No email, name or photo is read or
+  stored** (`src/mobile/google-id-token.js` returns `sub` only). Linked
+  installations share one copy of the saved state; signing out unlinks the
+  device and leaves it empty; `POST /api/mobile/account/delete` erases the
+  account's saved state and subject id.
+- `subscriptions.mobile_devices` (per device, unchanged): push token and
+  language for the presets that device notifies about.
+- **Retention:** **OPERATOR INPUT** — installations and accounts are kept
+  until the user deletes them; no inactivity period is enforced yet.
+- **Recipients:** Google (verifies the sign-in in the user's browser or
+  phone; we fetch Google's public signing keys, sending no user data).
+
 ## 4. Special-category data
 
 Not intentionally collected, and nothing derives it. Residual risks:
@@ -123,6 +144,7 @@ detection, not faces. This must stay true — see DPIA risk R9.
 | OpenStreetMap tile servers | Visitor IP, map area | Independent controller | From the visitor's browser |
 | Telegram | Subscription messages | Independent controller | — |
 | Google (Sheets API) | Read requests from the service account | Processor for the registry sheet | — |
+| Google (Sign in with Google) | The sign-in happens between the user and Google; we receive an ID token and keep only its `sub` | Independent controller | From the user's browser/phone |
 | Source platforms (OLX, Facebook, Threads, LinkedIn, job boards) | Crawl requests | Independent controllers | — |
 
 ## 6. Cookie and storage audit (Personal-Site)
@@ -134,7 +156,9 @@ tracking pixels or third-party cookies were found.**
 |---|---|---|---|---|---|
 | `i18n_lang` | Cookie | @nuxtjs/i18n | Remembers chosen language | Module default | Functional preference requested by the user |
 | `nuxt-color-mode` | Cookie + localStorage | Inline head script | Colour theme | 1 year | Functional preference |
-| `flats:*`, jobs/hiring search state, presets, recently viewed, quiz answers, markdown-editor drafts | localStorage | Pages | Saves the user's own UI state in their browser | Until cleared | Functional; never sent to the server |
+| `flats:*`, jobs/hiring search state, presets, recently viewed, quiz answers, markdown-editor drafts | localStorage | Pages | Saves the user's own UI state in their browser | Until cleared | Functional; favourites are also synced to the server (§3.8), everything else stays in the browser |
+| `ff_device`, `ff_secret` | Cookie (httpOnly, SameSite=Lax) | `server/flats/savedState.ts` | This browser's saved-flats installation id and secret (§3.8); set on first favourites sync | 2 years | Necessary for a feature the user uses |
+| `ff_oauth` | Cookie (httpOnly, SameSite=Lax) | `server/flats/googleOAuth.ts` | One-time state, nonce and PKCE verifier while a Google sign-in is in progress | 10 minutes, deleted on return | Necessary for a sign-in the user started. No Google script runs on the site: sign-in is a redirect to Google, so Google's own cookies are set only on `accounts.google.com`, and only after the user clicks |
 
 Conclusion: only strictly necessary and user-requested preference storage is
 used. Under the ePrivacy rules this generally does not require a consent

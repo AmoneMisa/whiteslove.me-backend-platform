@@ -14,6 +14,7 @@ import {installPrivacyRoutes} from './routes/privacy-routes.js';
 import {checkRate} from './support/request-rate-limit.js';
 import {registerMobileSubscriptionRoutes} from './mobile/mobile-subscriptions.js';
 import {registerMobileSavedStateRoutes} from './mobile/mobile-saved-state.js';
+import {registerMobileAccountRoutes} from './mobile/mobile-account.js';
 
 export function createApp() {
   const app = express();
@@ -53,6 +54,7 @@ export function createApp() {
   installPrivacyRoutes(app);
   registerMobileSubscriptionRoutes(app);
   registerMobileSavedStateRoutes(app);
+  registerMobileAccountRoutes(app);
 
   return app;
 }
