@@ -625,19 +625,32 @@ export async function getJobEmployerDb(
   if (!jobsDbEnabled() || !identity) return null
   try {
     await ensureSchema()
+    // Totals come from a separate aggregate over the same rows: PostgreSQL does
+    // not allow DISTINCT in a window function, and the totals must cover every live
+    // posting, not just the page LIMIT keeps.
+    //
+    // The country matches exactly, including "no country": the list groups a
+    // NULL country as its own employer (key country ''), so '' here must mean
+    // NULL rather than "every country", or this page would pull in the same
+    // company's postings from countries the list counted separately.
     const result = await db().query(
-      `SELECT v.data,
-              v.company,
-              v.posted_at,
-              COUNT(*) OVER ()::int AS postings,
-              COUNT(DISTINCT v.cluster_key) OVER ()::int AS roles
-         FROM ${schema()}.vacancies v
-         JOIN ${schema()}.job_clusters c ON c.cluster_key = v.cluster_key
-        WHERE v.active = TRUE
-          AND v.cluster_key IS NOT NULL
-          AND c.company_normalized = $1
-          AND ($2 = '' OR v.country = $2)
-        ORDER BY v.posted_at DESC
+      `WITH live AS (
+         SELECT v.data, v.company, v.posted_at, v.cluster_key
+           FROM ${schema()}.vacancies v
+           JOIN ${schema()}.job_clusters c ON c.cluster_key = v.cluster_key
+          WHERE v.active = TRUE
+            AND v.cluster_key IS NOT NULL
+            AND c.company_normalized = $1
+            AND COALESCE(v.country, '') = $2
+       ),
+       totals AS (
+         SELECT COUNT(*)::int AS postings,
+                COUNT(DISTINCT cluster_key)::int AS roles
+           FROM live
+       )
+       SELECT live.data, live.company, live.posted_at, totals.postings, totals.roles
+         FROM live CROSS JOIN totals
+        ORDER BY live.posted_at DESC
         LIMIT $3`,
       [identity.company, identity.country, Math.min(Math.max(limit, 1), 200)],
     )

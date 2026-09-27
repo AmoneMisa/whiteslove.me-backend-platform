@@ -54,6 +54,19 @@ test('a collection is 2+ different live roles, not 2+ postings', async () => {
   assert.match(runtime, /rows\[0\]\.roles < MIN_EMPLOYER_ROLES\) return null/u)
 })
 
+test('one employer page uses SQL PostgreSQL accepts, scoped to its own country', async () => {
+  const runtime = await read('server/jobs/infrastructure/database.ts')
+  // PostgreSQL rejects DISTINCT inside a window function ("DISTINCT is not
+  // implemented for window functions"); the read would throw, be caught, and
+  // every employer page would come back empty.
+  assert.doesNotMatch(runtime, /COUNT\(DISTINCT[^)]*\)\s*OVER/u)
+  assert.match(runtime, /COUNT\(DISTINCT cluster_key\)::int AS roles\s+FROM live/u)
+  // A country-less key means NULL country, not every country, so the page
+  // lists exactly what the list grouped under that key.
+  assert.match(runtime, /AND COALESCE\(v\.country, ''\) = \$2/u)
+  assert.doesNotMatch(runtime, /\$2 = '' OR v\.country = \$2/u)
+})
+
 test('the employer routes are registered and answer with data, not throws', async () => {
   const server = await read('api/server.ts')
   assert.match(server, /'\/jobs-employers', employers\.default/u)
