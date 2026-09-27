@@ -38,6 +38,7 @@ let lastPruneAt = 0
 // CV retention runs in the cv worker only, every 6 hours by default. It deletes
 // nothing until the retention policy is approved.
 const CANDIDATE_RETENTION_INTERVAL_MS = Math.max(60 * 60_000, Number(process.env.CANDIDATE_RETENTION_INTERVAL_SECONDS || 21_600) * 1000)
+const CANDIDATE_RETENTION_BACKLOG_PAUSE_MS = 60_000
 let lastCandidateRetentionAt = 0
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
@@ -371,6 +372,12 @@ async function main() {
         const retention = await purgeStaleCandidatesNow()
         if (retention.approved) {
           console.log(`[jobs:worker] candidate retention deleted=${retention.deleted} batches=${retention.batches}${retention.exhausted ? ' (continues next pass)' : ''}`)
+        }
+        // A pass that used its whole batch budget left overdue profiles behind.
+        // Continue after a short pause instead of the full interval, or a
+        // backlog would sit past its retention deadline for days.
+        if (retention.exhausted) {
+          lastCandidateRetentionAt = Date.now() - CANDIDATE_RETENTION_INTERVAL_MS + CANDIDATE_RETENTION_BACKLOG_PAUSE_MS
         }
       }
 

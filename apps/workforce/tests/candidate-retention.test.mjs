@@ -55,3 +55,8 @@ test('the cv worker runs retention and migration 003 indexes last_seen_at', asyn
   assert.match(worker, /WORKFORCE_DOMAIN === 'cv' && hiringDbEnabled\(\) && now - lastCandidateRetentionAt >= CANDIDATE_RETENTION_INTERVAL_MS/)
   assert.match(migration, /ON \{\{schema\}\}\.candidates \(last_seen_at\)/)
 })
+
+test('a pass that hit its batch budget continues soon, not after the full interval', async () => {
+  const worker = await read('jobs-worker/worker.ts')
+  assert.match(worker, /if \(retention\.exhausted\) \{\s+lastCandidateRetentionAt = Date\.now\(\) - CANDIDATE_RETENTION_INTERVAL_MS \+ CANDIDATE_RETENTION_BACKLOG_PAUSE_MS/u)
+})
