@@ -1,6 +1,6 @@
 import { Pool } from 'pg'
 import type { Job, JobEmployerSummary, JobQuery, JobResponse, JobStats } from '../../../shared/contracts/jobs'
-import { MIN_EMPLOYER_ROLES, jobEmployerKey, parseJobEmployerKey } from '../../../shared/hiring/jobEmployer'
+import { MIN_EMPLOYER_ROLES, isPlaceholderCompany, jobEmployerKey, parseJobEmployerKey } from '../../../shared/hiring/jobEmployer'
 import { jobClusterIdentity, type JobClusterIdentity } from '../../../shared/hiring/jobCluster'
 import { publicEntityId } from '../../../shared/publicEntityId'
 import { toPostgresJson } from '../../../shared/postgresJson'
@@ -94,6 +94,8 @@ function languageKeys(job: Job): string[] {
 }
 
 function clusterOf(job: Job): JobClusterIdentity | null {
+  // Unattributable, like a posting with no company at all (see jobEmployer.ts).
+  if (isPlaceholderCompany(job.company)) return null
   return jobClusterIdentity({ company: job.company, title: job.title, location: job.location, city: job.city, country: job.country })
 }
 

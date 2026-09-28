@@ -300,7 +300,10 @@ function makeJob(input: {
   return {
     id: `companies-community-${input.board.key}-${sourceToken(input.url)}`,
     title,
-    company: (stripHtml(input.company || '') || input.board.label).slice(0, 180),
+    // A general board that does not name the company is not the employer:
+    // `<board> employer` is the placeholder other sources use too, and it keeps
+    // such postings out of employer collections (isPlaceholderCompany).
+    company: (stripHtml(input.company || '') || (input.board.directEmployer ? input.board.label : `${input.board.label} employer`)).slice(0, 180),
     location: location.slice(0, 240),
     url: input.url,
     source: 'companies',

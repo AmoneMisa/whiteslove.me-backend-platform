@@ -16,7 +16,7 @@ export default defineEventHandler(async (event) => {
   const country = String(query.country ?? '').trim().toUpperCase()
   // Empty means every country. A malformed code returns nothing rather than
   // being silently widened to everything.
-  if (country && !/^[A-Z]{2}$/.test(country)) return { employers: [] }
+  if (country && !/^(?:[A-Z]{2}|OTHER|REMOTE)$/.test(country)) return { employers: [] }
 
   const requested = Number(query.limit ?? 24)
   const employers = await listJobEmployersDb(country, Number.isFinite(requested) ? requested : 24)

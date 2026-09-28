@@ -119,3 +119,20 @@ test('one bad character no longer fails a whole database sync', async () => {
     assert.doesNotMatch(source, /query\([^)]*\[JSON\.stringify\(/u, path)
   }
 })
+
+test('board placeholders are not employers, pseudo-countries are', async () => {
+  const { isPlaceholderCompany } = await import('../shared/hiring/jobEmployer.ts')
+  for (const name of ['Djinni employer', 'Work.ua employer', 'Flagma UZ employer', 'Freelancer employer']) {
+    assert.equal(isPlaceholderCompany(name), true, name)
+  }
+  for (const name of ['Stripe', 'Datadog', 'Employers Holdings Inc']) {
+    assert.equal(isPlaceholderCompany(name), false, name)
+  }
+  // 6,958 live vacancies carry REMOTE or OTHER; their employers need pages.
+  assert.deepEqual(parseJobEmployerKey(jobEmployerKey('REMOTE', 'Acme')), { country: 'REMOTE', company: 'acme' })
+  assert.deepEqual(parseJobEmployerKey(jobEmployerKey('OTHER', 'Acme')), { country: 'OTHER', company: 'acme' })
+  const boards = await read('server/utils/sources/communityJobBoardSources.ts')
+  assert.match(boards, /input\.board\.directEmployer \? input\.board\.label : `\$\{input\.board\.label\} employer`/u)
+  const runtime = await read('server/jobs/infrastructure/database.ts')
+  assert.match(runtime, /if \(isPlaceholderCompany\(job\.company\)\) return null/u)
+})

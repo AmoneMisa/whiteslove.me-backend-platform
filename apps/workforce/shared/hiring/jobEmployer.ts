@@ -56,8 +56,28 @@ export function parseJobEmployerKey(value: unknown): JobEmployerIdentity | null 
   // Re-normalising rejects a hand-edited key that would otherwise match no
   // rows, and guarantees the key we accept is the key we would have produced.
   if (!company || normalizeCompany(company) !== company) return null
-  if (country && !/^[A-Z]{2}$/.test(country)) return null
+  if (country && !isEmployerCountry(country)) return null
   return { country, company }
+}
+
+/**
+ * Countries a vacancy can carry besides ISO codes: remote roles and ones the
+ * sources could not place. Keys for employers there must parse too.
+ */
+const PSEUDO_COUNTRIES = new Set(['OTHER', 'REMOTE'])
+
+function isEmployerCountry(country: string): boolean {
+  return /^[A-Z]{2}$/.test(country) || PSEUDO_COUNTRIES.has(country)
+}
+
+/**
+ * A company name that only says which board a posting came from: sources
+ * write `<board> employer` ("Djinni employer", "Work.ua employer") when the
+ * posting does not name the company. Such postings cannot be attributed to
+ * anyone, so they form no cluster and no employer collection.
+ */
+export function isPlaceholderCompany(company: unknown): boolean {
+  return /(?:^| )employer$/u.test(normalizeCompany(company))
 }
 
 /** The threshold that makes a company a collection rather than a one-off post. */
