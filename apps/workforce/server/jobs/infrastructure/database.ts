@@ -3,6 +3,7 @@ import type { Job, JobEmployerSummary, JobQuery, JobResponse, JobStats } from '.
 import { MIN_EMPLOYER_ROLES, jobEmployerKey, parseJobEmployerKey } from '../../../shared/hiring/jobEmployer'
 import { jobClusterIdentity, type JobClusterIdentity } from '../../../shared/hiring/jobCluster'
 import { publicEntityId } from '../../../shared/publicEntityId'
+import { toPostgresJson } from '../../../shared/postgresJson'
 import { BoundedTtlCache } from '../../utils/support/boundedTtlCache'
 import { jobProfessionArea } from '../../vacancies/domain/aggregate'
 import { keepUsaForeignerCandidate } from '../../vacancies/domain/jobVisaSponsorship'
@@ -230,10 +231,10 @@ export async function syncJobsDb(jobs: Job[]): Promise<number> {
     // that the employer queries join on.
     const clusters = clusterRows(jobs)
     for (let offset = 0; offset < clusters.length; offset += UPSERT_BATCH) {
-      await client.query(CLUSTER_UPSERT_SQL(schema()), [JSON.stringify(clusters.slice(offset, offset + UPSERT_BATCH))])
+      await client.query(CLUSTER_UPSERT_SQL(schema()), [toPostgresJson(clusters.slice(offset, offset + UPSERT_BATCH))])
     }
     for (let offset = 0; offset < rows.length; offset += UPSERT_BATCH) {
-      await client.query(UPSERT_SQL(schema()), [JSON.stringify(rows.slice(offset, offset + UPSERT_BATCH))])
+      await client.query(UPSERT_SQL(schema()), [toPostgresJson(rows.slice(offset, offset + UPSERT_BATCH))])
     }
     await client.query(
       `UPDATE ${schema()}.vacancies SET active = FALSE, updated_at = NOW() WHERE active = TRUE AND sync_token <> $1`,

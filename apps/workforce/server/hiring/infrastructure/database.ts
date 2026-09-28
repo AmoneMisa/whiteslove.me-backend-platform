@@ -11,6 +11,7 @@ import { canonicalCityValue } from '../../../shared/locationCatalog'
 import { hiringStatisticGroupsForProfessions } from '../../../shared/hiringStatisticGroups'
 import { expandHiringProfessionFilters } from '../../../shared/hiringProfessionGroups'
 import { convertCurrency } from '../../utils/support/currency'
+import { toPostgresJson } from '../../../shared/postgresJson'
 import { purgeStaleCandidates, type CandidateRetentionReport } from '../../../shared/privacy/candidateRetention'
 import { BoundedTtlCache } from '../../utils/support/boundedTtlCache'
 import {
@@ -274,7 +275,7 @@ export async function backfillDbCandidateReadModel(): Promise<void> {
       createdAt: row.data?.createdAt || isoDate(row.created_at) || String(row.created_at),
       url: row.data?.url || row.url,
     } as CvProfile, row.source_handle))
-    await db().query(UPSERT_SQL(schema()), [JSON.stringify(rows)])
+    await db().query(UPSERT_SQL(schema()), [toPostgresJson(rows)])
     if (legacy.rows.length < UPSERT_BATCH) {
       await finishReadModelBackfill()
       return
@@ -570,7 +571,7 @@ async function previousDedupeKeys(client: PoolClient, rows: Array<ReturnType<typ
       AND candidate.country = input.country
       AND candidate.source_id = input.source_id
      WHERE candidate.dedupe_key IS NOT NULL AND candidate.dedupe_key <> ''`,
-    [JSON.stringify(identities)],
+    [toPostgresJson(identities)],
   )
   return result.rows.map((row) => String(row.dedupe_key || '')).filter(Boolean)
 }
@@ -595,7 +596,7 @@ export async function saveDbCandidates(
       await client.query('BEGIN')
       const oldKeys = await previousDedupeKeys(client, rows)
       for (let offset = 0; offset < rows.length; offset += UPSERT_BATCH) {
-        await client.query(UPSERT_SQL(schema()), [JSON.stringify(rows.slice(offset, offset + UPSERT_BATCH))])
+        await client.query(UPSERT_SQL(schema()), [toPostgresJson(rows.slice(offset, offset + UPSERT_BATCH))])
       }
       await syncCurrentCandidateKeys(client, schema(), [
         ...oldKeys,

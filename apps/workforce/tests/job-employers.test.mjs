@@ -94,7 +94,7 @@ test('the vacancy sync writes the clusters employer collections read', async () 
   assert.match(runtime, /search_text = EXCLUDED\.search_text, cluster_key = EXCLUDED\.cluster_key,/u)
   assert.match(runtime, /INSERT INTO \$\{name\}\.job_clusters \(/u)
   // Clusters go in before the vacancies that refer to them.
-  assert.ok(runtime.indexOf('CLUSTER_UPSERT_SQL(schema())') < runtime.indexOf('UPSERT_SQL(schema()), [JSON.stringify(rows'))
+  assert.ok(runtime.indexOf('CLUSTER_UPSERT_SQL(schema())') < runtime.indexOf('UPSERT_SQL(schema()), [toPostgresJson(rows'))
 })
 
 test('the stored cluster parts are the ones the key hashes', async () => {
@@ -104,4 +104,18 @@ test('the stored cluster parts are the ones the key hashes', async () => {
   assert.equal(identity.key, jobClusterKey(job))
   assert.deepEqual({ ...identity, key: undefined }, { key: undefined, country: 'UZ', company: 'acme', title: 'backend engineer', locality: 'tashkent' })
   assert.equal(jobClusterIdentity({ company: '', title: 'x' }), null)
+})
+
+test('one bad character no longer fails a whole database sync', async () => {
+  const { toPostgresJson } = await import('../shared/postgresJson.ts')
+  const emoji = '\u{1F680}'
+  const brokenEmoji = emoji.slice(0, 1) // half an emoji, as truncation leaves it
+  const text = toPostgresJson({ title: `Rocket ${brokenEmoji} role`, tail: emoji.slice(1), nul: 'a\u0000b', ok: `fine ${emoji}`, n: 3 })
+  // PostgreSQL rejects \udXXX escapes of unpaired surrogates and \u0000.
+  assert.doesNotMatch(text, /\\ud[89a-f][0-9a-f]{2}|\\u0000/i)
+  assert.deepEqual(JSON.parse(text), { title: 'Rocket � role', tail: '�', nul: 'ab', ok: `fine ${emoji}`, n: 3 })
+  for (const path of ['server/jobs/infrastructure/database.ts', 'server/hiring/infrastructure/database.ts']) {
+    const source = await read(path)
+    assert.doesNotMatch(source, /query\([^)]*\[JSON\.stringify\(/u, path)
+  }
 })
