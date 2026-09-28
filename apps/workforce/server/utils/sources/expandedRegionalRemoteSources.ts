@@ -29,9 +29,7 @@ export const EXPANDED_REGIONAL_REMOTE_COMPANIES: RegionalBoardTarget[] = [
   { handle: 'weloglobal', label: 'Welo Global', market: 'KG', aliases: ['kyrgyzstan', 'bishkek'] },
   { handle: 'binance', label: 'Binance', market: 'KG', aliases: ['kyrgyzstan', 'bishkek'] },
 
-  { handle: 'xm', label: 'XM', market: 'KZ', aliases: ['kazakhstan', 'almaty', 'astana'] },
   { handle: 'aleph', label: 'Aleph', market: 'KZ', aliases: ['kazakhstan', 'almaty'] },
-  { handle: 'creatio', label: 'Creatio', market: 'KZ', aliases: ['kazakhstan', 'almaty', 'astana'] },
   { handle: 'xsolla', label: 'Xsolla', market: 'KZ', aliases: ['kazakhstan', 'almaty', 'astana'] },
   { handle: 'binance', label: 'Binance', market: 'KZ', aliases: ['kazakhstan', 'almaty', 'astana'] },
 

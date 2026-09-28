@@ -23,7 +23,6 @@ test('community board registry exposes one durable queue target per board', () =
     'indeed',
     'we-work-remotely',
     'hiring-cafe',
-    'remotejobfor-me',
     'sydicom',
     'turing',
     'braintrust',

@@ -56,7 +56,6 @@ function flagmaPage(base: string, page: number): string {
  */
 export const COMMUNITY_JOB_BOARDS: CommunityBoard[] = [
   // CIS / Russian-language boards
-  { key: 'kwork', label: 'Kwork', url: 'https://kwork.com/projects' },
   { key: 'workzilla', label: 'Work-zilla', url: 'https://www.work-zilla.com/' },
   { key: 'getmatch', label: 'Getmatch', url: 'https://getmatch.ru/vacancies', remoteByDefault: true },
   { key: 'arbihunter', label: 'Arbihunter', url: 'https://arbihunter.com/' },
@@ -113,7 +112,6 @@ export const COMMUNITY_JOB_BOARDS: CommunityBoard[] = [
   { key: 'powertofly', label: 'PowerToFly', url: 'https://powertofly.com/jobs/', remoteByDefault: true },
   { key: 'remotewoman', label: 'RemoteWoman', url: 'https://remotewoman.com/', remoteByDefault: true },
   { key: 'hiring-cafe', label: 'HiringCafe', url: 'https://hiring.cafe/' },
-  { key: 'remotejobfor-me', label: 'remotejobfor.me', url: 'https://remotejobfor.me/jobs', remoteByDefault: true },
   { key: 'sydicom', label: 'sydicom.app', url: 'https://sydicom.app/jobs', remoteByDefault: true },
 
   // Developer / IT networks
@@ -122,7 +120,6 @@ export const COMMUNITY_JOB_BOARDS: CommunityBoard[] = [
   { key: 'crossover', label: 'Crossover', url: 'https://www.crossover.com/jobs', remoteByDefault: true },
   { key: 'gun-io', label: 'Gun.io', url: 'https://gun.io/find-work/', remoteByDefault: true },
   { key: 'landing-jobs', label: 'Landing.Jobs', url: 'https://landing.jobs/jobs' },
-  { key: 'offerzen', label: 'OfferZen', url: 'https://www.offerzen.com/job-seekers' },
   { key: 'devitjobs', label: 'DevITJobs', url: 'https://devitjobs.com/' },
   { key: 'js-remotely', label: 'JS Remotely', url: 'https://jsremotely.com/', remoteByDefault: true },
   { key: 'golang-cafe', label: 'Golang Cafe', url: 'https://golang.cafe/', remoteByDefault: true },
@@ -143,10 +140,8 @@ export const COMMUNITY_JOB_BOARDS: CommunityBoard[] = [
   { key: 'truelancer', label: 'Truelancer', url: 'https://www.truelancer.com/freelance-jobs' },
   { key: 'hubstaff-talent', label: 'Hubstaff Talent', url: 'https://talent.hubstaff.com/search/jobs' },
   { key: 'solidgigs', label: 'SolidGigs', url: 'https://solidgigs.com/' },
-  { key: 'catalant', label: 'Catalant', url: 'https://gocatalant.com/experts/' },
   { key: 'cloudpeeps', label: 'CloudPeeps', url: 'https://www.cloudpeeps.com/jobs' },
   { key: 'kolabtree', label: 'Kolabtree', url: 'https://www.kolabtree.com/projects' },
-  { key: 'bark', label: 'Bark', url: 'https://www.bark.com/en/us/find-a-professional/' },
 
   // Design / creative
   { key: 'dribbble', label: 'Dribbble Jobs', url: 'https://dribbble.com/jobs' },
@@ -154,7 +149,6 @@ export const COMMUNITY_JOB_BOARDS: CommunityBoard[] = [
   { key: 'krop', label: 'Krop', url: 'https://www.krop.com/creative-jobs/' },
   { key: 'coroflot', label: 'Coroflot', url: 'https://www.coroflot.com/design-jobs' },
   { key: 'design-jobs-board', label: 'Design Jobs Board', url: 'https://www.designjobsboard.com/' },
-  { key: 'working-not-working', label: 'Working Not Working', url: 'https://workingnotworking.com/jobs' },
   { key: 'creativepool', label: 'Creativepool', url: 'https://creativepool.com/jobs' },
   { key: 'designcrowd', label: 'DesignCrowd', url: 'https://www.designcrowd.com/jobs' },
 
@@ -167,7 +161,6 @@ export const COMMUNITY_JOB_BOARDS: CommunityBoard[] = [
   { key: 'clearvoice', label: 'ClearVoice', url: 'https://www.clearvoice.com/talent-network/' },
   { key: 'marketerhire', label: 'MarketerHire', url: 'https://marketerhire.com/marketers' },
   { key: 'mediabistro', label: 'Mediabistro', url: 'https://www.mediabistro.com/jobs/' },
-  { key: 'superpath', label: 'Superpath Jobs', url: 'https://www.superpath.co/jobs' },
 
   // Translation / teaching
   { key: 'proz', label: 'ProZ', url: 'https://www.proz.com/translation-jobs' },
