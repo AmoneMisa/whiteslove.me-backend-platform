@@ -72,7 +72,12 @@ test('vacancy PostgreSQL read model stays indexed and is synchronized by ingesti
   assert.match(jobsMigration, /vacancies_city_lower_idx[\s\S]*LOWER\(city\)/)
   assert.match(jobsMigration, /vacancies_skills_gin_idx[\s\S]*USING GIN\(skills\)/)
   assert.match(jobsMigration, /vacancies_search_idx[\s\S]*to_tsvector\('simple', search_text\)/)
-  assert.match(jobsSourceRefresh, /await syncJobsDb\(kept\)/)
+  // Merges write the store and request one coalesced snapshot sync; the
+  // full ES/PostgreSQL sync no longer runs inside every merge or AI result.
+  assert.match(jobsSourceRefresh, /await syncJobsDb\(snapshot\)/)
+  assert.doesNotMatch(jobsSourceRefresh, /await syncJobsDb\((kept|stored)\)/)
+  assert.equal((jobsSourceRefresh.match(/^\s+scheduleSnapshotSync\(\)$/gm) || []).length, 2)
+  assert.match(jobsSourceRefresh, /snapshotSyncRunning \?\?= runSnapshotSyncs\(\)/)
 
   const dbIndex = jobsFeed.indexOf('await queryJobsDb(jobQuery)')
   const snapshotIndex = jobsFeed.indexOf('await getStoredSnapshot()')

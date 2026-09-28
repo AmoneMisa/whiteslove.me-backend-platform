@@ -182,6 +182,62 @@ export function sanitizeFetchedJob(input: Job): Job {
 
 let mergeLock: Promise<unknown> = Promise.resolve()
 
+/**
+ * Publishing the stored snapshot to Elasticsearch and PostgreSQL.
+ *
+ * Both are full-snapshot syncs (PostgreSQL deactivates every vacancy the
+ * snapshot no longer holds), and over ~15k vacancies one takes minutes. They
+ * used to run inside every source merge and again for every single
+ * AI-enriched vacancy, under the merge lock, so a source whose fetch took two
+ * seconds waited ~5 minutes per refresh behind them and the 1,300-target
+ * queue took days per pass -- long enough for the 14-day window to prune
+ * vacancies before their sources came round again.
+ *
+ * Now a merge only writes the store and asks for a sync. One sync runs at a
+ * time, reads the latest snapshot when it starts, and runs once more if
+ * anything changed meanwhile, at most once per SNAPSHOT_SYNC_MIN_INTERVAL_MS.
+ * The store stays the source of truth; a sync lost to a restart is simply
+ * redone by the next merge.
+ */
+const SNAPSHOT_SYNC_MIN_INTERVAL_MS = 60_000
+let snapshotSyncRunning: Promise<void> | null = null
+let snapshotSyncRequested = false
+
+export function scheduleSnapshotSync(): Promise<void> {
+  snapshotSyncRequested = true
+  snapshotSyncRunning ??= runSnapshotSyncs().finally(() => {
+    snapshotSyncRunning = null
+  })
+  return snapshotSyncRunning
+}
+
+async function runSnapshotSyncs() {
+  while (snapshotSyncRequested) {
+    snapshotSyncRequested = false
+    const startedAt = Date.now()
+    let snapshot: StoredJob[] = []
+    try {
+      const raw = await useStateStore().get(STORE_KEY)
+      snapshot = raw ? JSON.parse(raw) as StoredJob[] : []
+    } catch (error) {
+      console.error('[jobs:snapshot] store read failed:', (error as Error).message)
+      continue
+    }
+    try {
+      await syncJobsSearchIndex(snapshot)
+    } catch (error) {
+      console.error('[jobs:snapshot] Elasticsearch sync failed:', (error as Error).message)
+    }
+    try {
+      await syncJobsDb(snapshot)
+    } catch (error) {
+      console.error('[jobs:snapshot] PostgreSQL sync failed:', (error as Error).message)
+    }
+    const wait = SNAPSHOT_SYNC_MIN_INTERVAL_MS - (Date.now() - startedAt)
+    if (snapshotSyncRequested && wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
+  }
+}
+
 export function configuredJobSources(): JobSource[] {
   return ALL_SOURCES.filter((source) => isJobSourceAvailable(source, 'ingestion'))
 }
@@ -290,17 +346,7 @@ async function mergeFetchedSource(source: JobSource, jobs: Job[]) {
 
   const kept = prune([...byKey.values()], now)
   await store.set(STORE_KEY, JSON.stringify(kept), 'EX', STORE_TTL_SECONDS)
-
-  try {
-    await syncJobsSearchIndex(kept)
-  } catch (error) {
-    console.error(`[jobs:queue:${source}] Elasticsearch sync failed:`, (error as Error).message)
-  }
-  try {
-    await syncJobsDb(kept)
-  } catch (error) {
-    console.error(`[jobs:queue:${source}] PostgreSQL sync failed:`, (error as Error).message)
-  }
+  scheduleSnapshotSync()
 
   // The model answers asynchronously, well after this merge returns, so an
   // enriched job is written back through the same store instead of being
@@ -331,9 +377,7 @@ async function storeAiEnrichedJob(job: StoredJob) {
 
     stored[index] = { ...job, lastSeen: stored[index]!.lastSeen }
     await store.set(STORE_KEY, JSON.stringify(stored), 'EX', STORE_TTL_SECONDS)
-
-    await syncJobsSearchIndex(stored)
-    await syncJobsDb(stored)
+    scheduleSnapshotSync()
   } catch (error) {
     console.error('[jobs:ai] enrichment persistence failed:', (error as Error).message)
   }
