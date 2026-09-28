@@ -15,6 +15,7 @@ import {checkRate} from './support/request-rate-limit.js';
 import {registerMobileSubscriptionRoutes} from './mobile/mobile-subscriptions.js';
 import {registerMobileSavedStateRoutes} from './mobile/mobile-saved-state.js';
 import {registerMobileAccountRoutes} from './mobile/mobile-account.js';
+import {registerMobileListRoutes} from './mobile/mobile-lists.js';
 
 export function createApp() {
   const app = express();
@@ -30,6 +31,7 @@ export function createApp() {
   // Keep the larger parser narrowly scoped; all other JSON endpoints retain the
   // default body limit.
   app.use('/api/mobile/saved-state', express.json({limit: '1mb'}));
+  app.use('/api/mobile/lists', express.json({limit: '1mb'}));
   app.use(express.json());
 
   // A custom-source request can enqueue external fetch work in the PostgreSQL
@@ -55,6 +57,7 @@ export function createApp() {
   registerMobileSubscriptionRoutes(app);
   registerMobileSavedStateRoutes(app);
   registerMobileAccountRoutes(app);
+  registerMobileListRoutes(app);
 
   return app;
 }

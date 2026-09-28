@@ -1,6 +1,7 @@
 // "Sign in with Google": links an installation (a phone or a browser) to an
 // account so every linked installation shares one set of saved flats, sorted
-// collections and presets. Presets carry their notification flags, so a phone
+// collections and presets -- and the site's saved jobs and CVs
+// (mobile-lists.js). Presets carry their notification flags, so a phone
 // that signs in gets the account's subscriptions and registers them for push
 // with its own token (subscriptions.mobile_devices stays per device).
 //
@@ -26,6 +27,7 @@ import {
   installationSecretHash,
   sendSavedStateError,
 } from './mobile-saved-state.js';
+import {trimLists} from './mobile-lists.js';
 
 const SCHEMA = 'user_data';
 
@@ -100,6 +102,15 @@ export async function mergeSavedState(client, fromId, toId) {
     WHERE device_id = $1::varchar
     ON CONFLICT (device_id, preset_id) DO NOTHING
   `, [fromId, toId]);
+  // Jobs and CV lists (migration 060): items the account lacks, keeping the
+  // account's own copy and order; trimLists then applies the list windows.
+  await client.query(`
+    INSERT INTO ${SCHEMA}.saved_list_items(device_id, domain, list, item_key, payload, created_at, updated_at)
+    SELECT $2::varchar, domain, list, item_key, payload, created_at, updated_at
+    FROM ${SCHEMA}.saved_list_items
+    WHERE device_id = $1::varchar
+    ON CONFLICT (device_id, domain, list, item_key) DO NOTHING
+  `, [fromId, toId]);
   // A sorted collection whose every listing was already sorted elsewhere in
   // the account came over empty; drop it, as the import does.
   await client.query(`
@@ -116,6 +127,7 @@ async function clearSavedState(client, deviceId) {
   // Items cascade from their collections.
   await client.query(`DELETE FROM ${SCHEMA}.saved_collections WHERE device_id = $1`, [deviceId]);
   await client.query(`DELETE FROM ${SCHEMA}.saved_presets WHERE device_id = $1`, [deviceId]);
+  await client.query(`DELETE FROM ${SCHEMA}.saved_list_items WHERE device_id = $1`, [deviceId]);
 }
 
 async function inTransaction(work) {
@@ -151,6 +163,8 @@ export async function linkGoogleAccount(credentials, googleSub) {
       await mergeSavedState(client, installation.deviceId, accountOwner);
       // Rolls the whole link back rather than silently dropping items.
       await assertImportCapacity(client, accountOwner);
+      // Jobs/CV lists are windows, not quotas: keep the newest, as they do.
+      await trimLists(client, accountOwner);
       await clearSavedState(client, installation.deviceId);
     }
     await client.query(`

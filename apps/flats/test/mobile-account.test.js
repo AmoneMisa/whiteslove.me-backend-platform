@@ -31,7 +31,8 @@ test('linking merges an anonymous device in, never across accounts, and never ov
   assert.match(source, /const merged = !installation\.accountId;/u);
   // Every copy is additive.
   const merge = source.slice(source.indexOf('export async function mergeSavedState'), source.indexOf('async function clearSavedState'));
-  assert.equal((merge.match(/ON CONFLICT[^\n]*DO NOTHING/gu) || []).length, 3);
+  // Flats collections, items and presets, plus jobs/CV lists (migration 060).
+  assert.equal((merge.match(/ON CONFLICT[^\n]*DO NOTHING/gu) || []).length, 4);
   assert.doesNotMatch(merge, /DO UPDATE/u);
   // Over the limits the whole link rolls back rather than dropping items.
   assert.match(source, /await assertImportCapacity\(client, accountOwner\);/u);
