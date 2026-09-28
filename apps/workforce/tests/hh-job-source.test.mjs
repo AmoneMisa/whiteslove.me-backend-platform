@@ -49,8 +49,10 @@ test('HH exposes each configured area as its own shared-crawler queue target', a
   const originalFetch = globalThis.fetch
   const originalCountries = process.env.HH_JOB_COUNTRIES
   const originalAreas = process.env.HH_JOB_AREAS
+  const originalToken = process.env.HH_APP_TOKEN
   process.env.HH_JOB_COUNTRIES = 'UZ'
   process.env.HH_JOB_AREAS = '2759'
+  process.env.HH_APP_TOKEN = 'test-app-token'
   const calls = []
 
   globalThis.fetch = async (input, init) => {
@@ -78,11 +80,32 @@ test('HH exposes each configured area as its own shared-crawler queue target', a
     assert.equal(calls[0].url.searchParams.get('area'), '2759')
     assert.equal(calls[0].url.searchParams.get('per_page'), '100')
     assert.match(calls[0].headers.get('hh-user-agent') || '', /WhitesLove/u)
+    // hh.ru closed anonymous access: every request carries the app token.
+    assert.ok(calls.every(({ headers }) => headers.get('authorization') === 'Bearer test-app-token'))
   } finally {
+    if (originalToken === undefined) delete process.env.HH_APP_TOKEN
+    else process.env.HH_APP_TOKEN = originalToken
     globalThis.fetch = originalFetch
     if (originalCountries === undefined) delete process.env.HH_JOB_COUNTRIES
     else process.env.HH_JOB_COUNTRIES = originalCountries
     if (originalAreas === undefined) delete process.env.HH_JOB_AREAS
     else process.env.HH_JOB_AREAS = originalAreas
+  }
+})
+
+test('without hh.ru credentials the source is off rather than failing every task', async () => {
+  const { isJobSourceAvailable } = await import('../server/utils/sources/jobSourceConfig.ts')
+  const saved = { t: process.env.HH_APP_TOKEN, i: process.env.HH_CLIENT_ID, s: process.env.HH_CLIENT_SECRET }
+  try {
+    delete process.env.HH_APP_TOKEN; delete process.env.HH_CLIENT_ID; delete process.env.HH_CLIENT_SECRET
+    assert.equal(isJobSourceAvailable('hh', 'ingestion'), false)
+    process.env.HH_CLIENT_ID = 'id'
+    assert.equal(isJobSourceAvailable('hh', 'ingestion'), false)
+    process.env.HH_CLIENT_SECRET = 'secret'
+    assert.equal(isJobSourceAvailable('hh', 'ingestion'), true)
+  } finally {
+    for (const [k, v] of [['HH_APP_TOKEN', saved.t], ['HH_CLIENT_ID', saved.i], ['HH_CLIENT_SECRET', saved.s]]) {
+      if (v === undefined) delete process.env[k]; else process.env[k] = v
+    }
   }
 })

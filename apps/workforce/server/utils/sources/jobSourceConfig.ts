@@ -1,11 +1,14 @@
 import type { JobSource } from '~~/shared/contracts/jobs'
+import { hhCredentialsConfigured } from './hhAppToken'
 
 export type JobSourceAvailabilityMode = 'feed' | 'ingestion'
 
 function enabledByFeatureFlag(source: JobSource): boolean {
   switch (source) {
     case 'hh':
-      return process.env.HH_JOB_SOURCE !== 'off'
+      // hh.ru closed anonymous API access: without an application token every
+      // request is a 403, so the source is off until credentials exist.
+      return process.env.HH_JOB_SOURCE !== 'off' && hhCredentialsConfigured()
     case 'rss':
       return process.env.RSS_DEFAULTS !== 'off' || Boolean(process.env.RSS_FEEDS)
     case 'companies':

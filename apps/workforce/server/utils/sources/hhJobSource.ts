@@ -1,5 +1,6 @@
 import type { Job } from '~~/shared/contracts/jobs'
 import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
+import { forgetHhAppToken, hhAppToken } from './hhAppToken'
 
 const API_URL = 'https://api.hh.ru/vacancies'
 const USER_AGENT = 'WhitesLove-Hiring-Aggregator/1.0 (admin@whiteslove.me)'
@@ -140,8 +141,12 @@ async function fetchPage(target: HhTarget, crawlerPage: number): Promise<string>
       'User-Agent': USER_AGENT,
       'HH-User-Agent': USER_AGENT,
       Accept: 'application/json',
+      Authorization: `Bearer ${await hhAppToken()}`,
     },
   })
+  // A revoked or replaced token: drop the cached one so the next refresh
+  // obtains a fresh token instead of failing until a restart.
+  if (response.status === 401 || response.status === 403) await forgetHhAppToken()
   // HH returns 400 when the requested page is outside the available range.
   // Present that upstream terminal condition as an empty page to the crawler.
   if (response.status === 400 && crawlerPage > 1) return JSON.stringify({ items: [] })
