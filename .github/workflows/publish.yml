@@ -209,6 +209,15 @@ jobs:
           command_timeout: 30m
           script: |
             set -euo pipefail
+            # Log in to GHCR with this run's token, in a Docker config of our
+            # own. The Personal Site deploy logs in and out of ghcr.io on the
+            # same host with its own token, which replaced and then removed
+            # the stored login these pulls depended on ("error from registry:
+            # denied"). A private DOCKER_CONFIG keeps the two apart.
+            export DOCKER_CONFIG=/root/.docker-whiteslove-backend
+            mkdir -p "$DOCKER_CONFIG"
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin >/dev/null
+            trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
             cd /opt/backend
             git fetch --quiet origin master
             git reset --quiet --hard origin/master
