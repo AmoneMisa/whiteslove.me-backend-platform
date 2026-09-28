@@ -1,6 +1,7 @@
 import { Pool } from 'pg'
 import type { Job, JobEmployerSummary, JobQuery, JobResponse, JobStats } from '../../../shared/contracts/jobs'
 import { MIN_EMPLOYER_ROLES, jobEmployerKey, parseJobEmployerKey } from '../../../shared/hiring/jobEmployer'
+import { jobClusterIdentity, type JobClusterIdentity } from '../../../shared/hiring/jobCluster'
 import { publicEntityId } from '../../../shared/publicEntityId'
 import { BoundedTtlCache } from '../../utils/support/boundedTtlCache'
 import { jobProfessionArea } from '../../vacancies/domain/aggregate'
@@ -91,6 +92,10 @@ function languageKeys(job: Job): string[] {
   }))]
 }
 
+function clusterOf(job: Job): JobClusterIdentity | null {
+  return jobClusterIdentity({ company: job.company, title: job.title, location: job.location, city: job.city, country: job.country })
+}
+
 function jobRow(job: Job, syncToken: string) {
   return {
     identity_key: identityKey(job),
@@ -121,9 +126,50 @@ function jobRow(job: Job, syncToken: string) {
       .filter(Boolean)
       .join(' '),
     sync_token: syncToken,
+    // The role this posting advertises (shared/hiring/jobCluster.ts): what
+    // repost detection and employer collections group by.
+    cluster_key: clusterOf(job)?.key ?? null,
     data: job,
   }
 }
+
+/** One job_clusters row per role in this sync, with its live posting count. */
+function clusterRows(jobs: Job[]) {
+  const byKey = new Map<string, { cluster_key: string; country: string | null; company_normalized: string; title_normalized: string; locality: string | null; posting_count: number }>()
+  for (const job of jobs) {
+    const cluster = clusterOf(job)
+    if (!cluster) continue
+    const row = byKey.get(cluster.key)
+    if (row) row.posting_count += 1
+    else byKey.set(cluster.key, {
+      cluster_key: cluster.key,
+      country: cluster.country || null,
+      company_normalized: cluster.company,
+      title_normalized: cluster.title,
+      locality: cluster.locality || null,
+      posting_count: 1,
+    })
+  }
+  return [...byKey.values()]
+}
+
+// first_seen_at and reason_codes are kept: a cluster outlives the postings of
+// one sync, and its history is what repost detection reads.
+const CLUSTER_UPSERT_SQL = (name: string) => `
+  INSERT INTO ${name}.job_clusters (
+    cluster_key, country, company_normalized, title_normalized, locality, posting_count, last_seen_at
+  )
+  SELECT input.cluster_key, input.country, input.company_normalized, input.title_normalized,
+         input.locality, input.posting_count, NOW()
+  FROM jsonb_to_recordset($1::jsonb) AS input (
+    cluster_key TEXT, country TEXT, company_normalized TEXT, title_normalized TEXT,
+    locality TEXT, posting_count INTEGER
+  )
+  ON CONFLICT (cluster_key) DO UPDATE SET
+    country = EXCLUDED.country, company_normalized = EXCLUDED.company_normalized,
+    title_normalized = EXCLUDED.title_normalized, locality = EXCLUDED.locality,
+    posting_count = EXCLUDED.posting_count, last_seen_at = NOW()
+`
 
 const UPSERT_SQL = (name: string) => `
   INSERT INTO ${name}.vacancies (
@@ -131,7 +177,7 @@ const UPSERT_SQL = (name: string) => `
     country, city, posted_at, active, remote, work_mode, relocation,
     employment_kind, salary_usd, experience_min_years, foreigner_friendly,
     usa_foreigner_friendly, no_experience, risk_category, profession,
-    languages, language_keys, skills, search_text, sync_token, data, updated_at
+    languages, language_keys, skills, search_text, sync_token, cluster_key, data, updated_at
   )
   SELECT
     input.identity_key, input.source, input.source_id, input.public_id,
@@ -141,7 +187,7 @@ const UPSERT_SQL = (name: string) => `
     input.foreigner_friendly, input.usa_foreigner_friendly,
     input.no_experience, input.risk_category, input.profession,
     input.languages, input.language_keys, input.skills, input.search_text, input.sync_token,
-    input.data, NOW()
+    input.cluster_key, input.data, NOW()
   FROM jsonb_to_recordset($1::jsonb) AS input (
     identity_key TEXT, source TEXT, source_id TEXT, public_id BIGINT,
     title TEXT, company TEXT, location TEXT, country TEXT, city TEXT,
@@ -150,7 +196,7 @@ const UPSERT_SQL = (name: string) => `
     experience_min_years DOUBLE PRECISION, foreigner_friendly BOOLEAN,
     usa_foreigner_friendly BOOLEAN, no_experience BOOLEAN,
     risk_category TEXT, profession TEXT, languages JSONB,
-    language_keys TEXT[], skills TEXT[], search_text TEXT, sync_token TEXT, data JSONB
+    language_keys TEXT[], skills TEXT[], search_text TEXT, sync_token TEXT, cluster_key TEXT, data JSONB
   )
   ON CONFLICT (identity_key) DO UPDATE SET
     source = EXCLUDED.source, source_id = EXCLUDED.source_id,
@@ -168,7 +214,7 @@ const UPSERT_SQL = (name: string) => `
     risk_category = EXCLUDED.risk_category, profession = EXCLUDED.profession,
     languages = EXCLUDED.languages, language_keys = EXCLUDED.language_keys,
     skills = EXCLUDED.skills, sync_token = EXCLUDED.sync_token,
-    search_text = EXCLUDED.search_text,
+    search_text = EXCLUDED.search_text, cluster_key = EXCLUDED.cluster_key,
     data = EXCLUDED.data, updated_at = NOW()
 `
 
@@ -180,6 +226,12 @@ export async function syncJobsDb(jobs: Job[]): Promise<number> {
   const client = await db().connect()
   try {
     await client.query('BEGIN')
+    // Clusters first: a vacancy's cluster_key refers to a job_clusters row
+    // that the employer queries join on.
+    const clusters = clusterRows(jobs)
+    for (let offset = 0; offset < clusters.length; offset += UPSERT_BATCH) {
+      await client.query(CLUSTER_UPSERT_SQL(schema()), [JSON.stringify(clusters.slice(offset, offset + UPSERT_BATCH))])
+    }
     for (let offset = 0; offset < rows.length; offset += UPSERT_BATCH) {
       await client.query(UPSERT_SQL(schema()), [JSON.stringify(rows.slice(offset, offset + UPSERT_BATCH))])
     }

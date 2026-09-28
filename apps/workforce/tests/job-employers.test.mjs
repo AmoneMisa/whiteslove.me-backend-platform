@@ -85,3 +85,23 @@ test('the aggregate has indexes that match its predicates', async () => {
   assert.match(migration, /ON \{\{schema\}\}\.vacancies \(country, cluster_key\)\s+WHERE active = TRUE AND cluster_key IS NOT NULL/u)
   assert.match(migration, /ON \{\{schema\}\}\.job_clusters \(company_normalized, country\)/u)
 })
+
+test('the vacancy sync writes the clusters employer collections read', async () => {
+  // Without this nothing ever set cluster_key or filled job_clusters, so every
+  // employer list and page was empty in production.
+  const runtime = await read('server/jobs/infrastructure/database.ts')
+  assert.match(runtime, /cluster_key: clusterOf\(job\)\?\.key \?\? null,/u)
+  assert.match(runtime, /search_text = EXCLUDED\.search_text, cluster_key = EXCLUDED\.cluster_key,/u)
+  assert.match(runtime, /INSERT INTO \$\{name\}\.job_clusters \(/u)
+  // Clusters go in before the vacancies that refer to them.
+  assert.ok(runtime.indexOf('CLUSTER_UPSERT_SQL(schema())') < runtime.indexOf('UPSERT_SQL(schema()), [JSON.stringify(rows'))
+})
+
+test('the stored cluster parts are the ones the key hashes', async () => {
+  const { jobClusterIdentity, jobClusterKey } = await import('../shared/hiring/jobCluster.ts')
+  const job = { company: 'ACME, LLC.', title: 'Senior Backend Engineer (Remote)', city: 'Tashkent', country: 'uz' }
+  const identity = jobClusterIdentity(job)
+  assert.equal(identity.key, jobClusterKey(job))
+  assert.deepEqual({ ...identity, key: undefined }, { key: undefined, country: 'UZ', company: 'acme', title: 'backend engineer', locality: 'tashkent' })
+  assert.equal(jobClusterIdentity({ company: '', title: 'x' }), null)
+})

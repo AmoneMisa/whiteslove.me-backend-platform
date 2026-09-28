@@ -72,12 +72,26 @@ export function normalizeTitle(value: unknown): string {
  * make repost detection impossible, since every repost would look new.
  */
 export function jobClusterKey(job: JobClusterInput): string | null {
+  return jobClusterIdentity(job)?.key ?? null
+}
+
+export type JobClusterIdentity = {
+  key: string
+  country: string
+  company: string
+  title: string
+  locality: string
+}
+
+/** The cluster key together with the normalised parts it hashes, which the
+ * job_clusters row stores so a cluster can be found by company. */
+export function jobClusterIdentity(job: JobClusterInput): JobClusterIdentity | null {
   const company = normalizeCompany(job.company)
   const title = normalizeTitle(job.title)
   if (!company || !title) return null
   const locality = String(job.city ?? job.location ?? '').normalize('NFKC').toLocaleLowerCase('en-US').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()
   const country = String(job.country ?? '').toUpperCase()
-  return sha256([country, company, title, locality].join('\u0000'))
+  return { key: sha256([country, company, title, locality].join('\u0000')), country, company, title, locality }
 }
 
 /** Registrable-ish domain of a URL, or null when it is not a usable URL. */
