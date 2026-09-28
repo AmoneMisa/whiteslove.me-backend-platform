@@ -105,9 +105,16 @@ function isVacancy(job: Job): boolean {
   return !job.hiringKind || !NON_VACANCY_KINDS.has(job.hiringKind)
 }
 
-function reachedJobDateBoundary(jobs: Job[]): boolean {
+/**
+ * A page is past the boundary only when every posting on it is older than the
+ * window. Boards pin promoted or featured ads at the top regardless of age:
+ * with "any posting is older", one pinned August ad on page 1 of arbeitnow
+ * ended the whole crawl at page 1. Waiting for a fully stale page costs at
+ * most one extra page. Undated postings never prove the boundary.
+ */
+export function reachedJobDateBoundary(jobs: Job[]): boolean {
   const cutoff = Date.now() - JOB_MAX_AGE_DAYS * 86_400_000
-  return jobs.some((job) => {
+  return jobs.length > 0 && jobs.every((job) => {
     const postedAt = Date.parse(job.postedAt)
     return Number.isFinite(postedAt) && postedAt < cutoff
   })

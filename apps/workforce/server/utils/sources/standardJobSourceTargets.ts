@@ -445,28 +445,86 @@ function normalizeSchemaPosting(
   }
 }
 
-async function fetchUzbekBoardTarget(source: UzbekBoardSource): Promise<Job[]> {
-  const config = UZBEK_BOARDS[source]
-  const listing = await fetchText(config.listingUrl)
-  const summaries: Job[] = extractUzbekBoardLinks(listing, config).map((link) => ({
-    id: `${source}-${new URL(link.url).pathname.split('/').filter(Boolean).pop() || link.url}`,
-    title: link.localizedTitle || config.label,
+// ishGO's listing page renders only its first 20 vacancies server-side;
+// further pages come from its public Jmix REST API, which the site itself
+// calls. `?page=N` on the HTML answers an empty list, so reading the HTML
+// stopped at 20 of ~430 active vacancies.
+const ISHGO_SEARCH_URL = 'https://api.ishgo.uz/api/rest/entities/Vacancy/search'
+// Upstream request size only; traversal depth is decided by the crawler.
+const ISHGO_REQUEST_SIZE = 50
+
+function uzbekBoardSummary(config: UzbekBoardConfig, url: string, title?: string, postedAt?: string): Job {
+  return {
+    id: `${config.source}-${new URL(url).pathname.split('/').filter(Boolean).pop() || url}`,
+    title: title || config.label,
     company: config.label,
     location: 'Uzbekistan',
-    url: link.url,
-    source,
+    url,
+    source: config.source,
     remote: false,
     tags: [config.label],
-    postedAt: new Date().toISOString(),
-  }))
+    postedAt: postedAt || new Date().toISOString(),
+  }
+}
+
+function fetchUzbekBoardPage(config: UzbekBoardConfig, page: number): Promise<string> {
+  if (config.source === 'ishgo') {
+    return fetchText(ISHGO_SEARCH_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filter: { conditions: [{ property: 'status', operator: '=', value: 'ACTIVE' }] },
+        limit: ISHGO_REQUEST_SIZE,
+        offset: (page - 1) * ISHGO_REQUEST_SIZE,
+        // Newest first, so the crawler's date boundary ends the traversal.
+        sort: '-createdDate',
+        fetchPlan: '_base',
+      }),
+    })
+  }
+  return fetchText(page === 1 ? config.listingUrl : `${config.listingUrl}?page=${page}`)
+}
+
+function parseUzbekBoardPage(raw: string, config: UzbekBoardConfig): Job[] {
+  if (config.source === 'ishgo') {
+    const rows = JSON.parse(raw)
+    if (!Array.isArray(rows)) return []
+    return rows.flatMap((row: any) => {
+      const code = String(row?.code || '').trim()
+      if (!/^[A-Za-z0-9_-]+$/.test(code)) return []
+      // The detail page resolves by code alone; the slug the HTML used is cosmetic.
+      const created = Date.parse(String(row.createdDate || ''))
+      return [uzbekBoardSummary(
+        config,
+        `https://ishgo.uz${config.detailPrefix}${code}`,
+        row.name ? stripHtml(row.name) : undefined,
+        Number.isFinite(created) ? new Date(created).toISOString() : undefined,
+      )]
+    })
+  }
+  return extractUzbekBoardLinks(raw, config).map((link) => uzbekBoardSummary(config, link.url, link.localizedTitle))
+}
+
+async function fetchUzbekBoardTarget(source: UzbekBoardSource): Promise<Job[]> {
+  const config = UZBEK_BOARDS[source]
+  const run = await crawlStandardJobBoard({
+    key: `source:${source}`,
+    fetchPage: (page) => fetchUzbekBoardPage(config, page),
+    parsePage: (raw) => parseUzbekBoardPage(raw, config),
+  })
 
   return enrichStandardJobBoardDetails({
     key: `source:${source}`,
-    jobs: summaries,
+    jobs: run.jobs,
     fetchDetail: (job) => fetchText(job.url),
     parseDetail: (html, summary) => {
       const posting = extractJobPosting(html)
-      return posting ? normalizeSchemaPosting(posting, summary, config, html) : summary
+      if (posting) return normalizeSchemaPosting(posting, summary, config, html)
+      // Without the page's JobPosting the summary is all there is. ishGO's
+      // carries the API's real title and creation date; IT-Jobs.uz's has
+      // neither (its date would be "now"), so keeping it would present an
+      // undated, untitled posting as fresh.
+      return config.source === 'ishgo' ? summary : null
     },
   })
 }

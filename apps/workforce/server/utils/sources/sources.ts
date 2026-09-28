@@ -4,6 +4,7 @@
 import { XMLParser } from 'fast-xml-parser'
 import type { Job } from '~~/shared/contracts/jobs'
 import { detectWorkModes } from '../hiring/hiringLexicon'
+import { crawlStandardJobBoard } from './cyclicJobBoardCrawler'
 
 const UA = 'jobFinder/1.0 (job aggregator; contact: admin@whiteslove.me)'
 
@@ -84,9 +85,21 @@ export async function fetchRemoteOk(_q: string): Promise<Job[]> {
     }))
 }
 
-// Complete current-result API: no adapter-level pagination or fan-out.
+// The API is paged (`?page=N`, newest first, a few hundred postings a day);
+// reading only its first page kept ~250 of the thousands inside the 14-day
+// window. Traversal belongs to the shared crawler, which stops at the date
+// boundary or when the API runs out.
 export async function fetchArbeitnow(_q: string): Promise<Job[]> {
-  const data = await fetchJson<{ data?: any[] }>('https://www.arbeitnow.com/api/job-board-api')
+  const run = await crawlStandardJobBoard({
+    key: 'source:arbeitnow',
+    fetchPage: (page) => fetchText(`https://www.arbeitnow.com/api/job-board-api?page=${page}`),
+    parsePage: (raw) => parseArbeitnowPage(raw),
+  })
+  return run.jobs
+}
+
+function parseArbeitnowPage(raw: string): Job[] {
+  const data = JSON.parse(raw) as { data?: any[] }
   return (data.data || []).map((job) => {
     const tags = Array.isArray(job.tags) ? job.tags : job.tags ? [job.tags] : []
     const jobTypes = Array.isArray(job.job_types) ? job.job_types : job.job_types ? [job.job_types] : []
