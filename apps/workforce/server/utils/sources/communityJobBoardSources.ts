@@ -107,7 +107,6 @@ export const COMMUNITY_JOB_BOARDS: CommunityBoard[] = [
   { key: 'pangian', label: 'Pangian', url: 'https://pangian.com/job-travel-remote/', remoteByDefault: true },
   { key: 'rocketship', label: 'Rocketship Jobs', url: 'https://www.rocketshipjobs.com/', remoteByDefault: true },
   { key: 'jobgether', label: 'Jobgether', url: 'https://jobgether.com/remote-jobs', remoteByDefault: true },
-  { key: 'wantapply', label: 'Wantapply', url: 'https://wantapply.io/', remoteByDefault: true },
   { key: 'otta', label: 'Otta', url: 'https://app.otta.com/jobs', remoteByDefault: true },
   { key: 'powertofly', label: 'PowerToFly', url: 'https://powertofly.com/jobs/', remoteByDefault: true },
   { key: 'remotewoman', label: 'RemoteWoman', url: 'https://remotewoman.com/', remoteByDefault: true },

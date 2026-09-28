@@ -138,6 +138,16 @@ DEFAULT_ALLOWED_HOSTS = {
     "neworbit.space",
     "job-boards.greenhouse.io",
     "himalayas.app",
+    # Community boards the vacancy worker falls back to the browser for
+    # (jobs-worker/worker.ts, communityJobBoardHosts()) but that were missing
+    # here, so every fallback was refused with "URL host is not allowed" and
+    # the board was never actually retried. Keep both lists in step.
+    "app.otta.com",
+    "arbihunter.com",
+    "getmatch.ru",
+    "powertofly.com",
+    "remotewoman.com",
+    "work-zilla.com",
 }
 EXTRA_ALLOWED_HOSTS = {
     value.strip().lower().removeprefix("www.")

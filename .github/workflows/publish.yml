@@ -181,13 +181,15 @@ jobs:
         run: |
           services=()
           if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
-            services+=(flats-migrate flats-api flats-worker flats-olx-fetcher flats-olx-fetcher-ua housing-browser-fetcher ai-worker social-fetcher workforce-queue-migrate vacancies-migrate vacancies-api vacancies-worker cv-migrate cv-api cv-worker subscriptions-migrate subscription-bot platform-elasticsearch)
+            services+=(flats-migrate flats-api flats-worker flats-olx-fetcher flats-olx-fetcher-ua housing-browser-fetcher ai-worker social-fetcher workforce-queue-migrate vacancies-migrate vacancies-api vacancies-worker job-browser-fetcher cv-migrate cv-api cv-worker subscriptions-migrate subscription-bot platform-elasticsearch)
           else
             [[ "${{ needs.changes.outputs.ai }}" == "true" ]] && services+=(ai-worker)
             [[ "${{ needs.changes.outputs.flats }}" == "true" ]] && services+=(flats-migrate flats-api flats-worker flats-olx-fetcher flats-olx-fetcher-ua housing-browser-fetcher)
             [[ "${{ needs.changes.outputs.social }}" == "true" ]] && services+=(social-fetcher)
             if [[ "${{ needs.changes.outputs.vacancies }}" == "true" || "${{ needs.changes.outputs.crawler_core }}" == "true" || "${{ needs.changes.outputs.workforce_shared }}" == "true" ]]; then
-              services+=(workforce-queue-migrate vacancies-migrate vacancies-api vacancies-worker)
+              # job-browser-fetcher belongs to the vacancies change set (see the
+              # filter above) but was never recreated, so its fixes never went live.
+              services+=(workforce-queue-migrate vacancies-migrate vacancies-api vacancies-worker job-browser-fetcher)
             fi
             if [[ "${{ needs.changes.outputs.cv }}" == "true" || "${{ needs.changes.outputs.workforce_shared }}" == "true" ]]; then
               services+=(workforce-queue-migrate cv-migrate cv-api cv-worker)
