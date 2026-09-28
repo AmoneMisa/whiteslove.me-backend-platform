@@ -9,6 +9,7 @@ const originalStateDir = process.env.SITE_STATE_DIR
 process.env.SITE_STATE_DIR = stateDir
 const {
   configuredHhJobTargets,
+  publicationSlices,
   fetchHhJobTarget,
   mapHhVacancy,
 } = await import('../server/utils/sources/hhJobSource.ts')
@@ -74,8 +75,17 @@ test('HH exposes each configured area as its own shared-crawler queue target', a
     assert.deepEqual(configuredHhJobTargets(), ['hh-job-source:uz:area-2759'])
     const jobs = await fetchHhJobTarget('hh-job-source:uz:area-2759')
     assert.deepEqual(jobs.map((job) => job.id), ['hh-1', 'hh-2'])
-    assert.equal(calls.length, 3)
-    assert.deepEqual(calls.map(({ url }) => url.searchParams.get('page')), ['0', '1', '2'])
+    // One search per publication window (hh.ru answers at most 2,000 results
+    // per search), each crawled to its natural end: pages 0, 1 and the
+    // repeated page 2 that ends it.
+    const slices = publicationSlices()
+    assert.equal(calls.length, slices.length * 3)
+    assert.deepEqual(calls.slice(0, 3).map(({ url }) => url.searchParams.get('page')), ['0', '1', '2'])
+    // The newest and oldest edges move with the clock; the aligned half-days
+    // between them must match exactly.
+    const searched = [...new Set(calls.map(({ url }) => `${url.searchParams.get('date_from')}|${url.searchParams.get('date_to')}`))]
+    assert.equal(searched.length, slices.length)
+    assert.deepEqual(searched.slice(1, -1), slices.slice(1, -1).map((slice) => `${slice.from}|${slice.to}`))
     assert.equal(calls[0].url.searchParams.get('host'), 'hh.uz')
     assert.equal(calls[0].url.searchParams.get('area'), '2759')
     assert.equal(calls[0].url.searchParams.get('per_page'), '100')
@@ -107,5 +117,18 @@ test('without hh.ru credentials the source is off rather than failing every task
     for (const [k, v] of [['HH_APP_TOKEN', saved.t], ['HH_CLIENT_ID', saved.i], ['HH_CLIENT_SECRET', saved.s]]) {
       if (v === undefined) delete process.env[k]; else process.env[k] = v
     }
+  }
+})
+
+test('publication windows cover the last 14 days without gaps, 12 hours at most each', () => {
+  const now = Date.parse('2026-09-28T15:20:00Z')
+  const slices = publicationSlices(now)
+  assert.equal(slices[0].to, new Date(now).toISOString())
+  assert.equal(slices[0].from, '2026-09-28T12:00:00.000Z')
+  assert.equal(slices.at(-1).from, new Date(now - 14 * 86_400_000).toISOString())
+  for (let i = 0; i < slices.length; i += 1) {
+    const span = Date.parse(slices[i].to) - Date.parse(slices[i].from)
+    assert.ok(span > 0 && span <= 12 * 3_600_000, `slice ${i}`)
+    if (i > 0) assert.equal(slices[i].to, slices[i - 1].from, `gap before slice ${i}`)
   }
 })

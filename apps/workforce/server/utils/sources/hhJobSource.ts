@@ -71,8 +71,34 @@ export function configuredHhAreas(): HhTarget[] {
   return targets
 }
 
-function dateFrom(): string {
-  return new Date(Date.now() - 14 * 86_400_000).toISOString()
+const WINDOW_DAYS = 14
+// hh.ru answers at most 2,000 results per search (page * per_page < 2000);
+// asking for more pages returns 400. Kazakhstan alone publishes ~23,000
+// vacancies in 14 days, so one search per country reached under a tenth of
+// them. Searching publication-time windows keeps each under the limit: at
+// ~1,700 a day at the busiest area, a 12-hour window holds ~850. This is the
+// shape hh.ru's API requires, not a crawl cap -- every window is crawled to
+// its natural end, and the 14-day window is the date boundary.
+const SLICE_HOURS = 12
+
+interface PublicationSlice {
+  from: string
+  to: string
+}
+
+/** Newest first, aligned to UTC half-days so a slice's key names the same
+ * time range on every run and a resumed cursor belongs to that range. */
+export function publicationSlices(now = Date.now()): PublicationSlice[] {
+  const sliceMs = SLICE_HOURS * 3_600_000
+  const oldest = now - WINDOW_DAYS * 86_400_000
+  const slices: PublicationSlice[] = []
+  for (let start = Math.floor(now / sliceMs) * sliceMs; start + sliceMs > oldest; start -= sliceMs) {
+    slices.push({
+      from: new Date(Math.max(start, oldest)).toISOString(),
+      to: new Date(Math.min(start + sliceMs, now)).toISOString(),
+    })
+  }
+  return slices
 }
 
 function isRemote(item: HhVacancy): boolean {
@@ -122,7 +148,7 @@ export function mapHhVacancy(item: HhVacancy, target: HhTarget = STANDARD_TARGET
   }
 }
 
-async function fetchPage(target: HhTarget, crawlerPage: number): Promise<string> {
+async function fetchPage(target: HhTarget, crawlerPage: number, slice: PublicationSlice): Promise<string> {
   const params = new URLSearchParams({
     host: target.host,
     area: target.area,
@@ -131,7 +157,8 @@ async function fetchPage(target: HhTarget, crawlerPage: number): Promise<string>
     // not a source-local run/item cap; traversal belongs to the shared crawler.
     per_page: '100',
     order_by: 'publication_time',
-    date_from: dateFrom(),
+    date_from: slice.from,
+    date_to: slice.to,
   })
   const query = String(process.env.HH_JOB_QUERY || '').trim()
   if (query) params.set('text', query)
@@ -183,10 +210,14 @@ export async function fetchHhJobTarget(target: string): Promise<Job[]> {
   const config = configuredHhAreas().find((candidate) => targetKey(candidate) === key)
   if (!config) throw new Error(`Unknown HH job target ${target}`)
 
-  const run = await crawlStandardJobBoard({
-    key: `hh:${targetKey(config)}`,
-    fetchPage: (page) => fetchPage(config, page),
-    parsePage: (raw) => parsePage(raw, config),
-  })
-  return run.jobs
+  const jobs = new Map<string, Job>()
+  for (const slice of publicationSlices()) {
+    const run = await crawlStandardJobBoard({
+      key: `hh:${targetKey(config)}:${slice.from}`,
+      fetchPage: (page) => fetchPage(config, page, slice),
+      parsePage: (raw) => parsePage(raw, config),
+    })
+    for (const job of run.jobs) jobs.set(job.id, job)
+  }
+  return [...jobs.values()]
 }
