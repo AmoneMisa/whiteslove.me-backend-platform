@@ -12,6 +12,12 @@ const JOBS_INDEX =
     || 'job-listings-v1'
 
 const REQUEST_TIMEOUT_MS = 15_000
+// Writes over the whole index outlast a search: a 500-document bulk batch of
+// full vacancies, and the delete-by-query sweep with refresh over ~15k
+// documents, took longer than 15 s and aborted every snapshot sync, leaving
+// removed vacancies in search. They get their own, longer deadline.
+const BULK_TIMEOUT_MS = 60_000
+const SWEEP_TIMEOUT_MS = 180_000
 const BULK_SIZE = 500
 
 function searchableText() {
@@ -214,6 +220,7 @@ function indexDefinition() {
 async function request(
     path: string,
     options: RequestInit = {},
+    timeoutMs = REQUEST_TIMEOUT_MS,
 ) {
     const response =
         await fetch(
@@ -223,7 +230,7 @@ async function request(
 
                 signal:
                     AbortSignal.timeout(
-                        REQUEST_TIMEOUT_MS,
+                        timeoutMs,
                     ),
             },
         )
@@ -494,6 +501,7 @@ async function bulkIndex(
                 body:
                     `${lines.join('\n')}\n`,
             },
+            BULK_TIMEOUT_MS,
         )
 
     if (result?.errors) {
@@ -594,6 +602,7 @@ export async function syncJobsSearchIndex(
                     },
                 }),
         },
+        SWEEP_TIMEOUT_MS,
     )
 
     console.log(

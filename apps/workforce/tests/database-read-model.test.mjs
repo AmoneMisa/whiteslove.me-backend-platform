@@ -106,3 +106,15 @@ test('candidate reads use the indexed PostgreSQL read model and database analyti
   assert.match(hiringFeed, /await queryDbCandidates\(params, offset, limit\)/)
   assert.match(hiringFeed, /engine: 'postgresql'/)
 })
+
+test('AI results and index writes do not stall the source queue', async () => {
+  const refresh = await readFile(new URL('../server/vacancies/application/jobsSourceRefresh.ts', import.meta.url), 'utf8')
+  // One store rewrite per batch of AI results, not one per vacancy.
+  assert.match(refresh, /aiPersistBatch \?\?= new Promise<void>/)
+  assert.match(refresh, /async function storeAiEnrichedJobs\(jobs: StoredJob\[\]\)/)
+  assert.doesNotMatch(refresh, /async function storeAiEnrichedJob\(job/)
+  const elastic = await readFile(new URL('../server/vacancies/infrastructure/jobsElastic.ts', import.meta.url), 'utf8')
+  // Whole-index writes get longer deadlines than the 15 s search timeout.
+  assert.match(elastic, /BULK_TIMEOUT_MS,\n\s+\)/)
+  assert.match(elastic, /SWEEP_TIMEOUT_MS,\n\s+\)/)
+})

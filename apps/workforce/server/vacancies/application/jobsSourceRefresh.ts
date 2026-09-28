@@ -356,26 +356,49 @@ async function mergeFetchedSource(source: JobSource, jobs: Job[]) {
   return { source, fetched: jobs.length, stored: kept.length }
 }
 
-/** Writes one AI-enriched vacancy back into the store, search index and DB. */
-async function persistAiEnrichedJob(job: StoredJob) {
-  const operation = mergeLock.then(
-    () => storeAiEnrichedJob(job),
-    () => storeAiEnrichedJob(job),
-  )
-  mergeLock = operation.catch(() => {})
-  await operation
+/**
+ * AI-enriched vacancies go back into the store in batches. The store is one
+ * ~100 MB JSON snapshot, so writing each result on its own meant a full
+ * read-parse-serialise-write per vacancy -- about a dozen after every source,
+ * each under the merge lock the next source waits on. Results now collect
+ * for up to AI_PERSIST_BATCH_MS and land in one rewrite; each caller's
+ * promise resolves once its batch is written.
+ */
+const AI_PERSIST_BATCH_MS = 15_000
+const pendingAiJobs = new Map<string, StoredJob>()
+let aiPersistBatch: Promise<void> | null = null
+
+function persistAiEnrichedJob(job: StoredJob): Promise<void> {
+  pendingAiJobs.set(dedupKey(job), job)
+  aiPersistBatch ??= new Promise<void>((resolve) => setTimeout(resolve, AI_PERSIST_BATCH_MS)).then(() => {
+    aiPersistBatch = null
+    const batch = [...pendingAiJobs.values()]
+    pendingAiJobs.clear()
+    const operation = mergeLock.then(
+      () => storeAiEnrichedJobs(batch),
+      () => storeAiEnrichedJobs(batch),
+    )
+    mergeLock = operation.catch(() => {})
+    return operation
+  })
+  return aiPersistBatch
 }
 
-async function storeAiEnrichedJob(job: StoredJob) {
+async function storeAiEnrichedJobs(jobs: StoredJob[]) {
+  if (!jobs.length) return
   try {
     const store = useStateStore()
     const raw = await store.get(STORE_KEY)
     const stored = raw ? JSON.parse(raw) as StoredJob[] : []
-    const key = dedupKey(job)
-    const index = stored.findIndex((item) => dedupKey(item) === key)
-    if (index < 0) return
-
-    stored[index] = { ...job, lastSeen: stored[index]!.lastSeen }
+    const indexByKey = new Map(stored.map((item, index) => [dedupKey(item), index]))
+    let applied = 0
+    for (const job of jobs) {
+      const index = indexByKey.get(dedupKey(job))
+      if (index === undefined) continue
+      stored[index] = { ...job, lastSeen: stored[index]!.lastSeen }
+      applied += 1
+    }
+    if (!applied) return
     await store.set(STORE_KEY, JSON.stringify(stored), 'EX', STORE_TTL_SECONDS)
     scheduleSnapshotSync()
   } catch (error) {
