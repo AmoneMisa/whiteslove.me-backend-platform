@@ -25,13 +25,14 @@ export type RemoteBoard = {
 }
 
 export const CURATED_REMOTE_BOARDS: RemoteBoard[] = [
-  {
-    key: 'remote-co',
-    label: 'Remote.co',
-    listUrl: 'https://remote.co/remote-jobs',
-    remoteByDefault: true,
-    detailPath: (url) => /^\/job-details\/[a-z0-9-]+\/?$/i.test(url.pathname),
-  },
+  // Disabled 2026-09-28: blocks this server's address (also through job-browser-fetcher).
+  // {
+  //   key: 'remote-co',
+  //   label: 'Remote.co',
+  //   listUrl: 'https://remote.co/remote-jobs',
+  //   remoteByDefault: true,
+  //   detailPath: (url) => /^\/job-details\/[a-z0-9-]+\/?$/i.test(url.pathname),
+  // },
   {
     key: 'flexjobs',
     label: 'FlexJobs',
@@ -46,13 +47,14 @@ export const CURATED_REMOTE_BOARDS: RemoteBoard[] = [
     remoteByDefault: false,
     detailPath: (url) => /^\/job\/[a-z0-9_-]+\/?$/i.test(url.pathname),
   },
-  {
-    key: 'wellfound',
-    label: 'Wellfound',
-    listUrl: 'https://wellfound.com/jobs',
-    remoteByDefault: false,
-    detailPath: (url) => /^\/jobs\/\d+-[^/]+\/?$/i.test(url.pathname),
-  },
+  // Disabled 2026-09-28: bot challenge even through job-browser-fetcher; needs an official feed/API.
+  // {
+  //   key: 'wellfound',
+  //   label: 'Wellfound',
+  //   listUrl: 'https://wellfound.com/jobs',
+  //   remoteByDefault: false,
+  //   detailPath: (url) => /^\/jobs\/\d+-[^/]+\/?$/i.test(url.pathname),
+  // },
   {
     key: 'working-nomads',
     label: 'Working Nomads',

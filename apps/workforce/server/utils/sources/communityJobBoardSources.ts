@@ -82,22 +82,28 @@ export const COMMUNITY_JOB_BOARDS: CommunityBoard[] = [
 
   // General boards
   { key: 'indeed', label: 'Indeed', url: 'https://www.indeed.com/jobs', pageUrl: (page) => offsetPage('https://www.indeed.com/jobs', page, 'start', 10) },
-  { key: 'glassdoor', label: 'Glassdoor', url: 'https://www.glassdoor.com/Job/jobs.htm' },
+  // Disabled 2026-09-28: bot challenge even through job-browser-fetcher; needs an official feed/API.
+  // { key: 'glassdoor', label: 'Glassdoor', url: 'https://www.glassdoor.com/Job/jobs.htm' },
   { key: 'careerjet', label: 'Careerjet', url: 'https://www.careerjet.com/jobs' },
-  { key: 'ziprecruiter', label: 'ZipRecruiter', url: 'https://www.ziprecruiter.com/jobs-search' },
-  { key: 'monster', label: 'Monster', url: 'https://www.monster.com/jobs/search' },
+  // Disabled 2026-09-28: bot challenge even through job-browser-fetcher; needs an official feed/API.
+  // { key: 'ziprecruiter', label: 'ZipRecruiter', url: 'https://www.ziprecruiter.com/jobs-search' },
+  // Disabled 2026-09-28: blocks this server's address (also through job-browser-fetcher).
+  // { key: 'monster', label: 'Monster', url: 'https://www.monster.com/jobs/search' },
   { key: 'talent-com', label: 'Talent.com', url: 'https://www.talent.com/jobs' },
-  { key: 'careerbuilder', label: 'CareerBuilder', url: 'https://www.careerbuilder.com/jobs' },
+  // Disabled 2026-09-28: blocks this server's address (also through job-browser-fetcher).
+  // { key: 'careerbuilder', label: 'CareerBuilder', url: 'https://www.careerbuilder.com/jobs' },
   { key: 'jora', label: 'Jora', url: 'https://www.jora.com/jobs' },
   { key: 'jobisjob', label: 'JobisJob', url: 'https://www.jobisjob.com/' },
   { key: 'getwork', label: 'Getwork', url: 'https://www.getwork.com/jobs' },
-  { key: 'lensa', label: 'Lensa', url: 'https://lensa.com/jobs' },
+  // Disabled 2026-09-28: listings now load via JavaScript; category pages carry no postings.
+  // { key: 'lensa', label: 'Lensa', url: 'https://lensa.com/jobs' },
 
   // Remote-first boards
   { key: 'we-work-remotely', label: 'We Work Remotely', url: 'https://weworkremotely.com/', remoteByDefault: true },
   { key: 'dynamite-jobs', label: 'Dynamite Jobs', url: 'https://dynamitejobs.com/', remoteByDefault: true },
   { key: 'justremote', label: 'JustRemote', url: 'https://justremote.co/remote-jobs', remoteByDefault: true },
-  { key: 'remotehub', label: 'RemoteHub', url: 'https://www.remotehub.com/jobs', remoteByDefault: true },
+  // Disabled 2026-09-28: blocks this server's address (also through job-browser-fetcher).
+  // { key: 'remotehub', label: 'RemoteHub', url: 'https://www.remotehub.com/jobs', remoteByDefault: true },
   { key: 'remote4me', label: 'Remote4Me', url: 'https://remote4.me/', remoteByDefault: true },
   { key: 'dailyremote', label: 'DailyRemote', url: 'https://dailyremote.com/', remoteByDefault: true },
   { key: 'remote-com', label: 'Remote', url: 'https://remote.com/jobs', remoteByDefault: true },
@@ -127,8 +133,10 @@ export const COMMUNITY_JOB_BOARDS: CommunityBoard[] = [
   { key: 'ai-jobs', label: 'AI Jobs', url: 'https://aijobs.net/' },
 
   // Freelance / project marketplaces
-  { key: 'upwork', label: 'Upwork', url: 'https://www.upwork.com/nx/search/jobs/' },
-  { key: 'fiverr', label: 'Fiverr', url: 'https://www.fiverr.com/categories/programming-tech' },
+  // Disabled 2026-09-28: bot challenge even through job-browser-fetcher; needs an official feed/API.
+  // { key: 'upwork', label: 'Upwork', url: 'https://www.upwork.com/nx/search/jobs/' },
+  // Disabled 2026-09-28: bot challenge even through job-browser-fetcher; needs an official feed/API.
+  // { key: 'fiverr', label: 'Fiverr', url: 'https://www.fiverr.com/categories/programming-tech' },
   { key: 'freelancer', label: 'Freelancer', url: 'https://www.freelancer.com/jobs/' },
   { key: 'toptal', label: 'Toptal', url: 'https://www.toptal.com/talent/apply' },
   { key: 'braintrust', label: 'Braintrust', url: 'https://app.usebraintrust.com/jobs/' },
@@ -144,7 +152,8 @@ export const COMMUNITY_JOB_BOARDS: CommunityBoard[] = [
 
   // Design / creative
   { key: 'dribbble', label: 'Dribbble Jobs', url: 'https://dribbble.com/jobs' },
-  { key: 'behance', label: 'Behance Jobs', url: 'https://www.behance.net/joblist' },
+  // Disabled 2026-09-28: blocks this server's address (also through job-browser-fetcher).
+  // { key: 'behance', label: 'Behance Jobs', url: 'https://www.behance.net/joblist' },
   { key: 'krop', label: 'Krop', url: 'https://www.krop.com/creative-jobs/' },
   { key: 'coroflot', label: 'Coroflot', url: 'https://www.coroflot.com/design-jobs' },
   { key: 'design-jobs-board', label: 'Design Jobs Board', url: 'https://www.designjobsboard.com/' },
@@ -157,12 +166,14 @@ export const COMMUNITY_JOB_BOARDS: CommunityBoard[] = [
   { key: 'contena', label: 'Contena', url: 'https://contena.co/' },
   { key: 'bloggingpro', label: 'BloggingPro', url: 'https://www.bloggingpro.com/jobs/' },
   { key: 'writeraccess', label: 'WriterAccess', url: 'https://www.writeraccess.com/apply/' },
-  { key: 'clearvoice', label: 'ClearVoice', url: 'https://www.clearvoice.com/talent-network/' },
+  // Disabled 2026-09-28: bot challenge even through job-browser-fetcher; needs an official feed/API.
+  // { key: 'clearvoice', label: 'ClearVoice', url: 'https://www.clearvoice.com/talent-network/' },
   { key: 'marketerhire', label: 'MarketerHire', url: 'https://marketerhire.com/marketers' },
   { key: 'mediabistro', label: 'Mediabistro', url: 'https://www.mediabistro.com/jobs/' },
 
   // Translation / teaching
-  { key: 'proz', label: 'ProZ', url: 'https://www.proz.com/translation-jobs' },
+  // Disabled 2026-09-28: bot challenge even through job-browser-fetcher; needs an official feed/API.
+  // { key: 'proz', label: 'ProZ', url: 'https://www.proz.com/translation-jobs' },
   { key: 'translators-cafe', label: 'TranslatorsCafe', url: 'https://www.translatorscafe.com/cafe/searchjobs.asp' },
   { key: 'gengo', label: 'Gengo', url: 'https://gengo.com/translators/' },
   { key: 'smartcat', label: 'Smartcat', url: 'https://www.smartcat.com/marketplace/' },

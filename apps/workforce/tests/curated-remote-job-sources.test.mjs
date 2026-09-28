@@ -5,7 +5,8 @@ import {
   parseWorkingNomadsItems,
 } from '../server/utils/sources/curatedRemoteJobSources.ts'
 
-test('Remote.co JSON-LD maps through the shared jobs contract', () => {
+// Remote.co is disabled (it blocks this server's address); the test returns with the board.
+test('Remote.co JSON-LD maps through the shared jobs contract', { skip: 'remote.co disabled 2026-09-28' }, () => {
   const html = `
     <script type="application/ld+json">
       {

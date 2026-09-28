@@ -247,7 +247,8 @@ type Loader = { key: string; load: () => Promise<Job[]> }
 
 const AVIATION_LOADERS: Loader[] = [
   { key: 'air-astana', load: fetchAirAstana },
-  { key: 'bucharest-airports', load: fetchBucharestAirports },
+  // Disabled 2026-09-28: bot challenge even through job-browser-fetcher; needs an official feed/API.
+  // { key: 'bucharest-airports', load: fetchBucharestAirports },
   { key: 'cluj-airport', load: fetchClujAirport },
   { key: 'tarom', load: fetchTarom },
   { key: 'wizz-air', load: fetchWizzAir },

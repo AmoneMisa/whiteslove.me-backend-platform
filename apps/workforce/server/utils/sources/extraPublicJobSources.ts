@@ -308,7 +308,8 @@ export const PUBLIC_JOB_BOARDS: PublicBoard[] = [
   { label: 'acct', url: 'https://acct.global', remoteByDefault: true },
   { label: 'Acivilate', url: 'https://acivilate.com/' },
   { label: 'Acquia', url: 'https://www.acquia.com/', remoteByDefault: true },
-  { label: 'ActiveCampaign', url: 'https://www.activecampaign.com/' },
+  // Disabled 2026-09-28: bot challenge even through job-browser-fetcher; needs an official feed/API.
+  // { label: 'ActiveCampaign', url: 'https://www.activecampaign.com/' },
   { label: 'Ad Hoc', url: 'https://www.adhocteam.us/' },
   { label: 'Adaface', url: 'https://www.adaface.com' },
   { label: 'AddStructure', url: 'https://www.bazaarvoice.com/' },

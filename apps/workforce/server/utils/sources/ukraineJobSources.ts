@@ -530,7 +530,10 @@ export function configuredUkraineJobTargets(): string[] {
   if (String(process.env.WORK_UA_SOURCE || 'on').toLowerCase() !== 'off') {
     targets.push(...workUaStreams().map((stream) => `${UKRAINE_JOB_TARGET_PREFIX}work-ua-${streamKey(stream.label)}`))
   }
-  if (String(process.env.ROBOTA_UA_SOURCE || 'on').toLowerCase() !== 'off') {
+  // Off by default since 2026-09-28: robota.ua and api.robota.ua refuse this
+  // server's address (403), directly and through job-browser-fetcher, so every
+  // refresh failed. Set ROBOTA_UA_SOURCE=on where the site is reachable.
+  if (String(process.env.ROBOTA_UA_SOURCE || 'off').toLowerCase() !== 'off') {
     targets.push(...robotaUaStreams().map((stream) => `${UKRAINE_JOB_TARGET_PREFIX}robota-ua-${streamKey(stream.label)}`))
   }
   return [...new Set(targets)]
