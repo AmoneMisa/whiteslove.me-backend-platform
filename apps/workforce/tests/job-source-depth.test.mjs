@@ -32,3 +32,11 @@ test('an undated IT-Jobs.uz summary is not published as a fresh posting', async 
   const uz = await read('server/utils/sources/standardJobSourceTargets.ts')
   assert.match(uz, /return config\.source === 'ishgo' \? summary : null/)
 })
+
+test('Telegram job and CV channels use the MTProto worker the shared .env names', async () => {
+  for (const path of ['server/vacancies/sources/telegramJobTargets.ts', 'server/hiring/sources/telegramRuntime.ts']) {
+    const source = await read(path)
+    // The server cannot reach t.me; flats' sidecar is configured as TG_WORKER_URL.
+    assert.match(source, /process\.env\.TELEGRAM_WORKER_URL \|\| process\.env\.TG_WORKER_URL/, path)
+  }
+})

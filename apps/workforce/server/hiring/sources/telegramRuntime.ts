@@ -267,7 +267,10 @@ function addFunnel(total: ChannelFunnel, page: ChannelFunnel): void {
 async function readChannel(channel: TelegramChannel, q: string, cursor: ChannelCursor): Promise<ChannelOutcome> {
   const checkedAt = new Date().toISOString()
   const startedAt = Date.now()
-  const workerUrl = process.env.TELEGRAM_WORKER_URL
+  // Flats names the same MTProto sidecar TG_WORKER_URL, and that is what the
+  // shared .env provides. Reading only TELEGRAM_WORKER_URL left this on the
+  // t.me preview, which this server cannot reach.
+  const workerUrl = process.env.TELEGRAM_WORKER_URL || process.env.TG_WORKER_URL
 
   try {
     if (!workerUrl) {
