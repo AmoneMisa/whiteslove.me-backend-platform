@@ -211,6 +211,8 @@ async function fetchWorkerPage(channel, beforeId, deadline) {
   if (beforeId) params.set('beforeId', String(beforeId));
   const budgetLeft = deadline === Infinity ? 15_000 : Math.max(1_000, deadline - Date.now());
   const res = await fetch(`${TG_WORKER_URL}/history?${params}`, {
+    // The worker requires its shared key once WORKER_API_KEY is set there.
+    ...(process.env.TG_WORKER_KEY ? {headers: {'X-Worker-Key': process.env.TG_WORKER_KEY}} : {}),
     signal: AbortSignal.timeout(Math.min(15_000, budgetLeft)),
   });
   if (!res.ok) throw new Error(`tg-worker @${channel} HTTP ${res.status}`);

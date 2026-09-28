@@ -1,6 +1,9 @@
 import { config } from './config.mjs';
 
-const apiBase = `https://api.telegram.org/bot${config.token}`;
+const apiBase = `${config.telegramApiBase}/bot${config.token}`;
+const relayHeaders = config.telegramWorkerKey && !/^https:\/\/api\.telegram\.org$/.test(config.telegramApiBase)
+  ? {'x-worker-key': config.telegramWorkerKey}
+  : {};
 
 export function escapeHtml(value) {
   return String(value ?? '').replace(/[&<>]/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[char]);
@@ -14,7 +17,7 @@ export function trimText(value, max) {
 export async function api(method, payload = {}, options = {}) {
   const response = await fetch(`${apiBase}/${method}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...relayHeaders },
     body: JSON.stringify(payload),
     signal: options.signal || AbortSignal.timeout((config.telegramLongPollSeconds + 10) * 1000),
   });

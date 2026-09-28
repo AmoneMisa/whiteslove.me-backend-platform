@@ -21,6 +21,8 @@ export function installMediaRoutes(app) {
     try {
       const params = new URLSearchParams({channel, id});
       const response = await fetch(`${workerUrl}/photo?${params}`, {
+        // The worker requires its shared key once WORKER_API_KEY is set there.
+        ...(process.env.TG_WORKER_KEY ? {headers: {'X-Worker-Key': process.env.TG_WORKER_KEY}} : {}),
         signal: AbortSignal.timeout(20_000),
       });
 

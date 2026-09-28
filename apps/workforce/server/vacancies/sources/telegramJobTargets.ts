@@ -2,6 +2,7 @@ import { extractJobStructuredField, parseHiringSourceSalary } from '@whiteslove/
 import type { Job } from '~~/shared/contracts/jobs'
 import { detectWorkModes } from '../../utils/hiring/hiringLexicon'
 import { isLikelyTelegramVacancy } from './telegramVacancyClassifier'
+import { telegramWorkerHeaders } from '~~/shared/telegramWorker'
 
 const UA = 'jobFinder/1.0 (job aggregator; contact: admin@whiteslove.me)'
 const DESC_MAX = Number.POSITIVE_INFINITY
@@ -239,7 +240,7 @@ function parsePreview(html: string, channel: TelegramChannel): Job[] {
 
 async function fetchViaWorker(base: string, channel: TelegramChannel): Promise<Job[]> {
   const url = `${base.replace(/\/+$/, '')}/history?channel=${encodeURIComponent(channel.handle)}`
-  const response = await fetch(url)
+  const response = await fetch(url, { headers: telegramWorkerHeaders() })
   if (!response.ok) throw new Error(`tg-worker @${channel.handle} -> ${response.status}`)
   const data = await response.json() as { ok?: boolean; messages?: TelegramWorkerMessage[] }
   if (!data.ok || !Array.isArray(data.messages)) throw new Error(`tg-worker @${channel.handle} bad payload`)

@@ -22,6 +22,12 @@ export const config = {
   sitePublicUrl: cleanUrl(process.env.SITE_PUBLIC_URL, 'https://whiteslove.me'),
   flatApiUrl: cleanUrl(process.env.FLAT_API_URL, 'http://flats-api:4000'),
   pollSeconds: positiveInt(process.env.SUBSCRIPTION_POLL_SECONDS, 60, 30, 3600),
+  // Where Bot API calls go. The backend's provider blocks api.telegram.org, so
+  // production points this at the Telegram worker's relay
+  // (http://<worker>:4100/telegram), which forwards the calls unchanged.
+  telegramApiBase: String(process.env.TELEGRAM_BOT_API_BASE || 'https://api.telegram.org').trim().replace(/\/+$/, ''),
+  // The worker's shared key; sent only to the relay, never to Telegram.
+  telegramWorkerKey: String(process.env.TG_WORKER_KEY || '').trim(),
   telegramLongPollSeconds: positiveInt(process.env.TELEGRAM_LONG_POLL_SECONDS, 25, 5, 50),
   maxNotificationsPerScan: positiveInt(process.env.SUBSCRIPTION_MAX_NOTIFICATIONS_PER_SCAN, 10, 1, 50),
   fetchTimeoutMs: positiveInt(process.env.SUBSCRIPTION_FETCH_TIMEOUT_MS, 20_000, 3_000, 120_000),

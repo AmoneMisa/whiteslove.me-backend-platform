@@ -16,6 +16,7 @@ import {
   recordHiringSourceDiagnostic,
   type HiringSourceDiagnostic,
 } from './telegramDiagnostics'
+import { telegramWorkerHeaders } from '~~/shared/telegramWorker'
 
 const UA = 'hiringFinder/1.0 (CV board; contact: admin@whiteslove.me)'
 const TELEGRAM_PAGE_SIZE = Math.min(
@@ -130,6 +131,7 @@ async function fetchWorkerPage(
   if (request.beforeId && request.beforeId > 0) params.set('beforeId', String(request.beforeId))
 
   const res = await fetch(`${base.replace(/\/+$/, '')}/history?${params}`, {
+    headers: telegramWorkerHeaders(),
     signal: AbortSignal.timeout(TELEGRAM_WORKER_TIMEOUT_MS),
   })
   if (!res.ok) throw new Error(`tg-worker @${channel.handle} -> ${res.status}`)
