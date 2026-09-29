@@ -172,6 +172,12 @@ const CLUSTER_UPSERT_SQL = (name: string) => `
     country = EXCLUDED.country, company_normalized = EXCLUDED.company_normalized,
     title_normalized = EXCLUDED.title_normalized, locality = EXCLUDED.locality,
     posting_count = EXCLUDED.posting_count, last_seen_at = NOW()
+  -- Only when something changed; last_seen_at refreshes hourly, which is
+  -- ample resolution for repost detection.
+  WHERE ${name}.job_clusters.posting_count IS DISTINCT FROM EXCLUDED.posting_count
+     OR ${name}.job_clusters.country IS DISTINCT FROM EXCLUDED.country
+     OR ${name}.job_clusters.locality IS DISTINCT FROM EXCLUDED.locality
+     OR ${name}.job_clusters.last_seen_at < NOW() - INTERVAL '1 hour'
 `
 
 const UPSERT_SQL = (name: string) => `
@@ -219,6 +225,13 @@ const UPSERT_SQL = (name: string) => `
     skills = EXCLUDED.skills, sync_token = EXCLUDED.sync_token,
     search_text = EXCLUDED.search_text, cluster_key = EXCLUDED.cluster_key,
     data = EXCLUDED.data, updated_at = NOW()
+  -- Rewrite a row only when the vacancy changed (lastSeen alone does not
+  -- count) or it is coming back. Rewriting every row on every sync had
+  -- reached 167M updates for 82k live vacancies, a 1.8 GB table and
+  -- constant autovacuum, slowing every read.
+  WHERE ${name}.vacancies.active = FALSE
+     OR ${name}.vacancies.cluster_key IS DISTINCT FROM EXCLUDED.cluster_key
+     OR (${name}.vacancies.data - 'lastSeen') IS DISTINCT FROM (EXCLUDED.data - 'lastSeen')
 `
 
 export async function syncJobsDb(jobs: Job[]): Promise<number> {
@@ -238,12 +251,17 @@ export async function syncJobsDb(jobs: Job[]): Promise<number> {
     for (let offset = 0; offset < rows.length; offset += UPSERT_BATCH) {
       await client.query(UPSERT_SQL(schema()), [toPostgresJson(rows.slice(offset, offset + UPSERT_BATCH))])
     }
+    // Unchanged rows keep their old sync_token now, so deactivate by key:
+    // live vacancies the snapshot no longer holds.
     await client.query(
-      `UPDATE ${schema()}.vacancies SET active = FALSE, updated_at = NOW() WHERE active = TRUE AND sync_token <> $1`,
-      [syncToken],
+      `UPDATE ${schema()}.vacancies SET active = FALSE, updated_at = NOW()
+        WHERE active = TRUE AND NOT (identity_key = ANY($1::text[]))`,
+      [rows.map((row) => row.identity_key)],
     )
     await client.query('COMMIT')
-    jobStatsCache.clear()
+    // Statistics are not dropped here: they refresh on their own TTL while
+    // the previous result is served (queryJobStats), instead of every request
+    // after each sync paying for a cold recomputation.
     return rows.length
   } catch (error) {
     await client.query('ROLLBACK').catch(() => {})
@@ -389,10 +407,34 @@ function statsCacheKey(query: JobQuery): string {
   })
 }
 
+// Statistics aggregate every matching vacancy (medians per source, country,
+// profession, city...), ~37 s cold at 80k vacancies. A request gets the
+// fresh result when there is one, otherwise the last result while a single
+// background refresh recomputes it; only a query never seen before waits.
+const staleJobStats = new BoundedTtlCache<string, JobStats>({
+  maxEntries: JOB_STATS_CACHE_MAX_ENTRIES,
+  defaultTtlMs: 6 * 60 * 60_000,
+})
+const refreshingJobStats = new Map<string, Promise<JobStats>>()
+
 async function queryJobStats(query: JobQuery): Promise<JobStats> {
   const cacheKey = statsCacheKey(query)
-  const cached = jobStatsCache.get(cacheKey)
-  if (cached) return cached
+  const fresh = jobStatsCache.get(cacheKey)
+  if (fresh) return fresh
+  let refresh = refreshingJobStats.get(cacheKey)
+  if (!refresh) {
+    refresh = computeJobStats(query, cacheKey).finally(() => refreshingJobStats.delete(cacheKey))
+    refreshingJobStats.set(cacheKey, refresh)
+  }
+  const stale = staleJobStats.get(cacheKey)
+  if (stale) {
+    refresh.catch((error) => console.warn('[jobs:db] stats refresh failed:', (error as Error).message))
+    return stale
+  }
+  return refresh
+}
+
+async function computeJobStats(query: JobQuery, cacheKey: string): Promise<JobStats> {
 
   const sql = sqlBuilder()
   const where = filteredWhere(query, sql)
@@ -539,6 +581,7 @@ async function queryJobStats(query: JobQuery): Promise<JobStats> {
   stats.byRelocation = { ...emptyStats().byRelocation, ...(stats.byRelocation || {}) }
   stats.byEmploymentKind = { ...emptyStats().byEmploymentKind, ...(stats.byEmploymentKind || {}) }
   jobStatsCache.set(cacheKey, stats)
+  staleJobStats.set(cacheKey, stats)
   return stats
 }
 

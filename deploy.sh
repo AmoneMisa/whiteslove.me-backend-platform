@@ -245,7 +245,9 @@ if contains_requested flats-api; then
 
   echo '=== flats phase 3/5: cut over flats-api ==='
   "${COMPOSE[@]}" up -d --no-deps --remove-orphans=false flats-api
-  wait_for_flats_api 90
+  # flats-api merges its Elasticsearch mappings before it listens; right after
+  # an Elasticsearch restart that took 2m45s, and 90s failed a healthy deploy.
+  wait_for_flats_api 240
 
   echo '=== flats phase 4/5: smoke materialized geo endpoints ==='
   smoke_flats_api
