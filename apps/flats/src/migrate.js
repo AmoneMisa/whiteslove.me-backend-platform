@@ -22,6 +22,8 @@ const pool = new Pool({
   connectionTimeoutMillis: 10_000,
 });
 
+const RETRYABLE_CODES = new Set(['40P01', '55P03']);
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function applyMigration(client, file, sql) {
@@ -36,12 +38,15 @@ async function applyMigration(client, file, sql) {
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
 
-      const retryableDeadlock = error?.code === '40P01' && attempt < MIGRATION_MAX_ATTEMPTS;
-      if (!retryableDeadlock) throw error;
+      // 40P01 deadlock; 55P03 lock_not_available, raised when a migration's own
+      // lock_timeout expires because live traffic holds the table. Both are
+      // transient and the transaction has rolled back, so retry.
+      const retryable = RETRYABLE_CODES.has(error?.code) && attempt < MIGRATION_MAX_ATTEMPTS;
+      if (!retryable) throw error;
 
       const delayMs = MIGRATION_RETRY_BASE_MS * (2 ** (attempt - 1));
       console.warn(
-        `[migrate] deadlock while applying ${file}; ` +
+        `[migrate] ${error.code === '40P01' ? 'deadlock' : 'lock timeout'} while applying ${file}; ` +
         `retrying ${attempt + 1}/${MIGRATION_MAX_ATTEMPTS} in ${delayMs}ms`,
       );
       await sleep(delayMs);

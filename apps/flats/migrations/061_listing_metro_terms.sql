@@ -11,6 +11,16 @@
 -- name order, so '..._metro' runs after the main rebuild, which deletes every
 -- term for the listing; this trigger therefore also fires whenever that one
 -- does, and restores the station rows.
+--
+-- listings is written continuously. Creating a trigger needs a SHARE ROW
+-- EXCLUSIVE lock, and a waiting lock request queues every later writer behind
+-- it, so wait at most a few seconds and let migrate.js retry rather than stall
+-- ingestion (the first version of this migration did, and timed out the
+-- deploy). CREATE OR REPLACE TRIGGER avoids DROP TRIGGER's ACCESS EXCLUSIVE
+-- lock. There is no backfill: existing rows carry no `metros` yet and their
+-- primary station is already matched through listings.metro; rows gain their
+-- terms as they are next parsed.
+SET LOCAL lock_timeout = '5s';
 
 CREATE OR REPLACE FUNCTION sync_listing_metro_terms()
 RETURNS trigger
@@ -41,15 +51,12 @@ BEGIN
 END;
 $$;
 
-DROP TRIGGER IF EXISTS listings_insert_search_relations_metro ON listings;
-DROP TRIGGER IF EXISTS listings_update_search_relations_metro ON listings;
-
-CREATE TRIGGER listings_insert_search_relations_metro
+CREATE OR REPLACE TRIGGER listings_insert_search_relations_metro
 AFTER INSERT ON listings
 FOR EACH ROW
 EXECUTE FUNCTION sync_listing_metro_terms();
 
-CREATE TRIGGER listings_update_search_relations_metro
+CREATE OR REPLACE TRIGGER listings_update_search_relations_metro
 AFTER UPDATE OF data ON listings
 FOR EACH ROW
 WHEN (
@@ -67,23 +74,3 @@ WHEN (
   OR (OLD.data->'nearbyPlaces') IS DISTINCT FROM (NEW.data->'nearbyPlaces')
 )
 EXECUTE FUNCTION sync_listing_metro_terms();
-
--- Backfill current rows from the same sources.
-INSERT INTO listing_location_terms(listing_id, term_type, normalized_name)
-SELECT DISTINCT listing_id, 'listing_metro', normalized_name
-FROM (
-  SELECT l.id AS listing_id, LEFT(LOWER(BTRIM(l.data->>'metro')), 512) AS normalized_name
-  FROM listings l
-  WHERE NULLIF(BTRIM(l.data->>'metro'), '') IS NOT NULL
-
-  UNION ALL
-  SELECT l.id, LEFT(LOWER(BTRIM(value)), 512)
-  FROM listings l
-  CROSS JOIN LATERAL jsonb_array_elements_text(
-    CASE WHEN jsonb_typeof(l.data->'metros') = 'array'
-      THEN l.data->'metros' ELSE '[]'::jsonb END
-  ) AS value
-  WHERE NULLIF(BTRIM(value), '') IS NOT NULL
-) terms
-WHERE normalized_name IS NOT NULL AND normalized_name <> ''
-ON CONFLICT DO NOTHING;
