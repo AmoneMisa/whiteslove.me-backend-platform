@@ -80,3 +80,13 @@ test('rejected fresh source coordinates do not resurrect the old point', () => {
   assert.equal(merged.lat, null);
   assert.equal(merged.lng, null);
 });
+
+test('a slow optional enrichment degrades to its fallback instead of stalling the listing', async () => {
+  const {__listingPublicTest} = await import('../src/routes/listing-public.js');
+  const started = Date.now();
+  const value = await __listingPublicTest.withinBudget('slow', () => new Promise((resolve) => setTimeout(() => resolve('late'), 2_000)), 'fallback', 50);
+  assert.equal(value, 'fallback');
+  assert.ok(Date.now() - started < 1_000);
+  assert.equal(await __listingPublicTest.withinBudget('fast', async () => 'done', 'fallback', 1_000), 'done');
+  assert.equal(await __listingPublicTest.withinBudget('broken', async () => { throw new Error('boom'); }, 'fallback', 1_000), 'fallback');
+});

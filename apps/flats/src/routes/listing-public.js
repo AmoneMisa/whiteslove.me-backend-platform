@@ -95,25 +95,54 @@ export function mergeStoredFreshListing(stored, fresh) {
   return merged;
 }
 
-async function attachMarketComparison(listing) {
+// A single-listing response opens the popup. Market comparison, transport and
+// contact lines only decorate it, so each gets a bounded slice of time: a slow
+// comparison query or pedestrian router must degrade to a listing without that
+// decoration, never to a lookup that outlives the web tier's 8s timeout (which
+// made shared ?adv= links fail to open at all).
+const ENRICHMENT_BUDGET_MS = Math.max(
+  250,
+  Number(process.env.LISTING_PUBLIC_ENRICHMENT_BUDGET_MS) || 2_500,
+);
+
+async function withinBudget(label, work, fallback, budgetMs = ENRICHMENT_BUDGET_MS) {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => {
+      console.warn(`[listing-public] ${label} exceeded ${budgetMs}ms; responding without it`);
+      resolve(fallback);
+    }, budgetMs);
+  });
   try {
-    const {rates} = await getRates();
-    const [withMarket] = await attachMarketComparisons([listing], rates);
-    return withMarket || listing;
-  } catch (error) {
-    console.warn('[listing-public] market comparison failed:', error?.message ?? error);
-    return listing;
+    return await Promise.race([
+      Promise.resolve().then(work).catch((error) => {
+        console.warn(`[listing-public] ${label} failed:`, error?.message ?? error);
+        return fallback;
+      }),
+      timeout,
+    ]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
-async function attachTransport(listing, country) {
-  if (!listing || !country) return listing;
-  try {
-    await annotateNearbyTransport([listing], country);
-  } catch (error) {
-    console.warn('[listing-public] transport enrichment failed:', error?.message ?? error);
+async function marketComparisonFor(listing) {
+  const {rates} = await getRates();
+  const [withMarket] = await attachMarketComparisons([listing], rates);
+  return withMarket?.marketComparison;
+}
+
+// Transport annotates in place, so it works on a copy: a run that finishes
+// after its budget must not mutate the listing already being serialized.
+async function transportFor(listing, country) {
+  if (!listing || !country) return null;
+  const copy = {...listing};
+  await annotateNearbyTransport([copy], country);
+  const fields = {};
+  for (const [key, value] of Object.entries(copy)) {
+    if (listing[key] !== value) fields[key] = value;
   }
-  return listing;
+  return fields;
 }
 
 /**
@@ -123,23 +152,35 @@ async function attachTransport(listing, country) {
  * receive the same locationAccuracyM/provenance used by normal ingestion before
  * transport eligibility is evaluated.
  */
-export async function preparePublicListing(listing, country, {refreshGeo = false} = {}) {
+export async function preparePublicListing(listing, country, {refreshGeo = false, budgetMs = ENRICHMENT_BUDGET_MS} = {}) {
   if (!listing) return listing;
   let prepared = refreshGeo ? enrichListingDetails(listing) : {...listing};
   if (refreshGeo && country) {
-    try {
-      [prepared] = await geocodeListings([prepared], country);
-    } catch (error) {
-      console.warn('[listing-public] geo refinement failed:', error?.message ?? error);
-    }
+    prepared = await withinBudget('geo refinement', async () => {
+      const [geocoded] = await geocodeListings([prepared], country);
+      return geocoded || prepared;
+    }, prepared, budgetMs);
   }
-  prepared = await attachMarketComparison(prepared);
-  await attachTransport(prepared, country);
-  const [withLine] = await attachListingLines([attachContactActions(prepared)], {loadLines: loadStoredListingLines});
+  const [marketComparison, transport] = await Promise.all([
+    withinBudget('market comparison', () => marketComparisonFor(prepared), undefined, budgetMs),
+    withinBudget('transport enrichment', () => transportFor(prepared, country), null, budgetMs),
+  ]);
+  prepared = {
+    ...prepared,
+    ...(transport || {}),
+    ...(marketComparison !== undefined ? {marketComparison} : {}),
+  };
+  const [withLine] = await withinBudget(
+    'listing lines',
+    () => attachListingLines([attachContactActions(prepared)], {loadLines: loadStoredListingLines}),
+    [attachContactActions(prepared)],
+    budgetMs,
+  );
   return withLine;
 }
 
 export const __listingPublicTest = {
+  withinBudget,
   hasFiniteCoordinate,
   hasFiniteCoordinates,
   TRANSIENT_DERIVED_FIELDS,
