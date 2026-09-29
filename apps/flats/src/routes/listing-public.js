@@ -152,7 +152,7 @@ async function transportFor(listing, country) {
  * receive the same locationAccuracyM/provenance used by normal ingestion before
  * transport eligibility is evaluated.
  */
-export async function preparePublicListing(listing, country, {refreshGeo = false, budgetMs = ENRICHMENT_BUDGET_MS} = {}) {
+export async function preparePublicListing(listing, country, {refreshGeo = false, budgetMs = ENRICHMENT_BUDGET_MS, storedLine} = {}) {
   if (!listing) return listing;
   let prepared = refreshGeo ? enrichListingDetails(listing) : {...listing};
   if (refreshGeo && country) {
@@ -170,9 +170,14 @@ export async function preparePublicListing(listing, country, {refreshGeo = false
     ...(transport || {}),
     ...(marketComparison !== undefined ? {marketComparison} : {}),
   };
+  // A caller that already read the listing's line (null = it has none) saves
+  // the separate lookup.
+  const loadLines = storedLine === undefined
+    ? loadStoredListingLines
+    : async (ids) => new Map(storedLine ? ids.map((id) => [id, storedLine]) : []);
   const [withLine] = await withinBudget(
     'listing lines',
-    () => attachListingLines([attachContactActions(prepared)], {loadLines: loadStoredListingLines}),
+    () => attachListingLines([attachContactActions(prepared)], {loadLines}),
     [attachContactActions(prepared)],
     budgetMs,
   );

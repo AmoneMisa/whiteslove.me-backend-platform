@@ -51,81 +51,124 @@ function buildTarget(listing, rates) {
   };
 }
 
+// The comparable median depends only on the market segment (country, city,
+// district, property type, deal, rooms or area) -- never on the listing being
+// compared. A feed page repeats a handful of segments, and a listing popup
+// asks again for the segment the feed just computed, so each segment is
+// queried once and reused briefly. Before this, every popup re-ran the
+// comparison against the whole active market while holding one of the API's
+// ten pool connections, queuing behind feed queries.
+const SEGMENT_CACHE_TTL_MS = Math.max(0, Number(process.env.MARKET_SEGMENT_CACHE_TTL_MS) || 5 * 60_000);
+const SEGMENT_CACHE_MAX = 5_000;
+const segmentCache = new Map();
+
+function segmentKey(target) {
+  return JSON.stringify([
+    target.country,
+    target.city.toLocaleLowerCase(),
+    target.district ? target.district.toLocaleLowerCase() : null,
+    target.property_type,
+    target.deal_key,
+    target.rooms,
+    target.rooms == null ? target.area_sqm : null,
+  ]);
+}
+
+function cachedSegment(key, now) {
+  const entry = segmentCache.get(key);
+  if (!entry) return null;
+  if (now - entry.at >= SEGMENT_CACHE_TTL_MS) {
+    segmentCache.delete(key);
+    return null;
+  }
+  return entry.stats;
+}
+
+function rememberSegment(key, stats, now) {
+  if (!SEGMENT_CACHE_TTL_MS) return;
+  segmentCache.delete(key);
+  segmentCache.set(key, { stats, at: now });
+  while (segmentCache.size > SEGMENT_CACHE_MAX) segmentCache.delete(segmentCache.keys().next().value);
+}
+
+export function clearMarketSegmentCache() {
+  segmentCache.clear();
+}
+
 export async function attachMarketComparisons(listings, rates) {
   if (!Array.isArray(listings) || listings.length === 0) return listings;
 
   const rateEntries = safeRateEntries(rates);
   if (!rateEntries.length) return listings;
 
-  const targets = listings.map((listing) => buildTarget(listing, rates)).filter(Boolean);
-  if (!targets.length) return listings;
+  const listingTargets = listings.map((listing) => buildTarget(listing, rates)).filter(Boolean);
+  if (!listingTargets.length) return listings;
+
+  const now = Date.now();
+  const statsBySegment = new Map();
+  const pending = new Map();
+  for (const target of listingTargets) {
+    const segment = segmentKey(target);
+    if (statsBySegment.has(segment) || pending.has(segment)) continue;
+    const cached = cachedSegment(segment, now);
+    if (cached) statsBySegment.set(segment, cached);
+    else pending.set(segment, { ...target, key: segment });
+  }
+  const targets = [...pending.values()];
 
   const comparatorPriceUsd = priceUsdSql('c', rateEntries);
+  // One candidate subquery per segment, with the segment's values bound as
+  // parameters. Joining a jsonb_to_recordset CTE hid the values from the
+  // planner, and an OR-ed optional district predicate kept rooms
+  // and district out of the index condition: a single Tashkent 2-room target
+  // read its whole city/deal segment through the wrong index and filtered
+  // almost all of it away. Bound values give the planner real selectivity, so
+  // rooms targets seek listings_market_rooms_expr_idx and area targets seek
+  // listings_market_area_expr_idx on every column they constrain.
+  const params = [];
+  const bind = (value) => {
+    params.push(value);
+    return `$${params.length}`;
+  };
+  const candidateBranch = (target) => {
+    const byRooms = target.rooms != null;
+    const segment = [
+      `UPPER(c.country) = ${bind(target.country)}`,
+      `LOWER(BTRIM(COALESCE(c.city, ''))) = LOWER(BTRIM(${bind(target.city)}::text))`,
+      `c.property_type = ${bind(target.property_type)}`,
+      `(CASE WHEN c.room_only THEN 'roomRent' ELSE c.deal_type END) = ${bind(target.deal_key)}`,
+    ];
+    if (byRooms) {
+      segment.push(`c.rooms = ${bind(target.rooms)}::integer`);
+    } else {
+      const area = bind(target.area_sqm);
+      segment.push(
+        'c.area_sqm IS NOT NULL',
+        `c.area_sqm BETWEEN ${area}::double precision - GREATEST(5.0, ${area}::double precision * 0.15)
+         AND ${area}::double precision + GREATEST(5.0, ${area}::double precision * 0.15)`,
+      );
+    }
+    if (target.district) {
+      segment.push(`LOWER(BTRIM(COALESCE(c.district, ''))) = LOWER(BTRIM(${bind(target.district)}::text))`);
+    }
+    return `
+      SELECT
+        ${bind(target.key)}::text AS key,
+        ${comparatorPriceUsd} AS price_usd,
+        c.dedupe_key,
+        c.created_at,
+        c.id
+      FROM listings c
+      WHERE c.active = TRUE
+        AND c.price IS NOT NULL
+        AND ${segment.join('\n        AND ')}
+        AND COALESCE(c.created_at, c.first_seen_at) >= NOW() - (${MARKET_MAX_AGE_DAYS} * INTERVAL '1 day')
+        AND NOT c.commercial`;
+  };
+  const candidates = targets.map(candidateBranch);
   const sql = `
-    WITH targets AS MATERIALIZED (
-      SELECT *
-      FROM jsonb_to_recordset($1::jsonb) AS t(
-        key text,
-        country text,
-        city text,
-        district text,
-        property_type text,
-        deal_key text,
-        rooms integer,
-        area_sqm double precision,
-        price_usd double precision
-      )
-    ),
-    room_candidates AS (
-      SELECT
-        t.key,
-        ${comparatorPriceUsd} AS price_usd,
-        c.dedupe_key,
-        c.created_at,
-        c.id
-      FROM targets t
-      JOIN listings c
-        ON t.rooms IS NOT NULL
-       AND c.active = TRUE
-       AND c.price IS NOT NULL
-       AND UPPER(c.country) = t.country
-       AND LOWER(BTRIM(COALESCE(c.city, ''))) = LOWER(BTRIM(t.city))
-       AND c.property_type = t.property_type
-       AND (CASE WHEN c.room_only THEN 'roomRent' ELSE c.deal_type END) = t.deal_key
-       AND c.rooms = t.rooms
-       AND (t.district IS NULL OR LOWER(BTRIM(COALESCE(c.district, ''))) = LOWER(BTRIM(t.district)))
-       AND COALESCE(c.created_at, c.first_seen_at) >= NOW() - (${MARKET_MAX_AGE_DAYS} * INTERVAL '1 day')
-       AND NOT c.commercial
-    ),
-    area_candidates AS (
-      SELECT
-        t.key,
-        ${comparatorPriceUsd} AS price_usd,
-        c.dedupe_key,
-        c.created_at,
-        c.id
-      FROM targets t
-      JOIN listings c
-        ON t.rooms IS NULL
-       AND t.area_sqm IS NOT NULL
-       AND c.active = TRUE
-       AND c.price IS NOT NULL
-       AND UPPER(c.country) = t.country
-       AND LOWER(BTRIM(COALESCE(c.city, ''))) = LOWER(BTRIM(t.city))
-       AND c.property_type = t.property_type
-       AND (CASE WHEN c.room_only THEN 'roomRent' ELSE c.deal_type END) = t.deal_key
-       AND c.area_sqm IS NOT NULL
-       AND c.area_sqm BETWEEN
-         t.area_sqm - GREATEST(5.0, t.area_sqm * 0.15)
-         AND t.area_sqm + GREATEST(5.0, t.area_sqm * 0.15)
-       AND (t.district IS NULL OR LOWER(BTRIM(COALESCE(c.district, ''))) = LOWER(BTRIM(t.district)))
-       AND COALESCE(c.created_at, c.first_seen_at) >= NOW() - (${MARKET_MAX_AGE_DAYS} * INTERVAL '1 day')
-       AND NOT c.commercial
-    ),
-    candidates AS (
-      SELECT * FROM room_candidates
-      UNION ALL
-      SELECT * FROM area_candidates
+    WITH candidates AS (
+      ${candidates.join('\n      UNION ALL\n')}
     ),
     deduped AS (
       SELECT DISTINCT ON (key, dedupe_key)
@@ -143,17 +186,24 @@ export async function attachMarketComparisons(listings, rates) {
     GROUP BY key
   `;
 
-  const { rows } = await pool.query(sql, [JSON.stringify(targets)]);
-  const byKey = new Map(rows.map((row) => [String(row.key), {
-    comparableCount: Number(row.comparable_count) || 0,
-    medianUsd: row.median_usd == null ? null : Number(row.median_usd),
-  }]));
-  const targetByKey = new Map(targets.map((target) => [target.key, target]));
+  if (targets.length) {
+    const { rows } = await pool.query(sql, params);
+    const byKey = new Map(rows.map((row) => [String(row.key), {
+      comparableCount: Number(row.comparable_count) || 0,
+      medianUsd: row.median_usd == null ? null : Number(row.median_usd),
+    }]));
+    for (const segment of pending.keys()) {
+      const stats = byKey.get(segment) || { comparableCount: 0, medianUsd: null };
+      statsBySegment.set(segment, stats);
+      rememberSegment(segment, stats, now);
+    }
+  }
+  const targetByKey = new Map(listingTargets.map((target) => [target.key, target]));
 
   return listings.map((listing) => {
     const key = targetKey(listing);
-    const stats = byKey.get(key) || { comparableCount: 0, medianUsd: null };
     const target = targetByKey.get(key);
+    const stats = (target && statsBySegment.get(segmentKey(target))) || { comparableCount: 0, medianUsd: null };
     const comparableMedian = stats.comparableCount >= MIN_COMPARABLES && Number.isFinite(stats.medianUsd)
       ? stats.medianUsd
       : null;

@@ -10,7 +10,7 @@ const persistedDedupe = await readFile(new URL('../migrations/010_persisted_dedu
 
 test('good-price assessment is calculated from the active PostgreSQL market, not the loaded page', () => {
   assert.match(routes, /attachMarketComparisons\(listings, fxRates\)/u);
-  assert.match(comparison, /JOIN listings c/u);
+  assert.match(comparison, /FROM listings c/u);
   assert.match(comparison, /c\.active = TRUE/u);
   assert.match(comparison, /PERCENTILE_CONT\(0\.5\) WITHIN GROUP \(ORDER BY price_usd\)/u);
   assert.match(comparison, /stats\.comparableCount >= MIN_COMPARABLES/u);
@@ -18,22 +18,59 @@ test('good-price assessment is calculated from the active PostgreSQL market, not
 });
 
 test('market comparison matches city, district, deal and property type with indexed room and area branches', () => {
-  assert.match(comparison, /UPPER\(c\.country\) = t\.country/u);
-  assert.match(comparison, /LOWER\(BTRIM\(COALESCE\(c\.city, ''\)\)\) = LOWER\(BTRIM\(t\.city\)\)/u);
+  // Segment values are bound per target so the planner sees real values and
+  // can seek the rooms/area expression indexes on every constrained column.
+  assert.match(comparison, /UPPER\(c\.country\) = \$\{bind\(target\.country\)\}/u);
+  assert.match(comparison, /LOWER\(BTRIM\(COALESCE\(c\.city, ''\)\)\) = LOWER\(BTRIM\(\$\{bind\(target\.city\)\}::text\)\)/u);
   assert.doesNotMatch(comparison, /AND c\.city = t\.city/u);
-  assert.match(comparison, /t\.district IS NULL OR LOWER\(BTRIM\(COALESCE\(c\.district, ''\)\)\) = LOWER\(BTRIM\(t\.district\)\)/u);
-  assert.match(comparison, /c\.property_type = t\.property_type/u);
+  assert.match(comparison, /c\.property_type = \$\{bind\(target\.property_type\)\}/u);
   assert.match(comparison, /roomOnly/u);
-
-  assert.match(comparison, /room_candidates AS/u);
-  assert.match(comparison, /ON t\.rooms IS NOT NULL/u);
-  assert.match(comparison, /AND c\.rooms = t\.rooms/u);
-
-  assert.match(comparison, /area_candidates AS/u);
-  assert.match(comparison, /ON t\.rooms IS NULL/u);
+  assert.match(comparison, /c\.rooms = \$\{bind\(target\.rooms\)\}::integer/u);
   assert.match(comparison, /c\.area_sqm BETWEEN/u);
-  assert.match(comparison, /GREATEST\(5\.0, t\.area_sqm \* 0\.15\)/u);
+  assert.match(comparison, /GREATEST\(5\.0, \$\{area\}::double precision \* 0\.15\)/u);
   assert.match(comparison, /UNION ALL/u);
+
+  // An OR around the district kept rooms and district out of the index
+  // condition, so one target read its whole city segment. A target without a
+  // district simply omits the predicate instead.
+  assert.doesNotMatch(comparison, /district IS NULL OR/u);
+  assert.match(comparison, /if \(target\.district\) \{/u);
+  assert.match(comparison, /LOWER\(BTRIM\(COALESCE\(c\.district, ''\)\)\) = LOWER\(BTRIM\(\$\{bind\(target\.district\)\}::text\)\)/u);
+});
+
+test('extended statistics let the planner pick the index that constrains rooms or area', async () => {
+  const stats = await readFile(new URL('../migrations/062_market_segment_statistics.sql', import.meta.url), 'utf8');
+  assert.match(stats, /CREATE STATISTICS IF NOT EXISTS listings_market_segment_stats/u);
+  assert.match(stats, /\(UPPER\(country\)\)/u);
+  assert.match(stats, /\(LOWER\(BTRIM\(COALESCE\(city, ''\)\)\)\)/u);
+  assert.match(stats, /\(CASE WHEN room_only THEN 'roomRent' ELSE deal_type END\)/u);
+  assert.match(stats, /SET LOCAL lock_timeout/u);
+});
+
+test('a market segment is computed once and reused by later pages and popups', async () => {
+  const {attachMarketComparisons, clearMarketSegmentCache} = await import('../src/geo/market-comparison.js');
+  const {pool} = await import('../src/infrastructure/database/pool.js');
+  const original = pool.query;
+  const calls = [];
+  pool.query = async (sql, params) => {
+    calls.push(params);
+    return {rows: [{key: params[params.length - 1], comparable_count: 5, median_usd: 500}]};
+  };
+  try {
+    clearMarketSegmentCache();
+    const base = {source: 'olx', country: 'UZ', city: 'Tashkent', district: 'Chilanzar', propertyType: 'flat', dealType: 'longRent', rooms: 2, currency: 'USD'};
+    const page = await attachMarketComparisons([{...base, id: '1', price: 400}, {...base, id: '2', price: 600}], {USD: 1});
+    assert.equal(calls.length, 1, 'two listings in one segment share one target');
+    assert.deepEqual(page.map((listing) => listing.marketComparison.goodPrice), [true, false]);
+
+    const [popup] = await attachMarketComparisons([{...base, id: '3', price: 450}], {USD: 1});
+    assert.equal(calls.length, 1, 'the popup reuses the segment the feed computed');
+    assert.equal(popup.marketComparison.medianUsd, 500);
+    assert.equal(popup.marketComparison.priceUsd, 450);
+  } finally {
+    pool.query = original;
+    clearMarketSegmentCache();
+  }
 });
 
 test('market median reuses persisted source-level duplicate suppression and has matching lookup indexes', () => {

@@ -44,10 +44,15 @@ export function installListingItemRoutes(app) {
     }
 
     try {
+      // The contact line rides along in the same round trip: every query here
+      // waits for one of the API's pool connections, so a popup should not
+      // pay for two where one does.
       const result = await pool.query(`
-        SELECT id, source, country, source_id, data
-        FROM listings
-        WHERE id = $1 AND active = TRUE
+        SELECT l.id, l.source, l.country, l.source_id, l.data,
+          ll.line AS listing_line, ll.other_properties AS listing_line_other_properties
+        FROM listings l
+        LEFT JOIN platform.listing_lines ll ON ll.listing_id = l.id
+        WHERE l.id = $1 AND l.active = TRUE
         LIMIT 1
       `, [publicId]);
 
@@ -61,7 +66,11 @@ export function installListingItemRoutes(app) {
         country: row.country,
         publicId: Number(row.id),
       };
-      listing = await preparePublicListing(listing, COUNTRIES[row.country]);
+      listing = await preparePublicListing(listing, COUNTRIES[row.country], {
+        storedLine: row.listing_line
+          ? {line: row.listing_line, otherProperties: Number(row.listing_line_other_properties) || 0}
+          : null,
+      });
 
       return res.json({
         listing,
