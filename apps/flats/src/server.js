@@ -10,22 +10,22 @@ const PORT = process.env.PORT || 4000;
 async function start() {
   await assertDatabaseReady();
 
-  // Elasticsearch is an optional search layer. PostgreSQL remains available if
-  // it cannot initialize.
-  try {
-    await initElasticsearch();
-  } catch (err) {
-    console.warn(
-      '[elasticsearch] startup failed:',
-      err?.message ?? String(err),
-    );
-  }
-
   const app = createApp();
   const server = app.listen(PORT, () => {
     console.log(`flat-finder backend listening on http://localhost:${PORT}`);
     console.log(`countries: ${COUNTRY_CODES.join(', ')}`);
     startMobileSubscriptionScanner();
+  });
+
+  // Elasticsearch is an optional search layer; PostgreSQL serves every
+  // request while it is unavailable. So it initializes after the server
+  // listens: waiting for it first meant a busy Elasticsearch kept the API
+  // down for over four minutes and failed deploys that were healthy.
+  initElasticsearch().catch((err) => {
+    console.warn(
+      '[elasticsearch] startup failed:',
+      err?.message ?? String(err),
+    );
   });
 
   async function shutdown(signal) {

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import type { Job } from '~~/shared/contracts/jobs'
 import { transliterationMappings } from '../../utils/support/cyrillicTransliteration'
 
@@ -523,6 +524,43 @@ async function bulkIndex(
     }
 }
 
+/*
+ * What this process last put in the index: document id -> fingerprint of
+ * its content. Re-indexing all ~80k vacancies and sweeping the whole index
+ * with a refresh on every snapshot sync (about once a minute) kept a 512 MB
+ * Elasticsearch busy enough that flats search slowed and flats-api needed
+ * over four minutes to start. Now only new or changed documents are sent
+ * and only vanished ones deleted. A full sync still runs after a restart
+ * (this map starts empty) and every FULL_SYNC_INTERVAL_MS, which also
+ * repairs anything the index lost in between.
+ */
+const FULL_SYNC_INTERVAL_MS = 6 * 60 * 60_000
+let indexedFingerprints = new Map<string, string>()
+let lastFullSyncAt = 0
+
+function documentFingerprint(job: Job): string {
+    return createHash('sha1').update(JSON.stringify(searchDocument(job, ''))).digest('base64url')
+}
+
+async function bulkDelete(ids: string[]) {
+    for (let offset = 0; offset < ids.length; offset += BULK_SIZE) {
+        const lines = ids.slice(offset, offset + BULK_SIZE)
+            .map((id) => JSON.stringify({ delete: { _index: JOBS_INDEX, _id: id } }))
+        const result: any = await request(
+            '/_bulk',
+            {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-ndjson' },
+                body: `${lines.join('\n')}\n`,
+            },
+            BULK_TIMEOUT_MS,
+        )
+        // A delete of an id that is already gone reports not_found; that is fine.
+        const failed = (result?.items || []).find((item: any) => item.delete?.error)
+        if (failed) throw new Error(`Elasticsearch bulk delete error: ${JSON.stringify(failed.delete.error).slice(0, 300)}`)
+    }
+}
+
 export async function syncJobsSearchIndex(
     jobs: Job[],
 ) {
@@ -542,6 +580,34 @@ export async function syncJobsSearchIndex(
 
     await ensureJobsSearchIndex()
 
+    const current = new Map<string, { job: Job, fingerprint: string }>()
+    for (const job of jobs) current.set(jobSearchKey(job), { job, fingerprint: documentFingerprint(job) })
+
+    if (!indexedFingerprints.size || Date.now() - lastFullSyncAt >= FULL_SYNC_INTERVAL_MS) {
+        const indexed = await fullSync([...current.values()].map(({ job }) => job))
+        indexedFingerprints = new Map([...current].map(([id, { fingerprint }]) => [id, fingerprint]))
+        lastFullSyncAt = Date.now()
+        return indexed
+    }
+
+    const changed = [...current].filter(([id, { fingerprint }]) => indexedFingerprints.get(id) !== fingerprint)
+    const removed = [...indexedFingerprints.keys()].filter((id) => !current.has(id))
+    const syncToken = new Date().toISOString()
+    for (let offset = 0; offset < changed.length; offset += BULK_SIZE) {
+        await bulkIndex(changed.slice(offset, offset + BULK_SIZE).map(([, { job }]) => job), syncToken)
+        for (const [id, { fingerprint }] of changed.slice(offset, offset + BULK_SIZE)) indexedFingerprints.set(id, fingerprint)
+    }
+    if (removed.length) {
+        await bulkDelete(removed)
+        for (const id of removed) indexedFingerprints.delete(id)
+    }
+    console.log(`[jobs:elasticsearch] incremental sync: ${changed.length} indexed, ${removed.length} removed, ${current.size} live`)
+    return changed.length
+}
+
+async function fullSync(
+    jobs: Job[],
+) {
     const syncToken =
         new Date()
             .toISOString()
