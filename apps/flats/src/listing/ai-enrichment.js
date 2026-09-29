@@ -202,11 +202,20 @@ const STREET_WORDING = new RegExp(
  * is neither numbered nor worded like a street, and a bare echo of geography
  * we already hold.
  */
+// A listing's other labelled lines ("Цена 500", "2 этаж", "Tel: 90 123 45 67")
+// carry a digit too, and a digit alone used to pass as a building-precise
+// address -- which then geocoded "Цена 500" to a real point.
+const NON_ADDRESS_LABEL =
+  /^(?:(?:цена|ціна|стоимост|вартіст|narx|price|pre[țt]|аренда|оренда|ijara|этаж|поверх|qavat|floor|площад|площа|maydon|area|комнат|кімнат|xona|хона|rooms?|тел(?:ефон)?|tel(?:efon)?|phone|моб|депозит|deposit|залог|комисси|комісі|komissiya|commission)\p{L}*\.?\s*[:\-–—]?\s*\d|\+?\d[\d\s()_-]{6,}$)/iu;
+const MONEY_OR_SPEC =
+  /\d\s*(?:\$|€|usd|у\.?\s*е|сум|so['’‘ʻ]?m|uzs|тг|₸|kzt|грн|₴|uah|lei|ron|м²|м2|m²|m2|кв\.?\s*м|sqm|этаж|qavat|комн|xonali)(?:$|[^\p{L}])/iu;
+
 function acceptedAddress(value, listing) {
   if (blank(value)) return null;
   const address = String(value).trim().replace(/\s+/gu, ' ');
   if (address.length < 5 || address.length > 160) return null;
   if (PROXIMITY_PHRASING.test(address)) return null;
+  if (NON_ADDRESS_LABEL.test(address) || MONEY_OR_SPEC.test(address)) return null;
 
   const hasHouseNumber = /\d/u.test(address);
   if (!hasHouseNumber && !STREET_WORDING.test(address)) return null;

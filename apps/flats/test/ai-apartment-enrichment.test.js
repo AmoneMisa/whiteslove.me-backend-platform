@@ -270,3 +270,15 @@ test('address and complex are handed to the model as known facts', () => {
   assert.equal(input.knownFacts.address, 'Navoi 12');
   assert.equal(input.knownFacts.residenceComplex, 'Nest One');
 });
+
+test('a labelled price, floor or phone line is not an address', () => {
+  const listing = { source: 'olx', id: 'a1d', city: 'Tashkent' };
+  for (const address of ['Цена 500', 'Цена 500.', 'Narxi 400 $', '2 этаж из 4', 'Этаж: 2', 'Tel: 90 968 13 98', '93 968 13 98', '500 у.е.', '1 100 000 soʻm', 'Площадь 34 м2']) {
+    const merged = mergeApartmentAi(listing, result({ address }), 'UZ');
+    assert.equal(merged.address, undefined, address);
+  }
+  // Real numbered and labelled-looking street addresses still pass.
+  for (const address of ["Amir Temur ko'chasi 15", 'площадь Независимости', 'Чиланзар 8 квартал, дом 12']) {
+    assert.equal(mergeApartmentAi(listing, result({ address }), 'UZ').address, address, address);
+  }
+});
