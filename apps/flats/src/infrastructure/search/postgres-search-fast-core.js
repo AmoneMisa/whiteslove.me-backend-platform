@@ -216,7 +216,7 @@ export function buildMemberWhere({filters, countries, maxAgeDays, rates}) {
   }
 
   if (filters.city) where.push(`m.city = ${add(String(filters.city))}`);
-  appendPostgresGeoFilters({where, filters, alias: 'm', add});
+  appendPostgresGeoFilters({where, filters, alias: 'm', add, idColumn: 'm.listing_id'});
 
   if (filters.microdistrict) {
     const value = add(String(filters.microdistrict).trim().toLowerCase());

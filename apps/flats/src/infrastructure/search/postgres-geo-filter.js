@@ -251,7 +251,20 @@ function appendRegionWhere({where, filters, alias, add, geometry}) {
   where.push(`(((${usable}) AND ${boundary}) OR ((NOT (${usable})) AND ${cityFallback}))`);
 }
 
-function appendMetroWhere({where, filters, alias, add, geometry}) {
+// A listing names every station it is near (migration 061 materializes them as
+// 'listing_metro' terms); the primary `metro` column alone missed a flat whose
+// second station was the one searched for.
+function metroNamePredicate(alias, idColumn, lowered, add) {
+  const param = add(lowered);
+  return `(LOWER(${alias}.metro) = ANY(${param}::text[]) OR EXISTS (
+      SELECT 1 FROM listing_location_terms metro_term
+      WHERE metro_term.listing_id = ${idColumn}
+        AND metro_term.term_type = 'listing_metro'
+        AND metro_term.normalized_name = ANY(${param}::text[])
+    ))`;
+}
+
+function appendMetroWhere({where, filters, alias, add, geometry, idColumn = `${alias}.id`}) {
   const names = metroNames(filters);
   if (!names.length) return;
 
@@ -260,7 +273,7 @@ function appendMetroWhere({where, filters, alias, add, geometry}) {
   const hasSpatialConstraint = (maxM != null && maxM > 0) || arc != null;
 
   if (!hasSpatialConstraint) {
-    where.push(`LOWER(${alias}.metro) = ANY(${add(names.map((name) => name.toLocaleLowerCase()))}::text[])`);
+    where.push(metroNamePredicate(alias, idColumn, names.map((name) => name.toLocaleLowerCase()), add));
     return;
   }
 
@@ -279,7 +292,7 @@ function appendMetroWhere({where, filters, alias, add, geometry}) {
   );
   const unresolved = names.filter((name) => !resolvedNames.has(name.toLocaleLowerCase()));
   if (!arc && unresolved.length) {
-    const namePredicate = `LOWER(${alias}.metro) = ANY(${add(unresolved.map((name) => name.toLocaleLowerCase()))}::text[])`;
+    const namePredicate = metroNamePredicate(alias, idColumn, unresolved.map((name) => name.toLocaleLowerCase()), add);
     if (maxM != null && maxM > 0) {
       conditions.push(`(${namePredicate} AND ${alias}.metro_distance_m <= ${add(maxM)})`);
     } else {
@@ -297,15 +310,16 @@ function appendMetroWhere({where, filters, alias, add, geometry}) {
  * Append database-owned district/metro membership predicates. Call this from
  * every SQL read model that serves public listing membership.
  */
-export function appendPostgresGeoFilters({where, filters, alias, add}) {
+export function appendPostgresGeoFilters({where, filters, alias, add, idColumn = `${alias}.id`}) {
   const geometry = resolvedSearchGeometry(filters);
   appendDistrictWhere({where, filters, alias, add, geometry});
   appendRegionWhere({where, filters, alias, add, geometry});
-  appendMetroWhere({where, filters, alias, add, geometry});
+  appendMetroWhere({where, filters, alias, add, geometry, idColumn});
 }
 
 export const __postgresGeoFilterTest = {
   metroNames,
+  appendMetroWhere,
   ringPolygonText,
   boundaryPredicate,
   arcFromFilters,

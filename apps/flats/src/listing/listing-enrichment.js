@@ -175,6 +175,19 @@ function classifyPotentiallyUnsafe(listing, text, roomOnly) {
   return roomOnly === true && explicitlyOneWoman(text) && isLowRoomPrice(listing);
 }
 
+function listingMetros(primary, ...lists) {
+  const seen = new Set();
+  const out = [];
+  for (const value of [primary, ...lists.flatMap((list) => (Array.isArray(list) ? list : []))]) {
+    const name = String(locationName(value) ?? '').trim();
+    const key = name.toLocaleLowerCase();
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
 export function enrichListingDetails(listing) {
   const source = listing && typeof listing === 'object' ? listing : {};
   const text = `${source.title || ''}\n${source.description || ''}`.trim();
@@ -272,6 +285,9 @@ export function enrichListingDetails(listing) {
     nearby,
     district: locationName(source.district) ?? enrichment.district ?? null,
     metro: locationName(source.metro) ?? enrichment.metro ?? null,
+    // Every station the listing names, primary first; the search index
+    // (migration 061) matches a metro filter against any of them.
+    metros: listingMetros(locationName(source.metro) ?? enrichment.metro ?? null, source.metros, enrichment.metros),
   };
   enriched.potentiallyUnsafe = source.potentiallyUnsafe === true || classifyPotentiallyUnsafe(enriched, text, roomOnly);
   // Merged with anything the caller already carried, so provenance recorded by
