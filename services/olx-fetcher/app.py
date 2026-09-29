@@ -101,7 +101,13 @@ _INACTIVE_PATTERNS = [
     re.compile(r"(?:это\s+)?объявление.{0,100}(?:больше\s+не\s+доступно|снято)", re.I),
     re.compile(r"оголошенн(?:я|і).{0,100}(?:не\s*актив|недоступ|видален|видалено|закрит)", re.I),
     re.compile(r"anun(?:ț|t)(?:ul)?.{0,100}(?:nu\s+mai\s+este\s+disponibil|inactiv|șters|sters)", re.I),
+    re.compile(r"e[ʻ'’‘`]?lon.{0,100}(?:faol\s+emas|o[ʻ'’‘`]?chirilgan|mavjud\s+emas|yopilgan)", re.I),
+    re.compile(r"хабарланды.{0,100}(?:белсенді\s+емес|жойылды|қолжетімсіз)", re.I),
 ]
+
+# Path segments that mean OLX sent us to a challenge/sign-in page rather than
+# away from a removed offer. Those stay unknown.
+_CHALLENGE_PATH_RE = re.compile(r"/(?:captcha|challenge|login|auth|account|myaccount|oauth)\b", re.I)
 
 # OLX sometimes keeps the original offer URL and returns HTTP 200 while rendering
 # only its generic error shell. The old classifier saw the offer id in finalUrl
@@ -247,7 +253,22 @@ def _visible_text(document):
     return re.sub(r"\s+", " ", html_lib.unescape(text)).strip()
 
 
-def classify_offer_response(status_code, document, requested_id, final_url):
+def _redirected_off_offer(requested_url, final_url):
+    try:
+        requested = urlparse(str(requested_url or ""))
+        final = urlparse(str(final_url or ""))
+    except ValueError:
+        return False
+    requested_host = (requested.hostname or "").lower().removeprefix("www.")
+    final_host = (final.hostname or "").lower().removeprefix("www.")
+    if not requested_host or requested_host != final_host:
+        return False
+    if final.path.rstrip("/") == requested.path.rstrip("/"):
+        return False
+    return not _CHALLENGE_PATH_RE.search(final.path or "")
+
+
+def classify_offer_response(status_code, document, requested_id, final_url, requested_url=None):
     """Conservative availability classifier; network/WAF ambiguity stays unknown."""
     if status_code in (404, 410):
         return "inactive", f"http_{status_code}"
@@ -275,6 +296,13 @@ def classify_offer_response(status_code, document, requested_id, final_url):
         # OLX commonly preserves the old canonical URL for removed offers while
         # returning HTTP 200. Without the offer payload this is not a live ad.
         return "inactive", "missing_offer_payload"
+
+    # A removed offer is otherwise redirected to the portal home or a category
+    # page ("Это объявление больше не активно" is then only a client-side toast).
+    # Staying on the portal host but losing the offer is that redirect; leaving
+    # the host or landing on a challenge/sign-in page is not evidence of removal.
+    if offer_id and requested_url and _redirected_off_offer(requested_url, final):
+        return "inactive", "redirected_off_offer"
 
     return "unknown", "unrecognized_page"
 
@@ -330,6 +358,7 @@ def olx_check():
         resp.text if resp.status_code == 200 else "",
         offer_id,
         str(resp.url or ""),
+        url,
     )
     return jsonify(
         country=code,

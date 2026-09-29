@@ -108,10 +108,53 @@ class AvailabilityClassifierTests(unittest.TestCase):
         )
         self.assertEqual((status, reason), ("unknown", "generic_error_page"))
 
-    def test_generic_redirect_is_unknown(self):
+    def test_generic_redirect_without_requested_url_is_unknown(self):
         self.assertEqual(
             classify_offer_response(200, "<main>OLX</main>", "65813684", "https://www.olx.uz/"),
             ("unknown", "unrecognized_page"),
+        )
+
+    def test_removed_offer_redirected_to_portal_home_is_inactive(self):
+        # OLX sends a removed offer to its home page and only then shows the
+        # "Это объявление больше не активно" toast client-side.
+        self.assertEqual(
+            classify_offer_response(
+                200,
+                "<main>Ознакомьтесь с категориями OLX</main>",
+                "ID4saUY",
+                "https://www.olx.uz/",
+                "https://www.olx.uz/d/obyavlenie/test-ID4saUY.html",
+            ),
+            ("inactive", "redirected_off_offer"),
+        )
+
+    def test_removed_offer_redirected_to_category_is_inactive(self):
+        self.assertEqual(
+            classify_offer_response(
+                200,
+                "<main>Квартиры</main>",
+                "ID4saUY",
+                "https://www.olx.uz/nedvizhimost/kvartiry/arenda-dolgosrochnaya/tashkent/",
+                "https://www.olx.uz/d/obyavlenie/test-ID4saUY.html",
+            ),
+            ("inactive", "redirected_off_offer"),
+        )
+
+    def test_challenge_or_foreign_redirect_stays_unknown(self):
+        requested = "https://www.olx.uz/d/obyavlenie/test-ID4saUY.html"
+        self.assertEqual(
+            classify_offer_response(200, "<main>OLX</main>", "ID4saUY", "https://www.olx.uz/captcha/", requested),
+            ("unknown", "unrecognized_page"),
+        )
+        self.assertEqual(
+            classify_offer_response(200, "<main>OLX</main>", "ID4saUY", "https://login.olx.uz/", requested),
+            ("unknown", "unrecognized_page"),
+        )
+
+    def test_uzbek_inactive_message_is_inactive(self):
+        self.assertEqual(
+            classify_offer_response(200, "<main>Bu e'lon endi faol emas</main>", "ID4saUY", "https://www.olx.uz/"),
+            ("inactive", "inactive_page"),
         )
 
     def test_offer_url_is_restricted_to_country_portal(self):

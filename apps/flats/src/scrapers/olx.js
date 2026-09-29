@@ -607,14 +607,30 @@ function mapItem(item, country) {
 // Re-fetch a single OLX offer by id (used by the manual "reload this listing"
 // action). OLX exposes each offer at /api/v1/offers/{id}/. Returns a freshly
 // mapped listing, or null if the offer no longer exists.
+// OLX keeps serving a removed or expired offer from its API with HTTP 200 and
+// the offer body; only its status/expiry says it is gone. Treating any body as
+// live recorded removed adverts as 'active' on every click, so they never left
+// the feed. An offer without these fields is still read as live.
+// Only statuses that unambiguously mean "gone" count; an unfamiliar status is
+// not evidence of removal.
+const OLX_GONE_STATUS_RE = /^(?:removed(?:_by_(?:user|moderator))?|outdated|expired|deleted|disabled|blocked|closed|inactive|archived)$/u;
+
+export function isOlxOfferLive(item, now = Date.now()) {
+  if (!item || typeof item !== 'object') return false;
+  if (OLX_GONE_STATUS_RE.test(String(item.status || '').trim().toLowerCase())) return false;
+  const validTo = Date.parse(item.valid_to_time || '');
+  if (Number.isFinite(validTo) && validTo < now) return false;
+  return true;
+}
+
 export async function fetchOlxOffer(country, id) {
   const url = `${country.olxHost}/api/v1/offers/${encodeURIComponent(id)}/`;
   const res = await olxFetch(country, url);
-  if (res.status === 404) return null;
+  if (res.status === 404 || res.status === 410) return null;
   if (!res.ok) throw new Error(`OLX ${country.code} offer HTTP ${res.status}`);
   const json = await res.json();
   const item = json?.data;
-  if (!item || typeof item !== 'object') return null;
+  if (!isOlxOfferLive(item)) return null;
   return mapItem(item, country);
 }
 
