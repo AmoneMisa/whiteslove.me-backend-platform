@@ -143,7 +143,9 @@ if (health?.ok !== true || health?.postgres !== true) {
   throw new Error(`/health is not ready: ${JSON.stringify(health)}`);
 }
 
-const countries = await json('/api/countries?locale=ru', 10_000);
+// First requests after a cut-over hit cold caches on a loaded host; 10-15s
+// timed out twice against a healthy API.
+const countries = await json('/api/countries?locale=ru', 30_000);
 if (!Array.isArray(countries) || countries.length === 0) {
   throw new Error('/api/countries returned no countries');
 }
@@ -156,7 +158,7 @@ if (!tashkent) {
 
 const zones = await json(
   `/api/district-zones?country=UZ&city=${encodeURIComponent(tashkent)}&locale=ru`,
-  15_000,
+  30_000,
 );
 if (!zones || typeof zones !== 'object') {
   throw new Error('UZ/Tashkent district zones projection is empty');
@@ -247,11 +249,22 @@ if contains_requested flats-api; then
   "${COMPOSE[@]}" up -d --no-deps --remove-orphans=false flats-api
   # flats-api merges its Elasticsearch mappings before it listens; right after
   # an Elasticsearch restart that took 2m45s, and 90s failed a healthy deploy.
-  wait_for_flats_api 240
+  # On a loaded host it has since needed just over 4 minutes.
+  api_status=0
+  wait_for_flats_api "${FLATS_API_READY_TIMEOUT_SECONDS:-420}" || api_status=$?
 
-  echo '=== flats phase 4/5: smoke materialized geo endpoints ==='
-  smoke_flats_api
+  if (( api_status == 0 )); then
+    echo '=== flats phase 4/5: smoke materialized geo endpoints ==='
+    smoke_flats_api || api_status=$?
+  fi
 
+  # From phase 3 on, migrations are applied and the new flats-api container is
+  # already in place, so holding the worker back protects nothing: it only
+  # leaves the previous worker image running against the new schema. A slow
+  # readiness probe or smoke check used to stop the deploy here, and the
+  # worker went un-updated across every deploy that day -- including a
+  # crash-loop fix. Cut the worker over regardless; the API failure is
+  # reported at the end, after the remaining services are recreated too.
   echo '=== flats phase 5/5: cut over flats-worker ==='
   "${COMPOSE[@]}" up -d --no-deps --remove-orphans=false flats-worker
   wait_for_health flats-worker 90
@@ -273,4 +286,11 @@ done
 
 if (( ${#remaining[@]} > 0 )); then
   "${COMPOSE[@]}" up -d --no-deps --remove-orphans=false "${remaining[@]}"
+fi
+
+# Reported last so a slow flats-api check no longer skips the worker or the
+# sidecars selected with it (flats-olx-fetcher et al.), but still fails the run.
+if (( ${api_status:-0} != 0 )); then
+  echo "flats-api readiness/smoke failed (status ${api_status}); flats-worker and the other selected services were still recreated" >&2
+  exit "$api_status"
 fi

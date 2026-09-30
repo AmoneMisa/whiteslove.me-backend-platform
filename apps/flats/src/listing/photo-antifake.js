@@ -8,21 +8,35 @@ const FETCH_TIMEOUT_MS = Math.max(2000, Number(process.env.ANTIFAKE_IMAGE_TIMEOU
 const PRICE_CONFLICT_PCT = Math.max(5, Number(process.env.ANTIFAKE_PRICE_CONFLICT_PCT) || 15);
 const CHRONOLOGY_GAP_MS = Math.max(60_000, (Number(process.env.ANTIFAKE_CHRONOLOGY_GAP_MINUTES) || 15) * 60_000);
 const PERCEPTUAL_MAX_DISTANCE = Math.max(0, Math.min(7, Number(process.env.ANTIFAKE_PERCEPTUAL_MAX_DISTANCE) || 7));
-const PERCEPTUAL_HASH_SCRIPT = fileURLToPath(new URL('./perceptual-hash.py', import.meta.url));
+// The helper lives in src/, one level above this module. It used to be
+// resolved as './perceptual-hash.py' (src/listing/), a path that does not
+// exist, so python exited at once on every image.
+const PERCEPTUAL_HASH_SCRIPT = fileURLToPath(new URL('../perceptual-hash.py', import.meta.url));
+const PERCEPTUAL_HASH_TIMEOUT_MS = Math.max(1000, Number(process.env.ANTIFAKE_PERCEPTUAL_TIMEOUT_MS) || 10_000);
 
-function runPerceptualHash(bytes) {
+function runPerceptualHash(bytes, {command = process.env.ANTIFAKE_PYTHON || 'python3', args = [PERCEPTUAL_HASH_SCRIPT]} = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.env.ANTIFAKE_PYTHON || 'python3', [PERCEPTUAL_HASH_SCRIPT], {
+    const child = spawn(command, args, {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
     let stdout = '';
     let stderr = '';
+    const timer = setTimeout(() => child.kill('SIGKILL'), PERCEPTUAL_HASH_TIMEOUT_MS);
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk) => { stdout += chunk; });
     child.stderr.on('data', (chunk) => { stderr += chunk; });
-    child.on('error', reject);
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    // A helper that exits before reading the whole image closes its stdin, and
+    // the pending write then fails with EPIPE. Without a listener that error
+    // is thrown as an unhandled 'error' event and kills the whole worker (it
+    // crash-looped 90 times this way). 'close' below reports the failure.
+    child.stdin.on('error', () => {});
     child.on('close', (code) => {
+      clearTimeout(timer);
       const hash = stdout.trim().toLowerCase();
       if (code === 0 && /^[0-9a-f]{16}$/.test(hash)) resolve(hash);
       else reject(new Error(stderr.trim() || `perceptual hash exited ${code}`));
@@ -30,6 +44,8 @@ function runPerceptualHash(bytes) {
     child.stdin.end(bytes);
   });
 }
+
+export const __photoAntifakeTest = {runPerceptualHash, PERCEPTUAL_HASH_SCRIPT};
 
 async function hashRemoteImage(url) {
   const response = await fetch(url, {

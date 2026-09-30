@@ -1,12 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import {existsSync} from 'node:fs';
+
 import {
+  __photoAntifakeTest,
   compareListingLocations,
   hammingDistanceHex,
   isPropertyClusterMatch,
   scoreCloneRelationship,
 } from '../src/listing/photo-antifake.js';
+
+test('the perceptual-hash helper path points at the real script', () => {
+  assert.ok(existsSync(__photoAntifakeTest.PERCEPTUAL_HASH_SCRIPT), __photoAntifakeTest.PERCEPTUAL_HASH_SCRIPT);
+});
+
+test('a helper that exits before reading the image rejects instead of crashing the worker', async () => {
+  // `node -e ""` exits immediately without touching stdin; writing 4MB into
+  // the closed pipe raises EPIPE, which used to be an unhandled 'error' event.
+  const bytes = Buffer.alloc(4 * 1024 * 1024, 1);
+  await assert.rejects(
+    __photoAntifakeTest.runPerceptualHash(bytes, {command: process.execPath, args: ['-e', '']}),
+    /perceptual hash exited 0|exited/u,
+  );
+});
 
 function listing(overrides = {}) {
   return {
