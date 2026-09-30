@@ -19,6 +19,26 @@ async function loadTransportModule() {
   return transportModulePromise;
 }
 
+/**
+ * Load the transport catalog and build its stop -> route index before the API
+ * serves traffic. Both are lazy and synchronous-heavy (the module load took
+ * ~48s on the production host), so leaving them to the first listing popup
+ * after every restart made that visitor's request time out.
+ */
+export async function preloadTransportCatalog() {
+  const started = Date.now();
+  const transport = await loadTransportModule();
+  if (!transport?.nearestTransportStops) return false;
+  // One lookup builds the route-membership index inside geo-catalog.
+  transport.nearestTransportStops({ lat: 41.3111, lng: 69.2797 }, {
+    country: 'UZ',
+    cityId: 'uz:tashkent',
+    maxDistanceM: TRANSPORT_RADIUS_M,
+  });
+  console.log(`[transport] catalog preloaded in ${Date.now() - started}ms`);
+  return true;
+}
+
 function compactHit(hit) {
   const stop = hit.stop;
   return {

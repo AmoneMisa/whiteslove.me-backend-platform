@@ -3,12 +3,20 @@ import {closeDb} from './infrastructure/database/listingRepository.js';
 import {assertDatabaseReady} from './infrastructure/database/schemaReady.js';
 import {closeElasticsearch, initElasticsearch} from './infrastructure/search/elasticsearch.js';
 import {createApp} from './app.js';
+import {preloadTransportCatalog} from './geo/transport-nearby.js';
 import {startMobileSubscriptionScanner, stopMobileSubscriptionScanner} from './mobile/mobile-subscriptions.js';
 
 const PORT = process.env.PORT || 4000;
 
 async function start() {
   await assertDatabaseReady();
+
+  // Before listen, so /health only reports ready once the transport catalog
+  // is in memory; otherwise the first listing popup after a restart paid for
+  // the load and timed out. Not fatal: transport is an optional enrichment.
+  await preloadTransportCatalog().catch((err) => {
+    console.warn('[transport] catalog preload failed:', err?.message ?? String(err));
+  });
 
   const app = createApp();
   const server = app.listen(PORT, () => {

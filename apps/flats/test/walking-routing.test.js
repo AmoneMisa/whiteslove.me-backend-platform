@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { fetchWalkingMatrix } from '../src/geo/walking-routing.js';
+import { __walkingRoutingTest, fetchWalkingMatrix } from '../src/geo/walking-routing.js';
 
 test('Valhalla walking matrix uses pedestrian costing and converts km/seconds', async () => {
   let request;
@@ -89,4 +89,43 @@ test('walking matrix preserves target positions when one target is invalid', asy
     null,
     { distanceM: 900, durationMin: 11 },
   ]);
+});
+
+test('the retired demo host is rewritten to the FOSSGIS routing API', async () => {
+  // valhalla.openstreetmap.de now serves only the demo app and answers the
+  // matrix POST with 405; .env.example used to point production at it.
+  assert.equal(__walkingRoutingTest.DEFAULT_VALHALLA_URL, 'https://valhalla1.openstreetmap.de');
+  assert.equal(__walkingRoutingTest.normalizedBaseUrl('https://valhalla.openstreetmap.de/'), 'https://valhalla1.openstreetmap.de');
+  assert.equal(__walkingRoutingTest.normalizedBaseUrl('https://routing.example.org/'), 'https://routing.example.org');
+
+  __walkingRoutingTest.resetFailureCooldown();
+  const urls = [];
+  await fetchWalkingMatrix({ lat: 41.2757, lng: 69.2047 }, [{ lat: 41.2733, lng: 69.2043 }], {
+    baseUrl: 'https://valhalla.openstreetmap.de',
+    fetchImpl: async (url) => {
+      urls.push(url);
+      return new Response(JSON.stringify({ sources_to_targets: [[{ distance: 0.346, time: 261 }]] }), { status: 200 });
+    },
+  });
+  assert.deepEqual(urls, ['https://valhalla1.openstreetmap.de/sources_to_targets']);
+});
+
+test('a failing router is skipped for a cool-down instead of costing every popup', async () => {
+  __walkingRoutingTest.resetFailureCooldown();
+  let calls = 0;
+  const failing = async () => {
+    calls += 1;
+    return new Response('<html>405 Not Allowed</html>', { status: 405 });
+  };
+  const origin = { lat: 41.2757, lng: 69.2047 };
+  const targets = [{ lat: 41.2733, lng: 69.2043 }];
+  const now = Date.parse('2026-09-30T08:00:00Z');
+
+  await assert.rejects(fetchWalkingMatrix(origin, targets, { baseUrl: 'https://r.example', fetchImpl: failing, now }), /HTTP 405/u);
+  assert.deepEqual(await fetchWalkingMatrix(origin, targets, { baseUrl: 'https://r.example', fetchImpl: failing, now: now + 60_000 }), [null]);
+  assert.equal(calls, 1, 'no request during the cool-down');
+
+  await assert.rejects(fetchWalkingMatrix(origin, targets, { baseUrl: 'https://r.example', fetchImpl: failing, now: now + 6 * 60_000 }), /HTTP 405/u);
+  assert.equal(calls, 2, 'retried after the cool-down');
+  __walkingRoutingTest.resetFailureCooldown();
 });
