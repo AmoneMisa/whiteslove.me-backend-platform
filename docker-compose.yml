@@ -354,6 +354,10 @@ services:
     # used in full. Without this the crawlers held load ~20 on 8 cores
     # and flats-api needed minutes to start.
     cpu_shares: ${FLATS_WORKER_CPU_SHARES:-256}
+    # Hard cap as well as the low weight: on the 8-core host the three
+    # background workers held ~6.4 cores, starving flats-api (and swapping
+    # the host) so single-listing requests ran ~10x slow.
+    cpus: ${FLATS_WORKER_CPUS:-2}
     init: true
     env_file:
       - path: ./.env
@@ -659,6 +663,10 @@ services:
     # used in full. Without this the crawlers held load ~20 on 8 cores
     # and flats-api needed minutes to start.
     cpu_shares: ${VACANCIES_WORKER_CPU_SHARES:-256}
+    # Hard cap as well as the low weight: on the 8-core host the three
+    # background workers held ~6.4 cores, starving flats-api (and swapping
+    # the host) so single-listing requests ran ~10x slow.
+    cpus: ${VACANCIES_WORKER_CPUS:-1.5}
     init: true
     env_file:
       - path: ./.env
@@ -702,6 +710,10 @@ services:
     # used in full. Without this the crawlers held load ~20 on 8 cores
     # and flats-api needed minutes to start.
     cpu_shares: ${CV_WORKER_CPU_SHARES:-256}
+    # Hard cap as well as the low weight: on the 8-core host the three
+    # background workers held ~6.4 cores, starving flats-api (and swapping
+    # the host) so single-listing requests ran ~10x slow.
+    cpus: ${CV_WORKER_CPUS:-1.5}
     init: true
     env_file:
       - path: ./.env
