@@ -13,6 +13,7 @@ import {
   escapeRegex,
   findCanonical,
   normalizeUnicode,
+  parseHousingAddress,
   parseHousingContext,
   parseHousingStructured,
   resolveHousingIntent,
@@ -136,8 +137,11 @@ export function parseLexiconAddress(text, canonicalStreet = null) {
   const uzbekMassifHouse = parseUzbekMassifHouse(text);
   if (uzbekMassifHouse) return uzbekMassifHouse;
 
+  // A labelled line is an address only when the lexicon finds a street in it.
+  // "Manzil: Sergeli 5 104 (metro yonida)" is district + quarter + house, so
+  // echoing the raw line would show prose as an address.
   const labeled = String(text).match(addressLabelRe);
-  const labeledAddress = labeled ? plausibleAddress(labeled[1]) : null;
+  const labeledAddress = labeled ? plausibleAddress(parseHousingAddress(labeled[1]).address) : null;
   if (labeledAddress) return labeledAddress;
 
   const marked = String(text).match(markedStreetRe);
