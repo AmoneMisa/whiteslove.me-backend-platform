@@ -12,7 +12,7 @@
     "dev": "node --watch src/server.js",
     "lint": "eslint src test",
     "lint:fix": "eslint src test --fix",
-    "test": "node --test",
+    "test": "node --expose-gc --test",
     "migrate": "node src/migrate.js",
     "reindex": "node src/reindex.js",
     "reindex:listings": "node src/reindex-listings.js",
