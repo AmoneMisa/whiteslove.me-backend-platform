@@ -12,7 +12,7 @@
     "dev": "node --watch src/server.js",
     "lint": "eslint src test",
     "lint:fix": "eslint src test --fix",
-    "test": "node --test",
+    "test": "node --expose-gc --test",
     "migrate": "node src/migrate.js",
     "reindex": "node src/reindex.js",
     "reindex:listings": "node src/reindex-listings.js",
@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@elastic/elasticsearch": "^9.5.1",
-    "@whiteslove/geo-catalog": "^0.10.1",
+    "@whiteslove/geo-catalog": "^0.10.2",
     "@whiteslove/parsing-lexicon": "^0.10.8",
     "cors": "^2.8.6",
     "express": "^5.2.1",
