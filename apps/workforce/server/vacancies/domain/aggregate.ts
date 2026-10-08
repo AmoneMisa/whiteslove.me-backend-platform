@@ -4,6 +4,7 @@
 // structured filters and stats can operate on derived fields.
 
 import { enrichJob, resolveCountry } from './enrich'
+import { jobClusterKey } from '~~/shared/hiring/jobCluster'
 import { normalizeJobSeniority } from '~~/shared/jobs/jobSeniority'
 import { canonicalSkillName } from '~~/shared/jobSkills'
 import type {
@@ -389,6 +390,38 @@ function computeStats(jobs: Job[]): JobStats {
   }
 }
 
+// Telegram channels that repost other channels' vacancies rather than publish
+// their own. Their copy loses to the original whenever both are present.
+const AGGREGATOR_CHANNELS = new Set(['@revacancy'])
+
+function jobOrigin(job: Job): string {
+  if (job.source !== 'telegram') return job.source
+  return job.tags.find((tag) => tag.startsWith('@'))?.toLowerCase() || job.source
+}
+
+// 0 = original board/employer, 1 = ordinary Telegram channel, 2 = aggregator.
+function originRank(job: Job): number {
+  if (job.source !== 'telegram') return 0
+  return AGGREGATOR_CHANNELS.has(jobOrigin(job)) ? 2 : 1
+}
+
+function contentDedupKeys(job: Job): string[] {
+  const keys: string[] = []
+  const cluster = jobClusterKey({ company: job.company, title: job.title, city: job.city, location: job.location, country: job.country })
+  if (cluster) keys.push(`c:${cluster}`)
+  if (job.applyUrl) {
+    try {
+      const url = new URL(job.applyUrl)
+      const segments = url.pathname.split('/').filter(Boolean)
+      // A bare careers/home page is shared by many different roles.
+      if (segments.length >= 2 || url.search) {
+        keys.push(`u:${url.hostname.replace(/^www\./, '').toLowerCase()}${url.pathname.replace(/\/+$/, '')}${url.search}`)
+      }
+    } catch { /* unusable apply URL */ }
+  }
+  return keys
+}
+
 export function filterAndPaginate(all: Job[], query: JobQuery): JobResponse {
   const maxAge = Math.min(query.maxAgeDays || 14, 14)
   const oldestAllowed = Date.now() - maxAge * 86_400_000
@@ -396,6 +429,7 @@ export function filterAndPaginate(all: Job[], query: JobQuery): JobResponse {
   const perSource: JobResponse['sources'] = {}
   const seen = new Set<string>()
   const filtered: Job[] = []
+  const byContent = new Map<string, number>()
 
   for (const raw of all) {
     if (!query.sources.includes(raw.source)) continue
@@ -404,9 +438,21 @@ export function filterAndPaginate(all: Job[], query: JobQuery): JobResponse {
     const key = job.url || job.id
     if (seen.has(key)) continue
     seen.add(key)
-    perSource[job.source] = (perSource[job.source] || 0) + 1
+
+    // The same vacancy reposted by an aggregator or another channel collapses
+    // onto the copy from the most original source.
+    const contentKeys = contentDedupKeys(job)
+    const duplicateAt = contentKeys.map((k) => byContent.get(k)).find((i) => i !== undefined)
+    const duplicate = duplicateAt === undefined ? undefined : filtered[duplicateAt]
+    if (duplicateAt !== undefined && duplicate && jobOrigin(duplicate) !== jobOrigin(job)) {
+      if (originRank(job) < originRank(duplicate)) filtered[duplicateAt] = job
+      for (const k of contentKeys) byContent.set(k, duplicateAt)
+      continue
+    }
+    for (const k of contentKeys) byContent.set(k, filtered.length)
     filtered.push(job)
   }
+  for (const job of filtered) perSource[job.source] = (perSource[job.source] || 0) + 1
 
   const stats = computeStats(filtered)
 

@@ -64,6 +64,9 @@ const TELEGRAM_CHANNELS: TelegramChannel[] = [
   { handle: 'devjobro', label: 'DevJob Romania', location: 'Romania', countryCode: 'RO', tags: ['IT'] },
   { handle: 'jobs4ukrinromania', label: 'Jobs4UKR Romania', location: 'Romania', countryCode: 'RO', tags: ['Jobs', 'Local', 'EntryLevel', 'Romania'] },
   { handle: 'RoMunca', label: 'RoMunca', location: 'Romania', countryCode: 'RO', tags: ['Jobs', 'Local', 'Romania'] },
+
+  { handle: 'ayti_jobs', label: 'Ayti - IT Jobs', location: 'Uzbekistan', countryCode: 'UZ', tags: ['IT', 'Design'] },
+  { handle: 'revacancy', label: 'RVC IT Jobs CIS', location: 'Remote', countryCode: 'CIS', tags: ['IT', 'Remote', 'Relocation'], remoteByDefault: true },
 ]
 
 interface TelegramWorkerMessage {
