@@ -124,7 +124,7 @@ app.post('/ai/extract', asyncRoute(async (req, res) => {
 }));
 
 app.get('/ai/result/:key', asyncRoute(async (req, res) => {
-  if (!/^(apartment|vacancy|candidate|translation|photo)-[a-f0-9]{32}$/.test(req.params.key)) {
+  if (!/^(apartment|amenities|vacancy|candidate|translation|photo)-[a-f0-9]{32}$/.test(req.params.key)) {
     return res.status(400).json({ error: 'invalid key' });
   }
   res.json(await readExtractionResult(req.params.key));

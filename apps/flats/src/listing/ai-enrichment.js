@@ -25,9 +25,18 @@ import { createProvenance } from '@whiteslove/parsing-lexicon/provenance';
 
 // Bump when prompts, schema or the merge rules change, so already-enriched
 // listings are re-evaluated instead of keeping an answer from the old contract.
-export const APARTMENT_PARSER_VERSION = 'apartment-semantic-v2';
+export const APARTMENT_PARSER_VERSION = 'apartment-semantic-v3';
 
 const MIN_CONFIDENCE = Number(process.env.AI_WORKER_APARTMENT_MIN_CONFIDENCE) || 0.6;
+
+// A saved `pending`/`failed`/`unavailable` marker is not an answer. The queue
+// that held a pending job lives in process memory, so a restart strands the
+// marker, and a provider outage writes `unavailable` for listings that were
+// never actually judged. Only `completed` and `low_confidence` mean the model
+// has seen this exact text and facts, so only those suppress a re-ask.
+const PENDING_RETRY_MS = (Number(process.env.AI_WORKER_PENDING_RETRY_MINUTES) || 15) * 60_000;
+const FAILED_RETRY_MS = (Number(process.env.AI_WORKER_FAILED_RETRY_MINUTES) || 30) * 60_000;
+const TERMINAL_AI_STATUSES = new Set(['completed', 'low_confidence']);
 
 // Fields the model may fill, mapped onto the listing shape. Anything absent
 // here is owned by the deterministic parser and is never touched.
@@ -42,6 +51,17 @@ const SCALAR_FIELDS = Object.freeze({
   balcony: 'balcony',
   airConditioner: 'airConditioner',
   gas: 'gas',
+  dishwasher: 'dishwasher',
+  terrace: 'terrace',
+  privateYard: 'privateYard',
+  tv: 'tv',
+  microwave: 'microwave',
+  oven: 'oven',
+  bidet: 'bidet',
+  walkInCloset: 'walkInCloset',
+  bathtub: 'bathtub',
+  shower: 'shower',
+  euroLayout: 'euroLayout',
   furnished: 'furnished',
   petsAllowed: 'petsAllowed',
   childrenAllowed: 'childrenAllowed',
@@ -94,6 +114,19 @@ export function apartmentAiInput(listing) {
     }),
   };
 }
+
+/** True when a listing's saved AI marker no longer blocks asking again. */
+export function aiRetryDue(listing, now = Date.now()) {
+  const status = listing?.ai?.status;
+  if (!status) return true;
+  if (TERMINAL_AI_STATUSES.has(status)) return false;
+  const updatedAt = Date.parse(listing.ai.updatedAt);
+  if (!Number.isFinite(updatedAt)) return true;
+  return now - updatedAt >= (status === 'pending' ? PENDING_RETRY_MS : FAILED_RETRY_MS);
+}
+
+/** Listing fields the text model is allowed to fill, for candidate queries. */
+export const AI_FILLABLE_LISTING_FIELDS = Object.freeze([...new Set(Object.values(SCALAR_FIELDS))]);
 
 export function needsApartmentAi(listing) {
   if (!listing || String(listing.source || '').startsWith('mock')) return false;
@@ -321,6 +354,8 @@ export function mergeApartmentAi(listing, result, countryCode = null) {
   merged.ai = {
     parserVersion: APARTMENT_PARSER_VERSION,
     fingerprint: listing?.ai?.fingerprint ?? null,
+    // Written by the separate amenity pass; this full pass must not erase it.
+    ...(listing?.ai?.amenityPass ? { amenityPass: listing.ai.amenityPass } : {}),
     status: 'completed',
     confidence: Number(result?.confidence) || 0,
     derivedFields: [...derivedFields].sort(),
@@ -334,11 +369,11 @@ export function mergeApartmentAi(listing, result, countryCode = null) {
  * Queues apartment extraction for listings the parser left incomplete.
  * `persist` receives the merged listing; callers own storage.
  */
-export function scheduleListingsAi(listings, country, persist) {
+export function scheduleListingsAi(listings, country, persist, { batchSize: requestedBatch } = {}) {
   if (!aiWorkerEnabled() || !Array.isArray(listings) || !listings.length) return 0;
 
   const countryCode = String(country?.code || '').toUpperCase() || null;
-  const batchSize = Math.max(1, Number(process.env.AI_WORKER_APARTMENT_BATCH) || 8);
+  const batchSize = Math.max(1, requestedBatch || Number(process.env.AI_WORKER_APARTMENT_BATCH) || 8);
   let queued = 0;
 
   // Capacity is the scarce resource, so spend it on the freshest adverts
@@ -350,7 +385,7 @@ export function scheduleListingsAi(listings, country, persist) {
     const input = apartmentAiInput(listing);
     const original = Object.defineProperty(structuredClone(listing), '_sourceRevision', {value: listing._sourceRevision});
     // Same text and same deterministic facts as last time: nothing to re-ask.
-    if (listing.ai?.fingerprint === input.fingerprint) continue;
+    if (listing.ai?.fingerprint === input.fingerprint && !aiRetryDue(listing)) continue;
 
     const id = listingKey(listing);
     const accepted = scheduleAiExtraction({

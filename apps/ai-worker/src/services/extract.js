@@ -8,6 +8,8 @@ import { vacancyJsonSchema, VacancySchema, sanitizeVacancy } from '../schemas/va
 import { candidateJsonSchema, CandidateSchema, sanitizeCandidate } from '../schemas/candidate.js';
 import { translationJsonSchema, TranslationSchema, sanitizeTranslation } from '../schemas/translation.js';
 import { APARTMENT_SYSTEM, apartmentPayload } from '../prompts/apartment.js';
+import { amenitiesJsonSchema, AmenitiesSchema, sanitizeAmenities } from '../schemas/amenities.js';
+import { AMENITIES_SYSTEM, amenitiesPayload } from '../prompts/amenities.js';
 import { VACANCY_SYSTEM, vacancyPayload } from '../prompts/vacancy.js';
 import { CANDIDATE_SYSTEM, candidatePayload } from '../prompts/candidate.js';
 import { TRANSLATION_SYSTEM, translationPayload } from '../prompts/translation.js';
@@ -21,6 +23,13 @@ export const EXTRACTION_KINDS = Object.freeze({
     sanitize: sanitizeApartment,
     system: APARTMENT_SYSTEM,
     payload: apartmentPayload,
+  },
+  amenities: {
+    jsonSchema: amenitiesJsonSchema,
+    zod: AmenitiesSchema,
+    sanitize: sanitizeAmenities,
+    system: AMENITIES_SYSTEM,
+    payload: amenitiesPayload,
   },
   vacancy: {
     jsonSchema: vacancyJsonSchema,

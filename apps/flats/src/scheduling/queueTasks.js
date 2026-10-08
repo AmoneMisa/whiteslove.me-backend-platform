@@ -280,7 +280,7 @@ async function persist(listings, task) {
  * useful if the listing is placed again — and only when it still has no point,
  * so a resolved coordinate is never re-derived from weaker evidence.
  */
-async function persistAiMerged(merged, original, config, task) {
+export async function persistAiMerged(merged, original, config, task) {
   try {
     const filledGeography = (merged?.ai?.derivedFields || []).some(
       (field) => field === 'district' || field === 'kvartal',

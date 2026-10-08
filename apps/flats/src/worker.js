@@ -20,6 +20,7 @@ import {deactivateExpiredListings} from './listing/listing-lifecycle.js';
 import {refreshStatisticsSnapshot} from './support/statistics-snapshot.js';
 import {syncGeoCitySnapshots} from './geo/geo-city-snapshot-sync.js';
 import {refreshListingLines, refreshListingOwners} from './infrastructure/database/listingLineRepository.js';
+import {runAiBackfillTick} from './listing/ai-backfill.js';
 
 const REFRESH_SECONDS = Math.max(60, Number(process.env.QUEUE_REFRESH_SECONDS) || 1800);
 const POLL_MS = Math.max(200, Number(process.env.QUEUE_POLL_SECONDS || 1) * 1000);
@@ -55,7 +56,15 @@ const LISTING_LINES_REFRESH_MS = Math.max(
   Number(process.env.LISTING_LINES_REFRESH_SECONDS || 900) * 1000,
 );
 
+// Cadence of the stored-listing AI sweep; each tick only submits as many
+// listings as the shared AI queue has free slots for.
+const AI_BACKFILL_MS = Math.max(
+  5_000,
+  Number(process.env.AI_BACKFILL_SECONDS || 20) * 1000,
+);
+
 let stopping = false;
+let aiBackfillRunning = false;
 let dispatching = false;
 let availabilityRunning = false;
 let lifecycleRunning = false;
@@ -126,6 +135,19 @@ async function lifecycleTick() {
     console.warn('[flat:worker] lifecycle sweep failed:', error?.message ?? error);
   } finally {
     lifecycleRunning = false;
+  }
+}
+
+async function aiBackfillTick() {
+  if (aiBackfillRunning || stopping) return;
+  aiBackfillRunning = true;
+  try {
+    const queued = await runAiBackfillTick();
+    if (queued) console.log(`[flat:worker] ai backfill queued=${queued}`);
+  } catch (error) {
+    console.warn('[flat:worker] ai backfill failed:', error?.message ?? error);
+  } finally {
+    aiBackfillRunning = false;
   }
 }
 
@@ -317,6 +339,8 @@ async function main() {
   const statisticsTimer = setInterval(() => void statisticsTick(), STATISTICS_REFRESH_MS);
   const geoSnapshotTimer = setInterval(() => void geoSnapshotTick(), GEO_SNAPSHOT_REFRESH_MS);
   const listingLinesTimer = setInterval(() => void listingLinesTick(), LISTING_LINES_REFRESH_MS);
+  const aiBackfillTimer = setInterval(() => void aiBackfillTick(), AI_BACKFILL_MS);
+  aiBackfillTimer.unref?.();
   dispatchTimer.unref?.();
   pruneTimer.unref?.();
   placesTimer.unref?.();

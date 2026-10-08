@@ -3,7 +3,7 @@ import { setResult } from '../cache/cache.js';
 import { metrics, recordJobTiming, recordQueueWait, recordText } from '../util/metrics.js';
 import { log } from '../util/logger.js';
 
-export const PRIORITY = Object.freeze({ translation: 1, vacancy: 2, candidate: 2, apartment: 3, photo: 4 });
+export const PRIORITY = Object.freeze({ translation: 1, vacancy: 2, candidate: 2, apartment: 3, amenities: 3, photo: 4 });
 
 const NON_RETRYABLE_CODES = new Set([
   'BAD_KIND',

@@ -3,10 +3,18 @@ import assert from 'node:assert/strict';
 
 import {
   APARTMENT_PARSER_VERSION,
+  AI_FILLABLE_LISTING_FIELDS,
+  aiRetryDue,
   apartmentAiInput,
   mergeApartmentAi,
   needsApartmentAi,
 } from '../src/listing/ai-enrichment.js';
+import {
+  AMENITY_PASS_VERSION,
+  buildAmenityBatchText,
+  mergeAmenityItem,
+  needsAmenityPass,
+} from '../src/listing/amenity-batch.js';
 
 function result(data, confidence = 0.9) {
   return { status: 'completed', confidence, data };
@@ -114,7 +122,8 @@ test('a listing the parser fully covered is not sent for extraction', () => {
     'petsAllowed', 'childrenAllowed', 'communalSeparated', 'deposit',
     'depositAmount', 'commission', 'commissionPercent', 'negotiable',
     'parking', 'elevator', 'heating', 'hotWater', 'internet',
-    'smokingAllowed', 'condition',
+    'smokingAllowed', 'condition', 'dishwasher', 'terrace', 'privateYard', 'tv',
+    'microwave', 'oven', 'bidet', 'walkInCloset', 'bathtub', 'shower', 'euroLayout',
   ]) complete[field] = 1;
 
   assert.equal(needsApartmentAi(complete), false);
@@ -281,4 +290,107 @@ test('a labelled price, floor or phone line is not an address', () => {
   for (const address of ["Amir Temur ko'chasi 15", 'площадь Независимости', 'Чиланзар 8 квартал, дом 12']) {
     assert.equal(mergeApartmentAi(listing, result({ address }), 'UZ').address, address, address);
   }
+});
+
+test('amenity flags the parser missed are filled from the model, parser values win', () => {
+  const listing = { source: 'olx', id: 'amen', city: 'Tashkent', dishwasher: false };
+
+  const merged = mergeApartmentAi(listing, result({
+    dishwasher: true,
+    microwave: true,
+    oven: true,
+    tv: true,
+    bidet: true,
+    walkInCloset: true,
+    bathtub: true,
+    shower: null,
+    terrace: true,
+    privateYard: true,
+    euroLayout: true,
+  }), 'UZ');
+
+  assert.equal(merged.dishwasher, false);
+  for (const field of ['microwave', 'oven', 'tv', 'bidet', 'walkInCloset', 'bathtub', 'terrace', 'privateYard', 'euroLayout']) {
+    assert.equal(merged[field], true, field);
+  }
+  assert.equal(merged.shower, undefined);
+});
+
+test('only completed and low-confidence markers suppress a re-ask', () => {
+  const now = Date.parse('2026-10-08T12:00:00Z');
+  const ago = (minutes) => new Date(now - minutes * 60_000).toISOString();
+  const marked = (status, minutes) => ({ ai: { status, updatedAt: ago(minutes) } });
+
+  assert.equal(aiRetryDue(marked('completed', 9999), now), false);
+  assert.equal(aiRetryDue(marked('low_confidence', 9999), now), false);
+  // A stranded pending job (lost with the old process) is retried, but not
+  // while it may still be in flight.
+  assert.equal(aiRetryDue(marked('pending', 5), now), false);
+  assert.equal(aiRetryDue(marked('pending', 20), now), true);
+  assert.equal(aiRetryDue(marked('failed', 10), now), false);
+  assert.equal(aiRetryDue(marked('failed', 45), now), true);
+  assert.equal(aiRetryDue(marked('unavailable', 45), now), true);
+  assert.equal(aiRetryDue({ ai: { status: 'pending' } }, now), true);
+  assert.equal(aiRetryDue({}, now), true);
+});
+
+test('the backfill query covers every field the model may fill', () => {
+  for (const field of ['dishwasher', 'tv', 'euroLayout', 'balcony', 'rooms']) {
+    assert.ok(AI_FILLABLE_LISTING_FIELDS.includes(field), field);
+  }
+});
+
+// --- batched amenity pass ---------------------------------------------------
+const LONG_TEXT = 'Сдаётся уютная двухкомнатная квартира в центре города, рядом метро и парк.';
+
+test('short, finished or already-passed listings are not put in an amenity batch', () => {
+  const base = { source: 'olx', id: 'a1', title: 'Квартира', description: LONG_TEXT };
+  assert.equal(needsAmenityPass(base), true);
+  assert.equal(needsAmenityPass({ ...base, description: 'мало' }), false);
+  assert.equal(needsAmenityPass({ ...base, ai: { amenityPass: AMENITY_PASS_VERSION } }), false);
+  assert.equal(needsAmenityPass({ ...base, source: 'mock-1' }), false);
+  const known = Object.fromEntries(
+    ['balcony', 'airConditioner', 'gas', 'parking', 'internet', 'dishwasher', 'terrace', 'privateYard',
+      'tv', 'microwave', 'oven', 'bidet', 'walkInCloset', 'bathtub', 'shower', 'euroLayout']
+      .map((field) => [field, false]),
+  );
+  assert.equal(needsAmenityPass({ ...base, ...known }), false);
+});
+
+test('a batch is numbered from 1 in listing order', () => {
+  const text = buildAmenityBatchText([
+    { title: 'A', description: 'first' },
+    { title: 'B', description: 'second' },
+  ]);
+  assert.equal(text, '[#1]\nA\nfirst\n\n[#2]\nB\nsecond');
+});
+
+test('amenity merge fills only unknown flags and records them', () => {
+  const listing = { source: 'olx', id: 'm1', dishwasher: false, ai: { status: 'completed', parserVersion: 'x' } };
+  const merged = mergeAmenityItem(listing, {
+    id: 1, dishwasher: true, tv: true, oven: false, shower: null, confidence: 0.9,
+  });
+  assert.equal(merged.dishwasher, false);
+  assert.equal(merged.tv, true);
+  assert.equal(merged.oven, false);
+  assert.equal(merged.shower, undefined);
+  assert.deepEqual(merged.ai.derivedFields, ['oven', 'tv']);
+  assert.equal(merged.ai.amenityPass, AMENITY_PASS_VERSION);
+  assert.equal(merged.ai.status, 'completed');
+  assert.equal(merged.ai.parserVersion, 'x');
+});
+
+test('a low-confidence amenity answer fills nothing but ends the pass', () => {
+  const merged = mergeAmenityItem({ source: 'olx', id: 'm2' }, { id: 1, tv: true, confidence: 0.2 });
+  assert.equal(merged.tv, undefined);
+  assert.equal(merged.ai.amenityPass, AMENITY_PASS_VERSION);
+});
+
+test('the full enrichment merge keeps the amenity pass marker', () => {
+  const merged = mergeApartmentAi(
+    { source: 'olx', id: 'm3', city: 'Tashkent', ai: { amenityPass: AMENITY_PASS_VERSION } },
+    result({ rooms: 2 }),
+    'UZ',
+  );
+  assert.equal(merged.ai.amenityPass, AMENITY_PASS_VERSION);
 });

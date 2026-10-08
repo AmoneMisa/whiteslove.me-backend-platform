@@ -35,6 +35,16 @@ may contain typos or transliteration (e.g. "kvartil"->kvartal, "kvadirat"->m²,
   on floor 4 of a 4-storey building; report rooms=3, floor=4, floorsTotal=4.
 - Uzbek "uy" often means home/apartment generically. Do not classify it as a
   detached house without a house-specific signal such as hovli, villa or cottage.
+- Amenity flags (dishwasher, terrace, privateYard, tv, microwave, oven, bidet,
+  walkInCloset, bathtub, shower, euroLayout, balcony, airConditioner, gas,
+  parking, internet): true only when the text states the property has it, in
+  any language or phrasing ("посудомойка", "idish yuvish mashinasi", "ПММ",
+  "СВЧ", "духовой шкаф", "гардеробная", "ванна", "душевая кабина", "личный
+  дворик"). false only when the text
+  explicitly says it is absent. Silence means null, never false.
+  terrace is a usable outdoor terrace, distinct from a balcony; privateYard is
+  a yard belonging to this property, not a shared courtyard. euroLayout is a
+  euro-format / open-plan kitchen-living layout ("евродвушка", "euro-2").
 - confidence: your overall 0..1 certainty for this extraction.`;
 
 // Build the user payload: the cleaned text plus what the deterministic parser

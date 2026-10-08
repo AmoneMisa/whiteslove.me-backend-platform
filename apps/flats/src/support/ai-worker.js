@@ -13,8 +13,10 @@ const visionMaxQueued = Math.max(1, Number(process.env.AI_WORKER_VISION_MAX_PEND
 // interactive control-plane timeout and a slow poll for queued jobs.
 const textTimeoutMs = Math.max(10_000, Number(process.env.AI_WORKER_TEXT_TIMEOUT_MS) || 30_000);
 const textPollIntervalMs = Math.max(1_000, Number(process.env.AI_WORKER_POLL_MS) || 5_000);
-const textConcurrency = Math.max(1, Number(process.env.AI_WORKER_SUBMIT_CONCURRENCY) || 2);
-const textMaxQueued = Math.max(1, Number(process.env.AI_WORKER_MAX_PENDING) || 60);
+const textConcurrency = Math.max(1, Number(process.env.AI_WORKER_SUBMIT_CONCURRENCY) || 6);
+// Stays under ai-worker's own AI_QUEUE_MAX_PENDING (100) so a full sender queue
+// never turns into QUEUE_FULL rejections on the worker side.
+const textMaxQueued = Math.max(1, Number(process.env.AI_WORKER_MAX_PENDING) || 90);
 
 let lastWarningAt = 0;
 
@@ -193,6 +195,12 @@ function pumpText() {
     activeText += 1;
     void submitText(task);
   }
+}
+
+/** Free text-extraction slots right now; the backfill sizes its batch to this. */
+export function aiTextCapacity() {
+  if (!aiWorkerEnabled()) return 0;
+  return Math.max(0, textMaxQueued - (textQueue.length + textPending.size + activeText));
 }
 
 /**
