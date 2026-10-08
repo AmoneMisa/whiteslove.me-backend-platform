@@ -513,13 +513,18 @@ async function fetchUzbekBoardTarget(source: UzbekBoardSource): Promise<Job[]> {
     parsePage: (raw) => parseUzbekBoardPage(raw, config),
   })
 
-  return enrichStandardJobBoardDetails({
+  const enriched = new Set<string>()
+  const jobs = await enrichStandardJobBoardDetails({
     key: `source:${source}`,
     jobs: run.jobs,
     fetchDetail: (job) => fetchText(job.url),
     parseDetail: (html, summary) => {
       const posting = extractJobPosting(html)
-      if (posting) return normalizeSchemaPosting(posting, summary, config, html)
+      if (posting) {
+        const job = normalizeSchemaPosting(posting, summary, config, html)
+        if (job) enriched.add(job.id)
+        return job
+      }
       // Without the page's JobPosting the summary is all there is. ishGO's
       // carries the API's real title and creation date; IT-Jobs.uz's has
       // neither (its date would be "now"), so keeping it would present an
@@ -527,6 +532,11 @@ async function fetchUzbekBoardTarget(source: UzbekBoardSource): Promise<Job[]> {
       return config.source === 'ishgo' ? summary : null
     },
   })
+
+  // The shared enrichment keeps the bare summary when a detail fetch fails or
+  // parses to null. For IT-Jobs.uz that summary is an empty "IT-Jobs.uz" ad, so
+  // only enriched postings are returned; the rest are picked up on a later crawl.
+  return config.source === 'ishgo' ? jobs : jobs.filter((job) => enriched.has(job.id))
 }
 
 // ---------- OLX UZ/KZ ----------
