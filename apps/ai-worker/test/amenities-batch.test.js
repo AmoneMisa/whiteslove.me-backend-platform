@@ -56,3 +56,20 @@ test('one malformed item does not discard the rest of the batch', () => {
 test('a non-array answer degrades to an empty batch', () => {
   assert.deepEqual(sanitizeAmenities(AmenitiesSchema.parse({ results: 'nope' })).results, []);
 });
+
+test('envelope variations of the same answer are all accepted', () => {
+  const item = { id: 1, dishwasher: true, confidence: 0.9 };
+  const ids = (raw) => sanitizeAmenities(AmenitiesSchema.parse(raw)).results.map((r) => r.id);
+
+  assert.deepEqual(ids({ results: [item] }), [1]);
+  assert.deepEqual(ids([item]), [1]);
+  assert.deepEqual(ids({ listings: [item] }), [1]);
+  assert.deepEqual(ids({ items: [item, { ...item, id: 2 }] }), [1, 2]);
+  assert.deepEqual(ids(item), [1]);
+  assert.deepEqual(ids({ results: [{ ...item, id: '3' }] }), [3]);
+});
+
+test('an answer with no usable envelope still fails validation instead of passing silently', () => {
+  assert.equal(AmenitiesSchema.safeParse('nope').success, false);
+  assert.equal(AmenitiesSchema.safeParse(null).success, false);
+});

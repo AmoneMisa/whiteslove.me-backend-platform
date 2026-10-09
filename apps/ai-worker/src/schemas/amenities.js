@@ -40,18 +40,35 @@ export const amenitiesJsonSchema = {
 const nullableBool = z.boolean().nullable().catch(null);
 
 const ItemSchema = z.object({
-  id: z.number().int(),
+  // Some models echo the id back as a string ("1").
+  id: z.coerce.number().int(),
   ...Object.fromEntries(AMENITY_FLAG_FIELDS.map((field) => [field, nullableBool])),
   confidence: z.number().min(0).max(1).catch(0),
 });
 
+// Models do not always wrap the answer the way the schema asks: some return the
+// bare array, some name the wrapper differently, and a one-listing batch often
+// comes back as a single item. All of those carry the same answer, so accept
+// them rather than failing the whole batch over the envelope.
+const WRAPPER_KEYS = ['listings', 'items', 'data', 'answers', 'result'];
+
+function coerceBatch(value) {
+  if (Array.isArray(value)) return { results: value };
+  if (value && typeof value === 'object') {
+    if (Array.isArray(value.results)) return value;
+    for (const key of WRAPPER_KEYS) if (Array.isArray(value[key])) return { results: value[key] };
+    if (value.id != null) return { results: [value] };
+  }
+  return value;
+}
+
 // One malformed item must not discard the rest of the batch.
-export const AmenitiesSchema = z.object({
+export const AmenitiesSchema = z.preprocess(coerceBatch, z.object({
   results: z.array(z.unknown()).catch([]).transform((items) => items
     .map((item) => ItemSchema.safeParse(item))
     .filter((parsed) => parsed.success)
     .map((parsed) => parsed.data)),
-});
+}));
 
 export function sanitizeAmenities(value) {
   const seen = new Set();

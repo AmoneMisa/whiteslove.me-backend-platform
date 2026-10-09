@@ -15,6 +15,7 @@ import { CANDIDATE_SYSTEM, candidatePayload } from '../prompts/candidate.js';
 import { TRANSLATION_SYSTEM, translationPayload } from '../prompts/translation.js';
 import { tryFreeTranslation } from './free-translation.js';
 import { maskContacts } from '../util/privacy.js';
+import { log } from '../util/logger.js';
 
 export const EXTRACTION_KINDS = Object.freeze({
   apartment: {
@@ -98,6 +99,15 @@ async function extractUnmasked(kind, input) {
 
   const parsed = definition.zod.safeParse(raw);
   if (!parsed.success) {
+    // The raw answer is the only way to tell an envelope problem from a model
+    // that ignored the schema, and it carries no contacts (the input was
+    // redacted before it reached the provider).
+    log.warn('extraction schema validation failed', {
+      kind,
+      provider,
+      issues: parsed.error.issues.slice(0, 3).map((issue) => `${issue.path.join('.')}: ${issue.message}`),
+      sample: JSON.stringify(raw)?.slice(0, 300),
+    });
     throw Object.assign(new Error('SCHEMA_VALIDATION_FAILED'), {
       code: 'SCHEMA_VALIDATION_FAILED',
       issues: parsed.error.issues,
