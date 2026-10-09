@@ -57,6 +57,11 @@ export const config = Object.freeze({
   visionCooldownMs: number('VISION_COOLDOWN_MS', 5 * 60_000, { min: 0, integer: true }),
   // A rate limit is measured in seconds, not minutes; benching a provider
   // for the full cooldown over one turns a momentary limit into an outage.
+  // A text provider that answers 401/402/403/404 (bad key, no credit, retired
+  // model) will keep doing so until someone fixes the deployment, so it is
+  // benched far longer than a transient failure instead of being re-tried and
+  // re-failed by every job.
+  textBrokenCooldownMs: number('AI_TEXT_BROKEN_COOLDOWN_MS', 30 * 60_000, { min: 0, integer: true }),
   visionRateLimitCooldownMs: number('VISION_RATE_LIMIT_COOLDOWN_MS', 30_000, { min: 0, integer: true }),
   visionCacheTtlMs: number('VISION_CACHE_TTL_MS', 30 * 24 * 60 * 60_000, { min: 1, integer: true }),
   groqApiKey: env('GROQ_API_KEY'),

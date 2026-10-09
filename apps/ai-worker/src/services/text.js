@@ -6,7 +6,7 @@
 import { config } from '../config.js';
 import { log } from '../util/logger.js';
 import { TEXT_PROVIDERS } from './text-providers.js';
-import { cooldownFor } from '../util/providerCooldown.js';
+import { failureKind, textCooldownFor } from '../util/providerCooldown.js';
 
 const cooldownUntil = new Map();
 
@@ -24,7 +24,11 @@ export async function runText({ schema, systemPrompt, payload, kind, providers =
       const data = await run({ schema, systemPrompt, payload, kind });
       return { provider, data, timings: { totalMs: Date.now() - started } };
     } catch (error) {
-      if (error?.retryable) cooldownUntil.set(provider, Date.now() + cooldownFor(error));
+      const cooldownMs = textCooldownFor(error);
+      if (cooldownMs > 0) {
+        cooldownUntil.set(provider, Date.now() + cooldownMs);
+        log.warn('text provider benched', { provider, kind: failureKind(error), cooldownMs });
+      }
       errors.push(`${provider}:${error.message}`);
       log.warn('text provider failed', { provider, code: error?.code, error: error.message });
     }
