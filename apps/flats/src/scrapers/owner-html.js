@@ -37,6 +37,8 @@ const OWNER_HOSTS = new Set([
 // the queue task's ownerOnly policy; the host itself must never imply owner.
 const MIXED_HOSTS = new Set([
   'uybor.uz',
+  'hata.uz',
+  'realting.uz',
   'house.kg',
   'lalafo.kg',
   'lun.ua',
@@ -88,6 +90,12 @@ const HREF_CARD_HOSTS = new Map([
   // classes (e.g. "OfferItem__OfferItemContainerLink-sc-1h65yyr-1 fliOdX"),
   // only the /offers/<hex-id> card href stays stable across deploys.
   ['x-estate.com', /^\/offers\/[0-9a-f]+(?:[/?#]|$)/i],
+  // hata.uz (Next.js, Tailwind utility classes) links every card to
+  // /listings/object/<slug>-<id>.
+  ['hata.uz', /^\/listings\/object\/[^/?#]+/i],
+  // realting.uz cards link to an absolute /property-to-rent/<id> URL; the
+  // page's other links (Telegram share, category filters) never match it.
+  ['realting.uz', /^(?:https?:\/\/(?:www\.)?realting\.uz)?\/property-to-rent\/\d+/i],
 ]);
 
 const HOUSING_RE = /(apartament|garsonier|studio|квартир|квартира|будин|житл|пәтер|uy\b|xona|хона|chirie|rent|оренд|аренд|ijara|жалдау)/iu;
@@ -103,6 +111,7 @@ const BLOCK_END_RE = /<\/(?:article|li|section|div|a|p|h[1-6])>/giu;
 function decodeHtml(value) {
   return String(value || '')
     .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&hellip;/gi, '…')
     .replace(/&amp;/gi, '&')
     .replace(/&quot;/gi, '"')
     .replace(/&#39;|&apos;/gi, "'")

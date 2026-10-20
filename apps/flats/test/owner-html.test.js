@@ -89,3 +89,77 @@ test('owner SSR fallback does not run on arbitrary custom domains', () => {
     [],
   );
 });
+
+// hata.uz is a Next.js catalogue with Tailwind utility classes; every card has
+// two anchors to /listings/object/<slug>-<id> (an inset overlay and the photo).
+test('hata.uz cards are read through their /listings/object/ links', () => {
+  const card = (id, slug, rooms, area, price) => [
+    '<div><article>',
+    `<a target="_blank" aria-label="${rooms}-комнатная квартира, ${area} м²" href="/listings/object/${slug}-${id}"></a>`,
+    `<div><a target="_blank" tabindex="-1" href="/listings/object/${slug}-${id}"></a>`,
+    `<img src="/api/image?url=https%3A%2F%2Ffirsts3.ru%2F${id}.jpg" alt="x"/></div>`,
+    '<div><span>Яккасарайский район, Ташкент</span></div>',
+    `<span>${rooms}-комнатная квартира, ${area} м²</span>`,
+    '<div><span>4/9<!-- --> <!-- -->эт.</span><span>Евроремонт</span></div>',
+    `<div><span>$ ${price}/мес</span></div>`,
+    '</article></div>',
+  ].join('');
+  const html = [
+    '<nav><a href="/listings/sale/flats">Купить</a><a href="/listings/rent/flats">Снять</a></nav>',
+    card(7653650, 'novza-metro-kvartira', 3, 75, 400),
+    card(7652131, 'sdaetsia-2kh-komnatnaia', 2, 68, 700),
+    '<footer><a href="/listings/rent/tashkent?page=2">2</a></footer>',
+  ].join('');
+
+  const listings = extractKnownOwnerHtml(
+    html, COUNTRIES.UZ, 'https://hata.uz/listings/rent/flats/tashkent', 'longRent',
+  );
+  assert.equal(listings.length, 2);
+  assert.deepEqual(listings.map((item) => item.rooms), [3, 2]);
+  assert.deepEqual(listings.map((item) => item.price), [400, 700]);
+  assert.ok(listings.every((item) => item.currency === 'USD' && item.dealType === 'longRent'));
+  assert.match(listings[0].url, /^https:\/\/hata\.uz\/listings\/object\/novza-metro-kvartira-7653650$/);
+});
+
+// realting.uz links each card to an absolute /property-to-rent/<id> URL. The
+// same page carries Telegram share links that embed that URL inside a query
+// string; they must not be mistaken for cards.
+test('realting.uz cards are read through absolute /property-to-rent/ links', () => {
+  const card = (id, rooms, area, price) => [
+    `<a href="https://realting.uz/property-to-rent/${id}" onclick="sendGtmViewEvent(${id})">`,
+    '<div itemscope itemtype="https://schema.org/ImageObject">',
+    `<img src="https://static2.realting.com/uploads/thumbs/${id}.webp" alt="Квартира"></div>`,
+    '<div><div>Квартира аренда</div><div>Ташкент, Узбекистан</div>',
+    `<div><div><span>${rooms}</span></div><div><span>${area} м²</span></div><div><span>3/5</span></div></div></div>`,
+    `<div><div>${rooms} комнатная квартира в аренду ${area} кв.м. ${price} $</div></div>`,
+    `<div><div>$${price}</div><span> в месяц </span></div>`,
+    '</a>',
+    `<a href="https://telegram.me/agent?text=https%3A%2F%2Frealting.uz%2Fproperty-to-rent%2F${id}">Написать</a>`,
+  ].join('');
+  const html = [
+    '<a href="https://realting.uz/tashkent/property-to-rent/apartments/2-bedrooms">2 спальни</a>',
+    card(3991012, 3, 120, '1 700'),
+    card(3993987, 2, 60, 750),
+  ].join('');
+
+  const listings = extractKnownOwnerHtml(
+    html, COUNTRIES.UZ, 'https://realting.uz/tashkent/property-to-rent/apartments', 'longRent',
+  );
+  assert.equal(listings.length, 2);
+  assert.deepEqual(listings.map((item) => item.rooms), [3, 2]);
+  assert.deepEqual(listings.map((item) => item.price), [1700, 750]);
+  assert.match(listings[0].url, /^https:\/\/realting\.uz\/property-to-rent\/3991012$/);
+});
+
+test('HTML entity ellipses in card text are decoded', () => {
+  const html = [
+    '<a href="https://realting.uz/property-to-rent/1">',
+    '<div>2 комнатная квартира аренда 60 м² $750 в месяц Ташкент, Бобур&hellip;</div>',
+    '</a>',
+  ].join('');
+  const [listing] = extractKnownOwnerHtml(
+    html, COUNTRIES.UZ, 'https://realting.uz/tashkent/property-to-rent/apartments', 'longRent',
+  );
+  assert.ok(listing);
+  assert.doesNotMatch(JSON.stringify(listing), /&hellip;/);
+});

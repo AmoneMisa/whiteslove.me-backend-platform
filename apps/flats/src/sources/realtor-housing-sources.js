@@ -8,13 +8,17 @@ export const REALTOR_HOUSING_SOURCES = Object.freeze({
       key: 'hata-tashkent-rent',
       // hata.uz's TLS certificate has no SAN for the www subdomain, so
       // https://www.hata.uz/... fails hostname verification outright.
-      url: 'https://hata.uz/listings/rent/tashkent',
+      // /flats/tashkent is the apartments-only catalogue; the bare
+      // /listings/rent/tashkent page mixes in offices and warehouses.
+      url: 'https://hata.uz/listings/rent/flats/tashkent',
       city: 'Tashkent',
+      dealType: 'longRent',
     }),
     Object.freeze({
       key: 'realting-tashkent-rent',
       url: 'https://realting.uz/tashkent/property-to-rent/apartments',
       city: 'Tashkent',
+      dealType: 'longRent',
     }),
     Object.freeze({
       key: 'domza-tashkent',
