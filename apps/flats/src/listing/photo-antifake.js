@@ -45,6 +45,35 @@ function runPerceptualHash(bytes, {command = process.env.ANTIFAKE_PYTHON || 'pyt
   });
 }
 
+// A listing page also carries site chrome (icons, badges, logos). Those images
+// are byte-identical on every listing of a site, so hashing them makes all of
+// the site's listings look like copies of one property and merges them into a
+// single cluster. Vector images are never listing photos, and any exact hash
+// already stored for this many distinct listings is page chrome, not a photo.
+const SITE_CHROME_MIN_LISTINGS = Math.max(
+  5,
+  Number(process.env.ANTIFAKE_SITE_CHROME_MIN_LISTINGS) || 40,
+);
+
+export function isVectorImageUrl(url) {
+  return /\.svg(?:[?#]|$)/i.test(String(url || ''));
+}
+
+async function isSiteChromeHash(exactHash) {
+  const result = await pool.query(
+    `SELECT COUNT(*)::integer AS listings
+       FROM (
+         SELECT 1
+           FROM listing_photo_hashes
+          WHERE hash = $1
+          GROUP BY source, country, source_id
+          LIMIT $2
+       ) AS shared`,
+    [exactHash, SITE_CHROME_MIN_LISTINGS],
+  );
+  return Number(result.rows[0]?.listings || 0) >= SITE_CHROME_MIN_LISTINGS;
+}
+
 export const __photoAntifakeTest = {runPerceptualHash, PERCEPTUAL_HASH_SCRIPT};
 
 async function hashRemoteImage(url) {
@@ -58,6 +87,7 @@ async function hashRemoteImage(url) {
   if (declared > MAX_IMAGE_BYTES) throw new Error('image too large');
   const type = String(response.headers.get('content-type') || '').toLowerCase();
   if (type && !type.startsWith('image/')) throw new Error(`not an image: ${type}`);
+  if (type.includes('svg')) throw new Error('vector image is not a listing photo');
 
   const bytes = Buffer.from(await response.arrayBuffer());
   if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) throw new Error('invalid image size');
@@ -519,11 +549,12 @@ export async function detectExactDuplicatePhotos(listing, images) {
 
   for (const image of images || []) {
     const url = String(image?.url || image || '');
-    if (!/^https?:\/\//i.test(url)) continue;
+    if (!/^https?:\/\//i.test(url) || isVectorImageUrl(url)) continue;
     const normalizedImage = { id: image?.id || null, url };
 
     try {
       const imageHashes = await hashRemoteImage(url);
+      if (await isSiteChromeHash(imageHashes.exactHash)) continue;
       hashes.push({
         id: normalizedImage.id,
         url,

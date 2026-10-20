@@ -8,6 +8,7 @@ import {
   compareListingLocations,
   hammingDistanceHex,
   isPropertyClusterMatch,
+  isVectorImageUrl,
   scoreCloneRelationship,
 } from '../src/listing/photo-antifake.js';
 
@@ -158,4 +159,12 @@ test('one weak perceptual photo without consistent property facts does not force
     perceptualPhotoCount: 1,
     relation,
   }), false);
+});
+
+test('vector images are site chrome, not listing photos', () => {
+  assert.equal(isVectorImageUrl('https://realting.uz/2020/images/svg-icons/unit-rooms.svg'), true);
+  assert.equal(isVectorImageUrl('https://kz.m2bomber.com/static/img/icons/icon-heart.svg?v=2'), true);
+  assert.equal(isVectorImageUrl('https://api.uybor.uz/api/v1/media/n/1111.jpg?width=660&height=460'), false);
+  assert.equal(isVectorImageUrl('https://static2.realting.com/uploads/thumbs/7ff/f9db.webp'), false);
+  assert.equal(isVectorImageUrl(null), false);
 });
