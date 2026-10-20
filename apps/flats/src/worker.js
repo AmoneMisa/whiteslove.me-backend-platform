@@ -12,7 +12,7 @@ import {
   renewTaskLease,
 } from './infrastructure/queue/pgQueue.js';
 import {claimCustomSourceTask} from './sources/custom-source-queue.js';
-import {buildCrawlPlan, QUEUE_SHARDS} from './scheduling/queuePlan.js';
+import {buildCrawlPlan, CRAWL_LANES, QUEUE_SHARDS} from './scheduling/queuePlan.js';
 import {refreshPlaces} from './scheduling/scheduler.js';
 import {startSocialHousingScheduler} from './sources/social-housing-scheduler.js';
 import {verifyDueListingAvailability} from './availability/availability-sweep.js';
@@ -87,15 +87,21 @@ async function dispatchTick() {
   if (dispatching || stopping) return;
   dispatching = true;
   try {
-    const {tasks, crawlGeneration} = buildCrawlPlan({shardCount: QUEUE_SHARDS});
-    const outcome = await dispatchGenerationIfIdle(tasks, REFRESH_SECONDS);
-    if (outcome.queued > 0) {
-      console.log(
-        `[flat:worker] queued ${outcome.queued} crawl tasks generation=${crawlGeneration}`,
-      );
+    // OLX, Telegram and curated sites are separate queues: each lane opens its
+    // own generation, so a lane that is still busy never blocks the others.
+    for (const lane of CRAWL_LANES) {
+      try {
+        const {tasks, crawlGeneration} = buildCrawlPlan({shardCount: QUEUE_SHARDS, lane});
+        const outcome = await dispatchGenerationIfIdle(tasks, REFRESH_SECONDS, {lane});
+        if (outcome.queued > 0) {
+          console.log(
+            `[flat:worker] queued ${outcome.queued} ${lane} crawl tasks generation=${crawlGeneration}`,
+          );
+        }
+      } catch (error) {
+        console.error(`[flat:worker] ${lane} dispatcher failed:`, error?.message ?? error);
+      }
     }
-  } catch (error) {
-    console.error('[flat:worker] dispatcher failed:', error?.message ?? error);
   } finally {
     dispatching = false;
   }

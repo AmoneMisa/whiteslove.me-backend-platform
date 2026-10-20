@@ -129,20 +129,35 @@ export async function enqueueTasks(tasks, client = pool) {
   return inserted;
 }
 
-export async function dispatchGenerationIfIdle(tasks, refreshSeconds) {
+// Recurring crawl lanes. Each lane is gated by its own backlog/cadence so one
+// long-running source family (an OLX page chain) cannot hold the others back.
+// The curated-site lane only counts recurring tasks (`curated`): on-demand
+// custom URL jobs never block or reset it.
+const LANE_PREDICATES = Object.freeze({
+  olx: `type = 'flat.olx.page'`,
+  telegram: `type = 'flat.telegram.channel'`,
+  custom: `type = 'flat.custom.url' AND payload->>'curated' = 'true'`,
+});
+const LANE_LOCKS = Object.freeze({ olx: 742_011, telegram: 742_012, custom: 742_013 });
+
+export async function dispatchGenerationIfIdle(tasks, refreshSeconds, { lane = null } = {}) {
+  if (lane && !LANE_PREDICATES[lane]) {
+    throw new RangeError(`unknown crawl lane ${lane}`);
+  }
+  // Without a lane the legacy behaviour is kept: everything except on-demand
+  // custom URL jobs shares one generation.
+  const lanePredicate = lane ? LANE_PREDICATES[lane] : `type <> 'flat.custom.url'`;
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     // Prevent two worker instances from opening the same recurring generation.
-    await client.query('SELECT pg_advisory_xact_lock($1)', [742_001]);
+    await client.query('SELECT pg_advisory_xact_lock($1)', [lane ? LANE_LOCKS[lane] : 742_001]);
 
-    // On-demand custom URL jobs use the same durable queue but must never block
-    // or reset the cadence of the authoritative OLX/Telegram crawl generation.
     const pending = await client.query(`
       SELECT COUNT(*)::integer AS count
       FROM crawl_tasks
       WHERE status IN ('pending', 'running')
-        AND type <> 'flat.custom.url'
+        AND ${lanePredicate}
     `);
     if (Number(pending.rows[0]?.count || 0) > 0) {
       await client.query('COMMIT');
@@ -152,7 +167,7 @@ export async function dispatchGenerationIfIdle(tasks, refreshSeconds) {
     const latest = await client.query(`
       SELECT MAX(created_at) AS created_at
       FROM crawl_tasks
-      WHERE type <> 'flat.custom.url'
+      WHERE ${lanePredicate}
     `);
     const latestAt = latest.rows[0]?.created_at
       ? new Date(latest.rows[0].created_at).getTime()

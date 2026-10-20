@@ -6,6 +6,7 @@ import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing'
 import { isDirectOwner } from '@whiteslove/parsing-lexicon/housing-commercial';
 import { fetchChannel } from '../scrapers/telegram.js';
 import { scrapeCustomUrl } from '../scrapers/custom.js';
+import { customPageUrl, nextCustomPageTask } from './customPagination.js';
 import { telegramHousingChannels } from '../sources/telegram-housing-sources.js';
 import { throttle } from '../support/ratelimit.js';
 import { upsertListings } from '../infrastructure/database/listingRepository.js';
@@ -460,9 +461,30 @@ async function processQueueTaskInner(task) {
     // normalization can weigh it against each card's own wording. Patching it
     // in afterwards could only fill a null — it could not correct a misread,
     // and tags/occupancy were already derived from the wrong value.
-    const fetchedListings = await scrapeCustomUrl(sourceUrl, COUNTRIES[country], {
-      dealType: task.dealType || null,
-    });
+    //
+    // Curated catalogues are paginated: each page is its own queue task, so a
+    // site is walked page by page like OLX instead of reading page 1 only.
+    const paginated = task.curated === true;
+    const page = paginated ? Math.max(1, Math.trunc(Number(task.page)) || 1) : 1;
+    let fetchedListings;
+    try {
+      fetchedListings = await scrapeCustomUrl(
+        paginated ? customPageUrl(sourceUrl, page, task.pageParam) : sourceUrl,
+        COUNTRIES[country],
+        { dealType: task.dealType || null },
+      );
+    } catch (error) {
+      // Running off the end of a catalogue is how a paginated chain finishes,
+      // not a failure worth retrying.
+      if (page > 1 && /^No listings found/.test(String(error?.message || ''))) {
+        fetchedListings = [];
+      } else {
+        throw error;
+      }
+    }
+    const nextCustomTask = paginated
+      ? nextCustomPageTask(task, page, fetchedListings)
+      : null;
     const ownerFiltered = enforceOwnerOnlyListings(fetchedListings, task);
     const listings = ownerFiltered.map((listing) => ({
       ...listing,
@@ -485,7 +507,7 @@ async function processQueueTaskInner(task) {
       crawlGeneration: task.crawlGeneration,
       fetched: listings.length,
       deactivated,
-      nextTasks: [],
+      nextTasks: nextCustomTask ? [nextCustomTask] : [],
       ...persisted,
     };
   }

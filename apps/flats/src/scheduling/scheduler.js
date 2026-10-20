@@ -7,7 +7,7 @@ import {promoteLearnedGeo} from '../geo/learned/learned-geo-export.js';
 import {placesFreshness} from '../infrastructure/database/placesRepository.js';
 import {syncAllPlaces} from '../geo/learned/places-sync.js';
 import {dispatchGenerationIfIdle} from '../infrastructure/queue/pgQueue.js';
-import {buildCrawlPlan, QUEUE_SHARDS} from './queuePlan.js';
+import {buildCrawlPlan, CRAWL_LANES, QUEUE_SHARDS} from './queuePlan.js';
 
 const PLACES_MAX_AGE_MS = Math.max(
   1,
@@ -32,26 +32,43 @@ export async function refreshAll(reason = 'manual') {
   dispatching = true;
 
   try {
-    const {tasks, crawlGeneration} = buildCrawlPlan({shardCount: QUEUE_SHARDS});
-    const outcome = await dispatchGenerationIfIdle(
-      tasks,
-      MANUAL_REFRESH_COOLDOWN_SECONDS,
-    );
+    // Same three independent lanes as the worker's own dispatcher.
+    const lanes = [];
+    for (const lane of CRAWL_LANES) {
+      const {tasks, crawlGeneration} = buildCrawlPlan({shardCount: QUEUE_SHARDS, lane});
+      const outcome = await dispatchGenerationIfIdle(
+        tasks,
+        MANUAL_REFRESH_COOLDOWN_SECONDS,
+        {lane},
+      );
+      lanes.push({
+        lane,
+        crawlGeneration,
+        taskCount: tasks.length,
+        queued: outcome.queued,
+        queueReason: outcome.reason,
+        retryAfterMs: outcome.retryAfterMs ?? null,
+      });
+      console.log(
+        `[scheduler] ${reason} refresh request: lane=${lane} queued=${outcome.queued}/${tasks.length} ` +
+          `reason=${outcome.reason} generation=${crawlGeneration}`,
+      );
+    }
 
     lastRun = {
       at: new Date().toISOString(),
       reason,
-      crawlGeneration,
-      taskCount: tasks.length,
-      queued: outcome.queued,
-      queueReason: outcome.reason,
-      retryAfterMs: outcome.retryAfterMs ?? null,
+      taskCount: lanes.reduce((sum, item) => sum + item.taskCount, 0),
+      queued: lanes.reduce((sum, item) => sum + item.queued, 0),
+      queueReason: lanes.every((item) => item.queued === 0)
+        ? lanes.map((item) => `${item.lane}:${item.queueReason}`).join(',')
+        : 'queued',
+      retryAfterMs: lanes.reduce(
+        (min, item) => (item.retryAfterMs == null ? min : Math.min(min ?? Infinity, item.retryAfterMs)),
+        null,
+      ),
+      lanes,
     };
-
-    console.log(
-      `[scheduler] ${reason} refresh request: queued=${outcome.queued}/${tasks.length} ` +
-        `reason=${outcome.reason} generation=${crawlGeneration}`,
-    );
 
     return lastRun;
   } finally {

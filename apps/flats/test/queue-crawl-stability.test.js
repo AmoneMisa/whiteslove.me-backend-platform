@@ -79,10 +79,17 @@ test('custom sources use the durable worker queue and never scrape in listing HT
 });
 
 test('on-demand custom tasks never delay the recurring crawl generation', () => {
-  assert.ok(
-    (pgQueue.match(/type <> 'flat\.custom\.url'/g) || []).length >= 2,
-    'both recurring backlog and cadence queries must exclude custom jobs',
-  );
+  assert.match(pgQueue, /custom: `type = 'flat\.custom\.url' AND payload->>'curated' = 'true'`/);
+  assert.match(pgQueue, /AND \$\{lanePredicate\}/);
+  assert.match(pgQueue, /WHERE \$\{lanePredicate\}/);
+  assert.match(pgQueue, /: `type <> 'flat\.custom\.url'`/);
+});
+
+test('OLX, Telegram and curated sites are dispatched as three independent lanes', () => {
+  assert.match(worker, /for \(const lane of CRAWL_LANES\)/);
+  assert.match(worker, /dispatchGenerationIfIdle\(tasks, REFRESH_SECONDS, \{lane\}\)/);
+  assert.match(scheduler, /for \(const lane of CRAWL_LANES\)/);
+  assert.match(pgQueue, /LANE_LOCKS/);
 });
 
 test('compose gates API and worker on successful migrations', () => {

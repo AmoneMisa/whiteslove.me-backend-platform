@@ -116,6 +116,9 @@ function sourceTask(source, country, crawlGeneration, shardCount) {
     segment: source.key,
     dealType: source.dealType || null,
     curated: true,
+    page: 1,
+    pageParam: source.pageParam || undefined,
+    maxPages: source.maxPages || undefined,
     ownerOnly: source.ownerOnly === true,
     ownerMarkers: Array.isArray(source.ownerMarkers) ? [...source.ownerMarkers] : undefined,
     ownerRejectMarkers: Array.isArray(source.ownerRejectMarkers)
@@ -124,7 +127,22 @@ function sourceTask(source, country, crawlGeneration, shardCount) {
   }, crawlGeneration, shardCount);
 }
 
-export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
+// Recurring crawling is split into independent lanes. Each lane opens its own
+// generation and is dispatched on its own cadence (see dispatchGenerationIfIdle),
+// so a long OLX page chain can never starve Telegram or the curated sites.
+export const CRAWL_LANES = Object.freeze(['olx', 'telegram', 'custom']);
+
+const LANE_BY_TASK_TYPE = Object.freeze({
+  'flat.olx.page': 'olx',
+  'flat.telegram.channel': 'telegram',
+  'flat.custom.url': 'custom',
+});
+
+export function taskLane(task) {
+  return LANE_BY_TASK_TYPE[task?.type] || null;
+}
+
+export function buildCrawlPlan({ shardCount = QUEUE_SHARDS, lane = null } = {}) {
   const tasks = [];
   const crawlGeneration = randomUUID();
 
@@ -206,8 +224,9 @@ export function buildCrawlPlan({ shardCount = QUEUE_SHARDS } = {}) {
   }
 
   return {
-    tasks,
+    tasks: lane ? tasks.filter((task) => taskLane(task) === lane) : tasks,
     crawlGeneration,
+    lane,
     queueProtocol: QUEUE_PROTOCOL_VERSION,
     crawlerShards: shardCount,
   };
