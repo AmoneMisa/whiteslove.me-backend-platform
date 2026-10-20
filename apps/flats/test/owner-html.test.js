@@ -163,3 +163,47 @@ test('HTML entity ellipses in card text are decoded', () => {
   assert.ok(listing);
   assert.doesNotMatch(JSON.stringify(listing), /&hellip;/);
 });
+
+// uybor.uz is a Next.js app: each card links its listing twice (thumbnail
+// anchor, then the text anchor) and renders the photo through /_next/image,
+// whose `url` parameter holds the real image. The page footer carries an SVG
+// store badge that is not a listing photo.
+test('uybor.uz cards keep their photo, unwrapped from the Next.js image proxy', () => {
+  const card = (id, media, price) => [
+    `<a target="_blank" href="/listings/${id}"><figure><div>`,
+    `<img alt="Uybor.uz" width="660" height="460" srcset="/_next/image?url=https%3A%2F%2Fapi.uybor.uz%2Fapi%2Fv1%2Fmedia%2Fn%2F${media}.jpg%3Fwidth%3D660%26height%3D460&amp;w=750&amp;q=100 1x, /_next/image?url=https%3A%2F%2Fapi.uybor.uz%2Fapi%2Fv1%2Fmedia%2Fn%2F${media}.jpg%3Fwidth%3D660%26height%3D460&amp;w=1920&amp;q=100 2x" src="/_next/image?url=https%3A%2F%2Fapi.uybor.uz%2Fapi%2Fv1%2Fmedia%2Fn%2F${media}.jpg%3Fwidth%3D660%26height%3D460&amp;w=1920&amp;q=100">`,
+    '</div></figure></a>',
+    `<a target="_blank" href="/listings/${id}"><div>`,
+    `<span>${price} $</span><span>2-комнатная квартира</span><span>60 м²</span><span>Ташкент, Юнусабад</span>`,
+    '</div></a>',
+  ].join('');
+  const html = [
+    card(1298063, '1111', 450),
+    card(1299284, '2222', 600),
+    '<footer><img src="/img/apps/app-store.svg" alt="App Store"><a href="/about">О нас</a></footer>',
+  ].join('');
+
+  const listings = extractKnownOwnerHtml(
+    html, COUNTRIES.UZ, 'https://uybor.uz/listings?category__eq=7&operationType__eq=rent', 'longRent',
+  );
+  assert.equal(listings.length, 2);
+  assert.deepEqual(listings.map((item) => item.photos), [
+    ['https://api.uybor.uz/api/v1/media/n/1111.jpg?width=660&height=460'],
+    ['https://api.uybor.uz/api/v1/media/n/2222.jpg?width=660&height=460'],
+  ]);
+  assert.deepEqual(listings.map((item) => item.price), [450, 600]);
+});
+
+test('card images fall back to srcset and never return vector chrome', () => {
+  const html = [
+    '<article>',
+    '<a href="/en/listings/abc"><h3>Chilanzar apartment</h3></a>',
+    '<img srcset="https://rentli.uz/images/abc-1x.jpg 1x, https://rentli.uz/images/abc-2x.jpg 2x">',
+    '<img src="https://rentli.uz/images/logo.svg">',
+    '<p>Rent Tashkent 2 rooms 55 m² 5 000 000 UZS/mo</p>',
+    '</article>',
+  ].join('');
+
+  const [listing] = extractKnownOwnerHtml(html, COUNTRIES.UZ, 'https://rentli.uz/en/listings');
+  assert.deepEqual(listing.photos, ['https://rentli.uz/images/abc-1x.jpg']);
+});

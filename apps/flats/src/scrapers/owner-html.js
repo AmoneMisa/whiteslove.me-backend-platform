@@ -174,13 +174,42 @@ function firstHref(fragment, sourceUrl) {
   return absoluteUrl(match?.[1], sourceUrl);
 }
 
+// Next.js <Image> rewrites every photo to /_next/image?url=<original>&w=..., a
+// resizing endpoint that only the site's own pages are meant to call. The
+// original URL travels in the `url` parameter; hand that on instead.
+function unwrapNextImage(url) {
+  try {
+    const parsed = new URL(url);
+    if (parsed.pathname === '/_next/image') {
+      const original = parsed.searchParams.get('url');
+      if (original && /^https?:\/\//i.test(original)) return original;
+    }
+  } catch {
+    // keep the URL as is
+  }
+  return url;
+}
+
+function imageSource(tag) {
+  const direct = tag.match(/\b(?:src|data-src)=["']([^"']+)["']/iu)?.[1];
+  if (direct && !/^data:/i.test(direct)) return direct;
+  // <img srcset="a 1x, b 2x"> with no usable src (Next.js <Image>): the first
+  // candidate is enough, and a URL itself never contains a space.
+  const srcset = tag.match(/\b(?:srcset|data-srcset)=["']([^"']+)["']/iu)?.[1];
+  return srcset ? srcset.trim().split(/\s+/u)[0].replace(/,$/u, '') : null;
+}
+
 function images(fragment, sourceUrl) {
   const result = [];
-  const re = /<img\b[^>]*(?:src|data-src)=["']([^"']+)["'][^>]*>/giu;
+  const re = /<img\b[^>]*>/giu;
   let match;
   while ((match = re.exec(String(fragment || ''))) && result.length < 12) {
-    const url = absoluteUrl(match[1], sourceUrl);
-    if (url && /^https?:\/\//i.test(url) && !result.includes(url)) result.push(url);
+    const raw = imageSource(match[0]);
+    const resolved = raw && absoluteUrl(raw, sourceUrl);
+    const url = resolved && unwrapNextImage(resolved);
+    // Vector images are site chrome (store badges, logos), never a listing photo.
+    if (!url || !/^https?:\/\//i.test(url) || /\.svg(?:[?#]|$)/i.test(url)) continue;
+    if (!result.includes(url)) result.push(url);
   }
   return result;
 }
@@ -364,9 +393,16 @@ function divBlocks(html, cardClass) {
 function hrefMarkerBlocks(html, hrefPattern) {
   const marker = /<a\b[^>]*\bhref=["']([^"']+)["']/giu;
   const starts = [];
+  let previousHref = null;
   let match;
   while ((match = marker.exec(html))) {
-    if (hrefPattern.test(decodeHtml(match[1]))) starts.push(match.index);
+    const href = decodeHtml(match[1]);
+    if (!hrefPattern.test(href)) continue;
+    // A card often links the same listing twice in a row (thumbnail anchor,
+    // then title anchor). Keep them as one block: otherwise the photo sits in
+    // a near-empty block that plausibleCard drops, and the card loses it.
+    if (href !== previousHref) starts.push(match.index);
+    previousHref = href;
   }
 
   const blocks = [];
