@@ -161,7 +161,17 @@ function messageToListing(msg, channelConfig, country, suffix = null) {
   const photoIds = Array.isArray(msg.photoIds) && msg.photoIds.length
     ? msg.photoIds
     : msg.hasPhoto ? [msg.id] : [];
-  const photos = photoIds.map((pid) => `/api/tg-photo/${channel}/${pid}`);
+  // While the worker's MTProto account is rate limited it answers from the
+  // public web preview and adds each photo's Telegram CDN URL. Show those
+  // directly: they need neither the worker nor the /api/tg-photo proxy. The next
+  // crawl through MTProto goes back to the proxy URLs.
+  const directPhotoUrls = Array.isArray(msg.photoUrls) ? msg.photoUrls : [];
+  const photos = photoIds.map((pid, index) => {
+    const direct = directPhotoUrls[index];
+    return typeof direct === 'string' && /^https:\/\/[a-z0-9.-]*telesco\.pe\//i.test(direct)
+      ? direct
+      : `/api/tg-photo/${channel}/${pid}`;
+  });
   const photoFingerprints = [
     ...new Set(
       (Array.isArray(msg.photoFingerprints) ? msg.photoFingerprints : [])
