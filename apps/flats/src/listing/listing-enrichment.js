@@ -137,14 +137,14 @@ function parseNearbyLandmarks(text) {
 // A whole flat on a long lease does not cost this little: at or below these
 // monthly prices the post is a bed, a room or a per-person share. Such a post is
 // a room rental (roomOnly), which the database already keeps out of long rent.
+//
+// Only where the currency label can be trusted: in Ukraine, Romania and Kazakhstan
+// many sources quote hard currency under the local label ("150 UAH" is 150 USD), so
+// a low number there is a currency problem, not a room. Floors are therefore set
+// per country and currency, and a country without an entry is never classified.
 const FLAT_RENT_FLOOR = Object.freeze({
-  USD: 75,
-  EUR: 70,
-  UZS: 950_000,
-  KZT: 35_000,
-  UAH: 3_000,
-  RON: 320,
-  KGS: 6_500,
+  UZ: Object.freeze({ UZS: 950_000, USD: 75 }),
+  KG: Object.freeze({ KGS: 6_500, USD: 75 }),
 });
 
 function isBelowFlatRentFloor(listing) {
@@ -152,7 +152,8 @@ function isBelowFlatRentFloor(listing) {
   if (listing?.propertyType && listing.propertyType !== 'flat') return false;
   const price = Number(listing?.price);
   if (!Number.isFinite(price) || price <= 0) return false;
-  const floor = FLAT_RENT_FLOOR[String(listing?.currency || '').toUpperCase()];
+  const floors = FLAT_RENT_FLOOR[String(listing?.country || '').toUpperCase()];
+  const floor = floors?.[String(listing?.currency || '').toUpperCase()];
   return floor != null && price <= floor;
 }
 
