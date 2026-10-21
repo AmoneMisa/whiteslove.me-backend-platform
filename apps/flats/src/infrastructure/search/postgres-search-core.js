@@ -1,5 +1,6 @@
 import { pool } from '../database/pool.js';
 import {appendPostgresGeoFilters} from './postgres-geo-filter.js';
+import {PRICE_DISTRIBUTION_BUCKETS, plausiblePriceUsdSql} from '../../support/price-plausibility.js';
 
 const MAX_AGE_DAYS = 14;
 const CURSOR_VERSION = 1;
@@ -351,7 +352,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
   const statsRankedSql = rankedSqlFor(`
       l.id, l.country, l.created_at, l.first_seen_at, l.deal_type, l.by_agency,
       l.city, l.district, l.metro, l.room_only,
-      ${context.priceUsdExpr} AS price_usd,
+      ${plausiblePriceUsdSql(context.priceUsdExpr, 'l.deal_type', 'l.room_only')} AS price_usd,
       NULLIF(BTRIM(l.data->>'microdistrict'), '') AS microdistrict,
       COALESCE(
         l.data @> '{"commission":true}'::jsonb
@@ -468,8 +469,38 @@ export async function searchPostgresListings({ filters, countries, rates = null,
           'medianUsd', median_usd, 'minUsd', min_usd, 'maxUsd', max_usd
         ) ORDER BY count DESC, label ASC) AS items
       FROM geo_ranked
-      WHERE position <= 12
+      WHERE position <= CASE WHEN dimension IN ('district', 'microdistrict', 'metro') THEN 60 ELSE 12 END
       GROUP BY deal_key, dimension
+    ),
+    price_bounds AS (
+      SELECT deal_key,
+        PERCENTILE_CONT(0.02) WITHIN GROUP (ORDER BY price_usd) AS lo,
+        PERCENTILE_CONT(0.98) WITHIN GROUP (ORDER BY price_usd) AS hi
+      FROM classified
+      WHERE price_usd IS NOT NULL
+      GROUP BY deal_key
+      HAVING COUNT(price_usd) >= 8 AND PERCENTILE_CONT(0.98) WITHIN GROUP (ORDER BY price_usd) > PERCENTILE_CONT(0.02) WITHIN GROUP (ORDER BY price_usd)
+    ),
+    price_hist_rows AS (
+      SELECT c.deal_key,
+        LEAST(WIDTH_BUCKET(c.price_usd, b.lo, b.hi, ${PRICE_DISTRIBUTION_BUCKETS}), ${PRICE_DISTRIBUTION_BUCKETS}) AS bucket,
+        COUNT(*)::int AS count
+      FROM classified c
+      JOIN price_bounds b ON b.deal_key = c.deal_key
+      WHERE c.price_usd >= b.lo AND c.price_usd <= b.hi
+      GROUP BY c.deal_key, bucket
+    ),
+    price_hist_json AS (
+      SELECT b.deal_key,
+        JSONB_AGG(JSONB_BUILD_OBJECT(
+          'fromUsd', ROUND((b.lo + (g.i - 1) * (b.hi - b.lo) / ${PRICE_DISTRIBUTION_BUCKETS})::numeric, 2),
+          'toUsd', ROUND((b.lo + g.i * (b.hi - b.lo) / ${PRICE_DISTRIBUTION_BUCKETS})::numeric, 2),
+          'count', COALESCE(h.count, 0)
+        ) ORDER BY g.i) AS buckets
+      FROM price_bounds b
+      CROSS JOIN GENERATE_SERIES(1, ${PRICE_DISTRIBUTION_BUCKETS}) AS g(i)
+      LEFT JOIN price_hist_rows h ON h.deal_key = b.deal_key AND h.bucket = g.i
+      GROUP BY b.deal_key
     ),
     geo_by_deal_json AS (
       SELECT deal_key, JSONB_OBJECT_AGG(dimension, items) AS dimensions
@@ -488,6 +519,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
       ) ORDER BY count DESC, key ASC) FROM deal_rows), '[]'::jsonb) AS deal_types,
       COALESCE((SELECT JSONB_OBJECT_AGG(deal_key, bands) FROM price_band_json), '{}'::jsonb) AS price_bands_by_deal,
       COALESCE((SELECT JSONB_OBJECT_AGG(deal_key, samples) FROM price_band_json), '{}'::jsonb) AS price_band_samples_by_deal,
+      COALESCE((SELECT JSONB_OBJECT_AGG(deal_key, buckets) FROM price_hist_json), '{}'::jsonb) AS price_distribution_by_deal,
       COALESCE((SELECT JSONB_OBJECT_AGG(dimension, items) FROM geo_json WHERE deal_key IS NULL), '{}'::jsonb) AS geographies,
       COALESCE((SELECT JSONB_OBJECT_AGG(deal_key, dimensions) FROM geo_by_deal_json), '{}'::jsonb) AS geographies_by_deal,
       (SELECT JSONB_BUILD_OBJECT(
@@ -588,6 +620,7 @@ export async function searchPostgresListings({ filters, countries, rates = null,
     dealTypes: countOrStatsResult.rows[0]?.deal_types || [],
     priceBandsByDeal: countOrStatsResult.rows[0]?.price_bands_by_deal || {},
     priceBandSamplesByDeal: countOrStatsResult.rows[0]?.price_band_samples_by_deal || {},
+    priceDistributionByDeal: countOrStatsResult.rows[0]?.price_distribution_by_deal || {},
     geographies: countOrStatsResult.rows[0]?.geographies || {},
     geographiesByDeal: countOrStatsResult.rows[0]?.geographies_by_deal || {},
     ownership: countOrStatsResult.rows[0]?.ownership || {},
