@@ -121,7 +121,7 @@ scoping live in the registry files, which are the source of truth.
 | Country | OLX | Telegram | Owner-only catalogues (`owner-housing-sources.js`) | Realtor catalogues (`realtor-housing-sources.js`) | External/mixed catalogues (`external-housing-sources.js`) |
 | --- | --- | --- | --- | --- | --- |
 | UZ | yes | yes | rentli.uz, ostona.app, turar.uz | hata.uz, realting.uz, domza.uz | uybor.uz, **m2bomber.com** |
-| UA | yes | yes | easy-house.in.ua, kvarto.app, norieltor.com.ua, dom.ria.com, bezmakler.com.ua, dobalux.com | x-estate.com, parklane.ua, blagovist.ua, atlanta.ua | lun.ua, rieltor.ua, **m2bomber.com** |
+| UA | yes | yes | kvarto.app, norieltor.com.ua, dom.ria.com, bezmakler.com.ua, dobalux.com | x-estate.com, parklane.ua, blagovist.ua, atlanta.ua | lun.ua, rieltor.ua, **m2bomber.com** |
 | KZ | yes | yes | krisha.kz, kn.kz | — | **m2bomber.com** |
 | RO | yes | yes | proprietaripebune.ro, proprietar-direct.ro, directfaracomision.ro, garsoniera.ro, publi24.ro | — | imobiliare.ro, anuntul.ro, lajumate.ro, imobiliare-anunturi.ro, **m2bomber.com** |
 | KG | no | yes (empty list) | arendator.kg, myhouse.kg, sutochno.kg | — | house.kg, lalafo.kg |

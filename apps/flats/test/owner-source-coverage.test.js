@@ -14,7 +14,6 @@ test('owner registry covers curated direct-owner platforms in every configured c
     'https://rentli.uz/en/listings',
     'https://ostona.app/en',
     'https://turar.uz/ru/tashkent',
-    'https://easy-house.in.ua/search/',
     'https://kvarto.app/uk',
     'https://www.norieltor.com.ua/',
     'https://dom.ria.com/uk/arenda-kvartir/bez-rieltora/',
@@ -110,7 +109,6 @@ test('crawl plan restores daily OLX and queues owner-first sources', () => {
   for (const segment of [
     'rentli-tashkent-owner-rent',
     'turar-tashkent-owner-daily',
-    'easyhouse-ukraine-owner-rent',
     'kvarto-ukraine-owner-rent',
     'norieltor-ukraine-owner-rent',
     'dimria-ukraine-owner-rent',

@@ -28,12 +28,6 @@ export const OWNER_HOUSING_SOURCES = Object.freeze({
   ]),
   UA: Object.freeze([
     Object.freeze({
-      key: 'easyhouse-ukraine-owner-rent',
-      url: 'https://easy-house.in.ua/search/',
-      city: null,
-      dealType: 'longRent',
-    }),
-    Object.freeze({
       key: 'kvarto-ukraine-owner-rent',
       url: 'https://kvarto.app/uk',
       city: null,
