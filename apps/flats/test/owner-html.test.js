@@ -226,3 +226,17 @@ test('card images skip agency logos and avatars but keep the real photo', () => 
   );
   assert.deepEqual(listing.photos, ['https://static2.realting.com/uploads/thumbs/1da/98a95a18993b.webp']);
 });
+
+test('a card id and a street number are not glued onto the price (m2bomber)', () => {
+  const html = [
+    '<div class="item-card-long">',
+    '<a href="/obj/1408381297/view/flat-rent/x"><h3>Довготривала оренда 1к квартири на вул. Одеська 3 • ID 35056554</h3></a>',
+    '<address class="fullcard-address">Одеська вулиця, Зарванці, вул. Одеська 3 35056554</address>',
+    '<div class="fullcard-price-wrap"><p><span id="priceValueHolder">18 000 ₴</span></p></div>',
+    '<p>52 м² 1-кімнатна</p>',
+    '</div>',
+  ].join('');
+  const [listing] = extractKnownOwnerHtml(html, { ...COUNTRIES.UA, code: 'UA' }, 'https://ua.m2bomber.com/search/', 'longRent');
+  assert.equal(listing.price, 18_000);
+  assert.equal(listing.currency, 'UAH');
+});

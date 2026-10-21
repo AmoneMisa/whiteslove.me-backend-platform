@@ -106,7 +106,10 @@ const HOUSING_RE = /(apartament|garsonier|studio|квартир|квартира
 // "млн"/"mln" are added separately since they're a magnitude word, not a
 // currency term.
 const PRICE_RE = new RegExp(`(?:${moneyCurrencyPattern()}|\\bмлн\\b|\\bmln\\b)`, 'iu');
-const BLOCK_END_RE = /<\/(?:article|li|section|div|a|p|h[1-6])>/giu;
+// address/ul/ol/tr/td/dt/dd end a text run too: m2bomber closes </address> right
+// before the price block, and without a break "вул. Одеська 3" + "18 000 ₴"
+// would read as the single amount 318 000.
+const BLOCK_END_RE = /<\/(?:article|li|section|div|a|p|h[1-6]|address|ul|ol|tr|td|dt|dd)>/giu;
 
 function decodeHtml(value) {
   return String(value || '')
@@ -135,8 +138,21 @@ const CURRENCY_TOGGLE_RE = /<div\b[^>]*\bclass=["'][^"']*(?:price-currency|m-dol
 // regulatory disclaimer asterisk right after the amount ("53 800* грн.").
 const LISTING_CODE_RE = /(?:код\s*об[ъ'’ʼ]?[еє]кта|object\s*code)\s*:?\s*\S+/giu;
 
+// Cards such as m2bomber's print the numeric listing id several times ("ID 35056554
+// ... 35056554") right before the price, so "35056554 18 000 ₴" reads as one
+// number run. The id is source identity, not text to interpret: drop every
+// occurrence of an id the card itself labels as "ID <digits>".
+const LABELLED_SOURCE_ID_RE = /(?<![\p{L}\p{N}_])ID\s*:?\s*(\d{5,})(?![\p{L}\p{N}_])/giu;
+
+function stripSourceIds(text) {
+  const ids = new Set([...text.matchAll(LABELLED_SOURCE_ID_RE)].map((match) => match[1]));
+  let out = text;
+  for (const id of ids) out = out.replace(new RegExp(`(?<![\\p{L}\\p{N}_])(?:ID\\s*:?\\s*)?${id}(?![\\p{L}\\p{N}_])`, 'giu'), ' ');
+  return out;
+}
+
 function stripHtml(fragment) {
-  return decodeHtml(
+  return stripSourceIds(decodeHtml(
     String(fragment || '')
       .replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, ' ')
       .replace(/<style\b[^>]*>[\s\S]*?<\/style>/giu, ' ')
@@ -144,7 +160,7 @@ function stripHtml(fragment) {
       .replace(BLOCK_END_RE, '\n')
       .replace(/<br\s*\/?>/giu, '\n')
       .replace(/<[^>]+>/g, ' '),
-  )
+  ))
     .replace(/[ \t]+/g, ' ')
     .replace(/\s*\n\s*/g, '\n')
     .replace(/\n{2,}/g, '\n')
@@ -296,7 +312,7 @@ function heading(fragment, fallbackText) {
   return value.trim().slice(0, 120) || 'Listing';
 }
 
-function plausibleCard(text, country) {
+function plausibleCard(text, country, priceText = text) {
   if (!text || text.length < 18 || text.length > 2200) return false;
   // "3-room" (a hyphen, not whitespace, between the digit and the word) is
   // common English card copy (e.g. ostona.app); accept either separator.
@@ -305,12 +321,12 @@ function plausibleCard(text, country) {
   }
   if (!PRICE_RE.test(text)) return false;
   if (resolveHousingIntent(text)?.listingKind === 'propertyWanted') return false;
-  const parsed = parsePriceFromText(text, country?.currency || '');
+  const parsed = parsePriceFromText(priceText, country?.currency || '');
   return parsed?.amount != null;
 }
 
-function toListing(fragment, text, country, sourceUrl, index, ownerHost, sourceDealType, city) {
-  const parsedPrice = parsePriceFromText(text, country?.currency || '');
+function toListing(fragment, text, country, sourceUrl, index, ownerHost, sourceDealType, city, priceText = text) {
+  const parsedPrice = parsePriceFromText(priceText, country?.currency || '');
   const url = firstHref(fragment, sourceUrl) || sourceUrl;
   const agency = !ownerHost && parseHousingSeller(text).type === 'agency';
   return makeListing({
@@ -476,7 +492,10 @@ export function extractKnownOwnerHtml(html, country, sourceUrl, sourceDealType =
   const seen = new Set();
   const add = (fragment, text) => {
     const normalized = String(text || '').replace(/\s+/g, ' ').trim();
-    if (!plausibleCard(normalized, country)) return;
+    // Price parsing keeps the card's line breaks: flattening them would glue a
+    // street number or id onto the next line's price ("Одеська 3" + "18 000 ₴").
+    const priceText = String(text || '').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+    if (!plausibleCard(normalized, country, priceText)) return;
     const key = normalized.toLocaleLowerCase().slice(0, 420);
     if (seen.has(key)) return;
     seen.add(key);
@@ -486,7 +505,7 @@ export function extractKnownOwnerHtml(html, country, sourceUrl, sourceDealType =
       || cityFromUaMarker(normalized)
       || pageCity;
     listings.push(
-      toListing(fragment, normalized, country, sourceUrl, listings.length, ownerHost, sourceDealType, city),
+      toListing(fragment, normalized, country, sourceUrl, listings.length, ownerHost, sourceDealType, city, priceText),
     );
   };
 
