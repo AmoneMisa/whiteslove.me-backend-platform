@@ -84,7 +84,7 @@ test('apply writes the re-read price and currency together', async () => {
     async query(sql, params) {
       calls.push({ sql, params });
       if (/^\s*SELECT/u.test(sql)) {
-        return { rows: [{ id: '9', country: 'UA', source: 'custom', deal_type: 'sale', price: 47_500, currency: 'UAH', room_only: null, title: 'x', text: 'Продаж Ціна 47500 у.о.' }] };
+        return { rows: [{ id: '9', country: 'UA', source: 'custom', deal_type: 'sale', price: 475, currency: 'UAH', room_only: null, title: 'x', text: 'Продаж Ціна 47500 у.о.' }] };
       }
       return { rowCount: params[0].length };
     },
@@ -94,5 +94,6 @@ test('apply writes the re-read price and currency together', async () => {
   const update = calls.at(-1);
   assert.deepEqual(update.params[1], ['reparse']);
   assert.deepEqual(update.params[2], ['USD']);
+  assert.deepEqual(update.params[4], [475]);
   assert.deepEqual(update.params[5], [47_500]);
 });

@@ -117,7 +117,11 @@ export async function runPriceBackfillBatch(client, { afterId = 0, batchSize = 5
     if (plan) {
       changes.push({
         id: String(row.id), source: row.source, country: row.country, dealType: row.deal_type,
-        title: row.title, price: Number(row.price), currency: row.currency, ...plan,
+        title: row.title, ...plan,
+        // The stored values stay in price/currency (they are the optimistic lock
+        // for the update); the repaired ones are newPrice/toCurrency.
+        price: Number(row.price), currency: row.currency,
+        toCurrency: plan.currency ?? null,
         newPrice: plan.action === 'reparse' ? plan.price : undefined,
       });
     }
@@ -151,7 +155,7 @@ export async function runPriceBackfillBatch(client, { afterId = 0, batchSize = 5
       [
         fixes.map((change) => change.id),
         fixes.map((change) => change.action),
-        fixes.map((change) => change.currency ?? ''),
+        fixes.map((change) => change.toCurrency ?? ''),
         fixes.map((change) => change.reason),
         fixes.map((change) => change.price),
         fixes.map((change) => change.newPrice ?? null),

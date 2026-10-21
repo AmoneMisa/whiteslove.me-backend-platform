@@ -49,7 +49,9 @@ async function main() {
       const bucket = `${change.action}/${change.reason}/${change.source}`;
       counts.set(bucket, (counts.get(bucket) ?? 0) + 1);
       if (previewed >= args.preview) continue;
-      const target = change.action === 'currency' ? ` -> ${change.currency}` : change.action === 'clear' ? ' -> NULL' : '';
+      const target = change.action === 'currency' ? ` -> ${change.toCurrency}`
+        : change.action === 'reparse' ? ` -> ${change.newPrice} ${change.toCurrency}`
+          : change.action === 'clear' ? ' -> NULL' : '';
       console.log(`  ${change.action} ${change.source}/${change.country} #${change.id} ${change.dealType ?? '-'} ${change.price} ${change.currency}${target} | ${change.title}`);
       previewed += 1;
     }
