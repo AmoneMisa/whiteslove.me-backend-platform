@@ -1,3 +1,4 @@
+import { parseHousingPrice } from '@whiteslove/parsing-lexicon/housing-money';
 import { COUNTRIES } from '../geo/countries.js';
 import { PLAUSIBLE_PRICE_USD } from '../support/price-plausibility.js';
 
@@ -39,6 +40,25 @@ function typical(usd, key) {
  * Returns null when the price is fine or cannot be judged.
  */
 export function planPriceRepair(row, rates) {
+  const base = planStoredPrice(row, rates);
+  if (!base || !row?.text) return base;
+  // Flagged price: ask the current parser what the stored text says. This is the
+  // same read the next crawl would do, applied now to rows the old parser wrote.
+  return planReparse(row, rates, base.key) ?? base;
+}
+
+function planReparse(row, rates, key) {
+  const country = String(row.country || '').toUpperCase();
+  const parsed = parseHousingPrice(row.text, { country, currency: COUNTRIES[country]?.currency || '' });
+  if (parsed?.amount == null) return null;
+  const currency = String(parsed.currency || '').toUpperCase();
+  const rate = rates?.[currency];
+  if (!rate || !plausible(parsed.amount / rate, key)) return null;
+  if (parsed.amount === Number(row.price) && currency === String(row.currency || '').toUpperCase()) return null;
+  return { action: 'reparse', reason: 'reparsed-from-text', price: parsed.amount, currency, key };
+}
+
+function planStoredPrice(row, rates) {
   if (row?.price == null) return null;
   const price = Number(row.price);
   if (!Number.isFinite(price)) return null;
@@ -79,7 +99,8 @@ export async function runPriceBackfillBatch(client, { afterId = 0, batchSize = 5
     `
       SELECT id, country, source, deal_type, price, currency,
              CASE WHEN jsonb_typeof(data->'roomOnly') = 'boolean' THEN (data->>'roomOnly')::boolean END AS room_only,
-             LEFT(REGEXP_REPLACE(COALESCE(title, ''), '\\s+', ' ', 'g'), 60) AS title
+             LEFT(REGEXP_REPLACE(COALESCE(title, ''), '\\s+', ' ', 'g'), 60) AS title,
+             LEFT(COALESCE(title, '') || E'\\n' || COALESCE(description, ''), 4000) AS text
       FROM listings
       WHERE id > $1::bigint
         AND price IS NOT NULL
@@ -97,6 +118,7 @@ export async function runPriceBackfillBatch(client, { afterId = 0, batchSize = 5
       changes.push({
         id: String(row.id), source: row.source, country: row.country, dealType: row.deal_type,
         title: row.title, price: Number(row.price), currency: row.currency, ...plan,
+        newPrice: plan.action === 'reparse' ? plan.price : undefined,
       });
     }
   }
@@ -106,22 +128,25 @@ export async function runPriceBackfillBatch(client, { afterId = 0, batchSize = 5
     const result = await client.query(
       `
         UPDATE listings AS l
-        SET price = CASE WHEN input.action = 'clear' THEN NULL ELSE l.price END,
-            currency = CASE WHEN input.action = 'currency' THEN input.currency ELSE l.currency END,
+        SET price = CASE input.action WHEN 'clear' THEN NULL WHEN 'reparse' THEN input.new_price ELSE l.price END,
+            currency = CASE WHEN input.action IN ('currency', 'reparse') THEN input.currency ELSE l.currency END,
             data = jsonb_set(
               l.data
-                || CASE WHEN input.action = 'clear' THEN jsonb_build_object('price', NULL)
-                        ELSE jsonb_build_object('currency', input.currency) END,
+                || CASE input.action
+                     WHEN 'clear' THEN jsonb_build_object('price', NULL)
+                     WHEN 'reparse' THEN jsonb_build_object('price', input.new_price, 'currency', input.currency)
+                     ELSE jsonb_build_object('currency', input.currency) END,
               '{priceRepair}',
               jsonb_build_object('price', l.price, 'currency', l.currency, 'reason', input.reason, 'at', NOW())
             ),
             updated_at = NOW()
-        FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::double precision[])
-          AS input(id, action, currency, reason, price)
+        FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::double precision[], $6::double precision[])
+          AS input(id, action, currency, reason, price, new_price)
         WHERE l.id = input.id
-          -- Skip rows changed since they were read, and rows already repaired.
+          -- Skip rows changed since they were read. A repaired row is plausible, so
+          -- the planner does not pick it again; a re-crawl that breaks it again is
+          -- repaired again.
           AND l.price IS NOT DISTINCT FROM input.price
-          AND l.data->'priceRepair' IS NULL
       `,
       [
         fixes.map((change) => change.id),
@@ -129,6 +154,7 @@ export async function runPriceBackfillBatch(client, { afterId = 0, batchSize = 5
         fixes.map((change) => change.currency ?? ''),
         fixes.map((change) => change.reason),
         fixes.map((change) => change.price),
+        fixes.map((change) => change.newPrice ?? null),
       ],
     );
     updated = result.rowCount ?? 0;

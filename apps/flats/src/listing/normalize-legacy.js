@@ -143,6 +143,15 @@ export function makeListing(partial) {
     if (floor && Number(partial.price) >= floor) dealType = 'sale';
   }
 
+  // A rent-scoped catalogue can still carry a promoted sale card ("Premium
+  // Продажа квартира ... $125 000"). The sale wording alone is not enough (rent
+  // copy mentions sale terms), but the explicit sale reading together with a
+  // sale-sized price is.
+  if (dealType === 'longRent' && parsedDealType === 'sale' && partial.price != null) {
+    const saleFloor = SALE_FLOOR[String(partial.currency ?? '').toUpperCase()];
+    if (saleFloor && Number(partial.price) >= saleFloor) dealType = 'sale';
+  }
+
   const parsedFloor = parseFloor(combined);
   const floor = partial.floor != null
     ? Number(partial.floor)

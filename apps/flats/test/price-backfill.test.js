@@ -61,8 +61,38 @@ test('apply rewrites only the planned rows and keeps the original in data.priceR
   const applied = await runPriceBackfillBatch(client, { rates, apply: true });
   assert.equal(applied.updated, 1);
   const update = calls.at(-1);
-  assert.match(update.sql, /'priceRepair'/u);
-  assert.match(update.sql, /l\.data->'priceRepair' IS NULL/u);
+  assert.match(update.sql, /\{priceRepair\}/u);
+  assert.match(update.sql, /input\.action IN \('currency', 'reparse'\)/u);
   assert.deepEqual(update.params[0], ['1']);
   assert.equal(applied.nextAfterId, '3');
+});
+
+test('a flagged price is re-read from the stored text with the current parser', () => {
+  const row = (text, price, currency, country) => ({ country, deal_type: 'sale', room_only: null, price, currency, text });
+  // "у.о." was filed under the country default (UAH): the same text now reads 47 500 USD.
+  const fixed = planPriceRepair(row('Продаж 1-км Ціна 47500 у.о. тел 050 123 45 67', 47_500, 'UAH', 'UA'), rates);
+  assert.deepEqual([fixed.action, fixed.price, fixed.currency], ['reparse', 47_500, 'USD']);
+  // Text that gives nothing better leaves the old decision in place.
+  assert.equal(planPriceRepair(row('нема ціни', 99_699_999_000, 'KGS', 'KG'), rates).action, 'clear');
+  // A plausible stored price is never re-read.
+  assert.equal(planPriceRepair(row('Ціна 50000 у.о.', 70_000, 'USD', 'UA'), rates), null);
+});
+
+test('apply writes the re-read price and currency together', async () => {
+  const calls = [];
+  const client = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (/^\s*SELECT/u.test(sql)) {
+        return { rows: [{ id: '9', country: 'UA', source: 'custom', deal_type: 'sale', price: 47_500, currency: 'UAH', room_only: null, title: 'x', text: 'Продаж Ціна 47500 у.о.' }] };
+      }
+      return { rowCount: params[0].length };
+    },
+  };
+  const result = await runPriceBackfillBatch(client, { rates, apply: true });
+  assert.equal(result.updated, 1);
+  const update = calls.at(-1);
+  assert.deepEqual(update.params[1], ['reparse']);
+  assert.deepEqual(update.params[2], ['USD']);
+  assert.deepEqual(update.params[5], [47_500]);
 });

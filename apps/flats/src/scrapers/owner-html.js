@@ -312,7 +312,18 @@ function heading(fragment, fallbackText) {
   return value.trim().slice(0, 120) || 'Listing';
 }
 
-const NON_LISTING_CARD_RE = /\bpm__plan\b|\bplan-action-btn\b|\/create-payment\/|\bmodal-plan-card\b/iu;
+// The last card of a catalogue page often swallows what follows it: pagination,
+// property-type menus, the footer and modal copy ("Суперлайк... (5 EUR)... 50000
+// UZS" on realting.uz). Everything from the first such marker on is page chrome.
+const PAGE_CHROME_RE = /(?:Показать\s+следующие\s+\d+\s+объект|Show\s+next\s+\d+\s+(?:propert|listing|object)|Типы\s+недвижимости\s+в\s|©\s*20\d\d)/iu;
+
+function cutPageChrome(text) {
+  const value = String(text || '');
+  const match = PAGE_CHROME_RE.exec(value);
+  return match ? value.slice(0, match.index) : value;
+}
+
+const NON_LISTING_CARD_RE =/\bpm__plan\b|\bplan-action-btn\b|\/create-payment\/|\bmodal-plan-card\b/iu;
 
 function plausibleCard(text, country, priceText = text) {
   if (!text || text.length < 18 || text.length > 2200) return false;
@@ -332,7 +343,10 @@ function toListing(fragment, text, country, sourceUrl, index, ownerHost, sourceD
   const url = firstHref(fragment, sourceUrl) || sourceUrl;
   const agency = !ownerHost && parseHousingSeller(text).type === 'agency';
   return makeListing({
-    id: `owner-${hash(`${sourceUrl}|${url}|${text.slice(0, 320)}|${index}`)}`,
+    // A card with its own detail URL is identified by that URL alone. Keying on the
+    // catalogue page and position re-inserted the same listing every time it moved
+    // ("source_id" changed, so each crawl added a duplicate row).
+    id: `owner-${hash(url !== sourceUrl ? url : `${url}|${text.slice(0, 320)}`)}`,
     source: 'custom',
     country: country.code,
     title: heading(fragment, text),
@@ -497,6 +511,7 @@ export function extractKnownOwnerHtml(html, country, sourceUrl, sourceDealType =
     // plan modal: "299 грн / 7 дн", "$9.99 / 30 днів"). They have a price and
     // housing-sounding copy but are not listings.
     if (NON_LISTING_CARD_RE.test(String(fragment || ''))) return;
+    text = cutPageChrome(text);
     const normalized = String(text || '').replace(/\s+/g, ' ').trim();
     // Price parsing keeps the card's line breaks: flattening them would glue a
     // street number or id onto the next line's price ("Одеська 3" + "18 000 ₴").

@@ -439,7 +439,8 @@ function mapLdNode(node, country, sourceUrl, idx, sourceDealType) {
   const agency = parseHousingSeller(sellerText(node, offer)).type === 'agency';
 
   return makeListing({
-    id: `custom-${hash(sourceUrl + '|' + url + '|' + idx)}`,
+    // Own detail URL => stable identity; the catalogue page and position are not.
+    id: `custom-${hash(url !== sourceUrl ? url : sourceUrl + '|' + idx)}`,
     source: 'custom',
     country: country.code,
     title: node.name ?? node.headline ?? 'Listing',
@@ -506,7 +507,7 @@ function extractFeed(xml, country, sourceUrl, sourceDealType) {
     const decodedDesc = decodeXml(desc);
     items.push(
       makeListing({
-        id: `custom-${hash(sourceUrl + '|' + link + '|' + items.length)}`,
+        id: `custom-${hash(link && link !== sourceUrl ? link : sourceUrl + '|' + items.length)}`,
         source: 'custom',
         country: country.code,
         title: decodedTitle,
@@ -570,7 +571,7 @@ function mapAtlantaItem(item, country, sourceUrl, idx, sourceDealType) {
     .join('. ');
 
   return makeListing({
-    id: `custom-${hash(sourceUrl + '|' + url + '|' + idx)}`,
+    id: `custom-${hash(url !== sourceUrl ? url : sourceUrl + '|' + idx)}`,
     source: 'custom',
     country: country.code,
     title: item.title ?? 'Listing',

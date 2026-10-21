@@ -22,6 +22,7 @@
     "backfill:listing-contacts": "node src/backfill-listing-contacts.js",
     "backfill:listing-prices": "node src/backfill-listing-prices.js",
     "backfill:listing-intent": "node src/backfill-listing-intent.js",
+    "backfill:duplicate-listings": "node src/backfill-duplicate-listings.js",
     "regeocode": "node src/regeocode.js",
     "legal:check": "node src/check-legal-readiness.js",
     "retention:run": "node src/run-retention.js"

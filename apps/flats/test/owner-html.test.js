@@ -260,3 +260,34 @@ test('subscription plan blocks on a catalogue page are not listings (easy-house)
   const listings = extractKnownOwnerHtml(plan + card, { ...COUNTRIES.UA, code: 'UA' }, 'https://easy-house.in.ua/search/', 'longRent');
   assert.deepEqual(listings.map((listing) => listing.price), [16_000]);
 });
+
+test('a card with its own URL keeps the same id when it moves on the page or to another page', () => {
+  const card = (price) => [
+    '<div class="item-card-long">',
+    '<a href="/obj/1408400261/view/flat-rent/x"><h3>Арендага 1 хонали 44 м2</h3></a>',
+    `<p>Ташкент 1-комн 44 м² ${price} $</p>`,
+    '</div>',
+  ].join('');
+  const other = '<div class="item-card-long"><a href="/obj/1/view/flat-rent/y"><h3>2-комнатная квартира</h3></a><p>Ташкент 2-комн 60 м² 700 $</p></div>';
+  const country = { ...COUNTRIES.UZ, code: 'UZ' };
+  const first = extractKnownOwnerHtml(card(500) + other, country, 'https://uz.m2bomber.com/search/?page=1', 'longRent');
+  const moved = extractKnownOwnerHtml(other + card(500), country, 'https://uz.m2bomber.com/search/?page=2', 'longRent');
+  const idOf = (listings, text) => listings.find((listing) => listing.description.includes(text))?.id;
+  assert.ok(idOf(first, '44 м²'));
+  assert.equal(idOf(first, '44 м²'), idOf(moved, '44 м²'));
+  assert.notEqual(idOf(first, '44 м²'), idOf(first, '60 м²'));
+});
+
+test('page footer text glued onto the last card does not leak prices or currencies (realting.uz)', () => {
+  const html = [
+    '<a href="/property-to-rent/3860266"><h3>Квартира 2 комнаты</h3>',
+    '<p>Ташкент, Узбекистан 2 51 м² 1/4 Кора камиш</p>',
+    '<div>$273 в месяц</div><p>Рекомендовать Показать контакты Realting.uz</p>',
+    '<p>Показать следующие 30 объектов 1 ... 13 14 15 Типы недвижимости в Ташкенте пентхаусы</p>',
+    '<p>© 2023 - 2026 Realting.uz Суперлайк! 1 суперлайк = 10 лайков списывается 50 риэлтингов (5 EUR) Оплатить 50000 UZS</p></a>',
+  ].join('');
+  const [listing] = extractKnownOwnerHtml(html, { ...COUNTRIES.UZ, code: 'UZ' }, 'https://realting.uz/property-to-rent?page=14', 'longRent');
+  assert.equal(listing.price, 273);
+  assert.equal(listing.currency, 'USD');
+  assert.equal(/суперлайк|50000/iu.test(listing.description), false);
+});
