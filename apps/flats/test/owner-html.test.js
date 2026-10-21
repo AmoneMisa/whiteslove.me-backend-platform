@@ -240,3 +240,23 @@ test('a card id and a street number are not glued onto the price (m2bomber)', ()
   assert.equal(listing.price, 18_000);
   assert.equal(listing.currency, 'UAH');
 });
+
+test('subscription plan blocks on a catalogue page are not listings (easy-house)', () => {
+  const plan = [
+    '<article class="pm__plan modal-plan-card">',
+    '<div class="pm__plan-name">✅ Базовий</div>',
+    '<div class="pm__plan-price">299<span class="per">грн / 7 дн</span></div>',
+    '<ul class="pm__plan-feats"><li>Усі оголошення без посередників і комісій</li><li>Прямий контакт із власником квартири</li></ul>',
+    '<a href="/create-payment/5/" class="plan-action-btn">Активувати</a>',
+    '</article>',
+  ].join('');
+  const card = [
+    '<article class="listing listing--locked" data-property-id="186164">',
+    '<p class="listing__location">Київ</p>',
+    '<p class="listing__desc">Здається 2-кімнатна квартира в центрі, 52 м², 3 поверх</p>',
+    '<div class="listing__price">16 000 <span class="cur">UAH</span></div>',
+    '</article>',
+  ].join('');
+  const listings = extractKnownOwnerHtml(plan + card, { ...COUNTRIES.UA, code: 'UA' }, 'https://easy-house.in.ua/search/', 'longRent');
+  assert.deepEqual(listings.map((listing) => listing.price), [16_000]);
+});

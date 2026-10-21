@@ -312,6 +312,8 @@ function heading(fragment, fallbackText) {
   return value.trim().slice(0, 120) || 'Listing';
 }
 
+const NON_LISTING_CARD_RE = /\bpm__plan\b|\bplan-action-btn\b|\/create-payment\/|\bmodal-plan-card\b/iu;
+
 function plausibleCard(text, country, priceText = text) {
   if (!text || text.length < 18 || text.length > 2200) return false;
   // "3-room" (a hyphen, not whitespace, between the digit and the word) is
@@ -491,6 +493,10 @@ export function extractKnownOwnerHtml(html, country, sourceUrl, sourceDealType =
   const listings = [];
   const seen = new Set();
   const add = (fragment, text) => {
+    // Catalogue pages also carry subscription/checkout blocks (easy-house.in.ua's
+    // plan modal: "299 грн / 7 дн", "$9.99 / 30 днів"). They have a price and
+    // housing-sounding copy but are not listings.
+    if (NON_LISTING_CARD_RE.test(String(fragment || ''))) return;
     const normalized = String(text || '').replace(/\s+/g, ' ').trim();
     // Price parsing keeps the card's line breaks: flattening them would glue a
     // street number or id onto the next line's price ("Одеська 3" + "18 000 ₴").
