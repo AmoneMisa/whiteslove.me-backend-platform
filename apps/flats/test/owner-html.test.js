@@ -207,3 +207,22 @@ test('card images fall back to srcset and never return vector chrome', () => {
   const [listing] = extractKnownOwnerHtml(html, COUNTRIES.UZ, 'https://rentli.uz/en/listings');
   assert.deepEqual(listing.photos, ['https://rentli.uz/images/abc-1x.jpg']);
 });
+
+// Agency logos and poster avatars are printed inside the card but are not the
+// flat's photo; identical across an agency's listings they glue unrelated flats
+// into one property cluster.
+test('card images skip agency logos and avatars but keep the real photo', () => {
+  const html = [
+    '<a href="https://realting.uz/property-to-rent/3991012">',
+    '<img src="https://static2.realting.com/uploads/logo_in_square/6ca/a02b3e756811.webp">',
+    '<img src="https://static2.realting.com/uploads/thumbs/1da/98a95a18993b.webp">',
+    '<img src="https://market-images.lunstatic.net/lun-ua/60/60/images/avatars/1839810618468513.png">',
+    '<div>2 комнатная квартира в аренду 60 м² $750 в месяц Ташкент</div>',
+    '</a>',
+  ].join('');
+
+  const [listing] = extractKnownOwnerHtml(
+    html, COUNTRIES.UZ, 'https://realting.uz/tashkent/property-to-rent/apartments', 'longRent',
+  );
+  assert.deepEqual(listing.photos, ['https://static2.realting.com/uploads/thumbs/1da/98a95a18993b.webp']);
+});

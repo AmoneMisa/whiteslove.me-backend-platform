@@ -190,6 +190,19 @@ function unwrapNextImage(url) {
   return url;
 }
 
+// realting.uz prints the agency logo as /uploads/logo_in_square/..., lun.ua the
+// poster's avatar as /images/avatars/...: byte-identical across an agency's
+// listings, so they glue unrelated flats together if treated as photos.
+const NON_PHOTO_PATH_RE = /\/[^/?#]*(?:logo|avatar|favicon|sprite)[^/?#]*(?:\/|[?#]|$)/i;
+
+export function isNonPhotoImageUrl(url) {
+  try {
+    return NON_PHOTO_PATH_RE.test(new URL(url).pathname);
+  } catch {
+    return false;
+  }
+}
+
 function imageSource(tag) {
   const direct = tag.match(/\b(?:src|data-src)=["']([^"']+)["']/iu)?.[1];
   if (direct && !/^data:/i.test(direct)) return direct;
@@ -207,8 +220,9 @@ function images(fragment, sourceUrl) {
     const raw = imageSource(match[0]);
     const resolved = raw && absoluteUrl(raw, sourceUrl);
     const url = resolved && unwrapNextImage(resolved);
-    // Vector images are site chrome (store badges, logos), never a listing photo.
-    if (!url || !/^https?:\/\//i.test(url) || /\.svg(?:[?#]|$)/i.test(url)) continue;
+    // Vector images are site chrome (store badges, logos), never a listing photo;
+    // neither are agency logos and user avatars that cards print next to it.
+    if (!url || !/^https?:\/\//i.test(url) || /\.svg(?:[?#]|$)/i.test(url) || isNonPhotoImageUrl(url)) continue;
     if (!result.includes(url)) result.push(url);
   }
   return result;

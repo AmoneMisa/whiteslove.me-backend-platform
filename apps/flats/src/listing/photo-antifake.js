@@ -504,6 +504,37 @@ function memberKey(member) {
   return `${member.source}:${member.country}:${member.sourceId}`;
 }
 
+// One physical property is not advertised thousands of times. A cluster that
+// would grow past this size was glued together by shared page furniture (agency
+// logos, avatars, placeholders) rather than by the same flat, and merging it
+// would collapse every member into a single card in the feed.
+const MAX_PROPERTY_CLUSTER_SIZE = Math.max(
+  3,
+  Number(process.env.ANTIFAKE_MAX_CLUSTER_SIZE) || 30,
+);
+
+async function mergedClusterSize(payload) {
+  const result = await pool.query(
+    `WITH m AS (
+       SELECT * FROM jsonb_to_recordset($1::jsonb) AS x(source text, country text, source_id text)
+     ),
+     existing AS (
+       SELECT DISTINCT c.cluster_id
+         FROM listing_property_clusters c
+         JOIN m ON c.source = m.source AND c.country = m.country AND c.source_id = m.source_id
+     )
+     SELECT (SELECT COUNT(*) FROM listing_property_clusters
+              WHERE cluster_id IN (SELECT cluster_id FROM existing))::integer
+          + (SELECT COUNT(*) FROM m
+              WHERE NOT EXISTS (
+                SELECT 1 FROM listing_property_clusters c
+                 WHERE c.source = m.source AND c.country = m.country AND c.source_id = m.source_id
+              ))::integer AS size`,
+    [JSON.stringify(payload)],
+  );
+  return Number(result.rows[0]?.size || 0);
+}
+
 async function assignPropertyCluster(identity, cloneMatches) {
   const plausible = cloneMatches.filter(isPropertyClusterMatch);
   if (!plausible.length) return null;
@@ -523,6 +554,13 @@ async function assignPropertyCluster(identity, cloneMatches) {
     country: member.country,
     source_id: member.sourceId,
   }));
+  if (await mergedClusterSize(payload) > MAX_PROPERTY_CLUSTER_SIZE) {
+    console.warn(
+      `[flats:antifake] ${identity.source}:${identity.sourceId} not clustered: ` +
+        `merge would exceed ${MAX_PROPERTY_CLUSTER_SIZE} members`,
+    );
+    return null;
+  }
   const result = await pool.query(
     'SELECT merge_listing_property_cluster($1::jsonb, $2::text) AS cluster',
     [JSON.stringify(payload), proposedClusterId],
