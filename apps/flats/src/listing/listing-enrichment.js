@@ -134,6 +134,28 @@ function parseNearbyLandmarks(text) {
   return out.slice(0, 8);
 }
 
+// A whole flat on a long lease does not cost this little: at or below these
+// monthly prices the post is a bed, a room or a per-person share. Such a post is
+// a room rental (roomOnly), which the database already keeps out of long rent.
+const FLAT_RENT_FLOOR = Object.freeze({
+  USD: 75,
+  EUR: 70,
+  UZS: 950_000,
+  KZT: 35_000,
+  UAH: 3_000,
+  RON: 320,
+  KGS: 6_500,
+});
+
+function isBelowFlatRentFloor(listing) {
+  if (listing?.dealType !== 'longRent') return false;
+  if (listing?.propertyType && listing.propertyType !== 'flat') return false;
+  const price = Number(listing?.price);
+  if (!Number.isFinite(price) || price <= 0) return false;
+  const floor = FLAT_RENT_FLOOR[String(listing?.currency || '').toUpperCase()];
+  return floor != null && price <= floor;
+}
+
 function isLowRoomPrice(listing) {
   const price = Number(listing?.price);
   if (!Number.isFinite(price) || price <= 0) return false;
@@ -196,7 +218,7 @@ export function enrichListingDetails(listing) {
   const compactLayout = parseCompactLayout(text);
 
   const commissionPercent = parseCommissionPercent(text);
-  const roomOnly = source.roomOnly === true || enrichment.roomOnly === true;
+  const roomOnly = source.roomOnly === true || enrichment.roomOnly === true || isBelowFlatRentFloor(source);
 
   const parsedNearby = [
     ...(Array.isArray(enrichment.nearby) ? enrichment.nearby : []),
