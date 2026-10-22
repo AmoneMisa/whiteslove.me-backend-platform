@@ -14,7 +14,7 @@ test('direct OLX listing open reuses a fresh active result for sixty minutes', (
 
   const fetchMatches = source.match(/fetchOlxOffer\(country, id\)/g) || [];
   assert.equal(fetchMatches.length, 1, 'direct open must make one live OLX offer request');
-  assert.match(source, /const fresh = await fetchOlxOffer\(country, id\);/);
+  assert.match(source, /fresh = await fetchOlxOffer\(country, id\);/);
   assert.ok(
     source.indexOf('if (cached)') < source.indexOf('fetchOlxOffer(country, id)'),
     'fresh active cache must be checked before touching OLX',
@@ -53,4 +53,8 @@ test('live reload merges the stored snapshot and refreshes geo before public enr
 test('cached and public-id reads use the same public listing presenter', () => {
   const presenterCalls = source.match(/preparePublicListing\(/g) || [];
   assert.equal(presenterCalls.length, 3);
+});
+
+test('a failed live OLX request falls back to the sidecar verdict and drops a gone advert', () => {
+  assert.match(source, /catch \(fetchError\) \{[\s\S]*?verifyListingAvailability\(\[\{source, country: code, id\}\], \{force: true\}\)[\s\S]*?checked\?\.status === 'inactive'[\s\S]*?status\(404\)[\s\S]*?throw fetchError;/);
 });

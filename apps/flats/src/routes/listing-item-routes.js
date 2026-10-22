@@ -2,6 +2,7 @@ import {COUNTRIES, COUNTRY_CODES} from '../geo/countries.js';
 import {
   readFreshActiveListing,
   recordListingAvailability,
+  verifyListingAvailability,
 } from '../availability/availability.js';
 import {fetchOlxOffer} from '../scrapers/olx.js';
 import {validateCustomSource} from '../sources/custom-source-queue.js';
@@ -169,7 +170,18 @@ export function installListingItemRoutes(app) {
       // called /olx/check and then fetched the offer again, doubling latency and
       // WAF exposure for every click. One source fetch now serves as both the
       // availability check and the fresh listing reload.
-      const fresh = await fetchOlxOffer(country, id);
+      let fresh;
+      try {
+        fresh = await fetchOlxOffer(country, id);
+      } catch (fetchError) {
+        // The portal API refuses direct server requests (403/429/timeouts). That says nothing about
+        // the advert, so ask the fetcher sidecar and take the advert down if it reports it gone.
+        const [checked] = await verifyListingAvailability([{source, country: code, id}], {force: true});
+        if (checked?.status === 'inactive') {
+          return res.status(404).json({error: 'Listing no longer available'});
+        }
+        throw fetchError;
+      }
       if (!fresh) {
         await recordListingAvailability({
           source,
