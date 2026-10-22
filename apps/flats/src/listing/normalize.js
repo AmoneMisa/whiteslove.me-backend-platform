@@ -2,6 +2,7 @@
 // housing semantics are resolved by @whiteslove/parsing-lexicon first.
 import { parseHousingListingFields } from '@whiteslove/parsing-lexicon';
 import { inferHardCurrency } from '../support/price-plausibility.js';
+import { isHourlyPriced } from '../support/hourly-price.js';
 import { parseHousingPrice } from '@whiteslove/parsing-lexicon/housing-money';
 import { makeListing as makeLegacyListing } from './normalize-legacy.js';
 
@@ -159,5 +160,12 @@ export function makeListing(partial) {
   const hardCurrency = inferHardCurrency({
     country, dealType: built.dealType, price: built.price, currency: built.currency, roomOnly: built.roomOnly === true,
   });
-  return hardCurrency ? { ...built, currency: hardCurrency, currencyInferred: 'uah-label-is-usd' } : built;
+  const priced = hardCurrency ? { ...built, currency: hardCurrency, currencyInferred: 'uah-label-is-usd' } : built;
+
+  // "4 000 ⃀ / час": an hourly price is not a night or a month. The card stays a short stay, the
+  // hourly figure moves to pricePerHour and the price slot stays empty.
+  if (isHourlyPriced(text) && priced.price != null) {
+    return { ...priced, dealType: 'shortRent', roomOnly: false, price: null, pricePerHour: priced.price, priceUnit: 'hour' };
+  }
+  return priced;
 }
