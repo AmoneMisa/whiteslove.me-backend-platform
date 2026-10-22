@@ -288,6 +288,12 @@ if (( ${#remaining[@]} > 0 )); then
   "${COMPOSE[@]}" up -d --no-deps --remove-orphans=false "${remaining[@]}"
 fi
 
+# The router's nginx.conf is a bind mount: `up -d` sees an unchanged container and keeps the old
+# config loaded, so a requested router is restarted to pick up the new file.
+if contains_requested flats-olx-router; then
+  "${COMPOSE[@]}" restart flats-olx-router
+fi
+
 # Reported last so a slow flats-api check no longer skips the worker or the
 # sidecars selected with it (flats-olx-fetcher et al.), but still fails the run.
 if (( ${api_status:-0} != 0 )); then
