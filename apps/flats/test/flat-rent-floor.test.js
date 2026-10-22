@@ -50,3 +50,10 @@ test('weak shared-stay wording only counts together with a low price', () => {
   assert.equal(flat({ description: 'Sergeli 2 xonali kvartira, yotoqxona 12 m2', price: 3_500_000, currency: 'UZS' }).roomOnly, false);
   assert.equal(flat({ description: 'Сдаётся 1 комнатная квартира, бывшее общежитие, метро рядом', price: 3_500_000, currency: 'UZS' }).roomOnly, false);
 });
+
+test('a "house" at a bed price is a room too, commercial space is never classified', () => {
+  assert.equal(flat({ propertyType: 'house', description: 'Койка место сдам свой дом', price: 1_207_320, currency: 'UZS' }).roomOnly, true);
+  assert.equal(flat({ propertyType: 'house', description: 'Olmazorda qizlarga hovli ijaraga', price: 1_000_000, currency: 'UZS' }).roomOnly, true);
+  assert.equal(flat({ propertyType: 'house', description: 'Коттедж на длительный срок', price: 2_500_000, currency: 'UZS' }).roomOnly, false);
+  assert.equal(flat({ propertyType: 'commercial', description: 'Офис в центре', price: 900_000, currency: 'UZS' }).roomOnly, false);
+});

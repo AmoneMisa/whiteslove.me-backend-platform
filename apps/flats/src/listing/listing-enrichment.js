@@ -172,7 +172,9 @@ function monthlyPriceAtMost(listing, table) {
 
 function isLongRentFlat(listing) {
   if (listing?.dealType !== 'longRent') return false;
-  return !listing?.propertyType || listing.propertyType === 'flat';
+  // A "house" at these prices is a yard or a room in one ("Olmazorda qizlarga hovli", "Койка место
+  // сдам свой дом"), not a whole house. Commercial space and land are never classified.
+  return !listing?.propertyType || listing.propertyType === 'flat' || listing.propertyType === 'house';
 }
 
 function isBelowFlatRentFloor(listing) {
