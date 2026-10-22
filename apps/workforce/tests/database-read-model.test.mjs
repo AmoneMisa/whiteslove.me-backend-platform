@@ -116,5 +116,5 @@ test('AI results and index writes do not stall the source queue', async () => {
   const elastic = await readFile(new URL('../server/vacancies/infrastructure/jobsElastic.ts', import.meta.url), 'utf8')
   // Whole-index writes get longer deadlines than the 15 s search timeout.
   assert.match(elastic, /BULK_TIMEOUT_MS,\r?\n\s+\)/)
-  assert.match(elastic, /SWEEP_TIMEOUT_MS,\n\s+\)/)
+  assert.match(elastic, /SWEEP_TIMEOUT_MS,\r?\n\s+\)/)
 })
