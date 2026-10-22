@@ -5,6 +5,10 @@ import { isHourlyPriced } from '../src/support/hourly-price.js';
 
 test('only a number followed by "/ час", "за час" or "per hour" is an hourly price', () => {
   for (const text of ['4 000 ⃀ / час Аренда Квартира 2 комн.', 'Цена 2500 сом за час', '20 USD per hour']) assert.equal(isHourlyPriced(text), true, text);
+  // The hourly figure must be the listing's own price; a card index glued in front is tolerated.
+  assert.equal(isHourlyPriced('1 \\ 1 2 500 ⃀ / час Аренда', 2_500), true);
+  assert.equal(isHourlyPriced('Посуточно 999 грн. Почасовая оплата составляет: 350 грн/час', 999), false);
+  assert.equal(isHourlyPriced('Посуточно 999 грн. Почасовая оплата составляет: 350 грн/час', 350), true);
   for (const text of ['2 300 сом / сутки', 'Подобово/погодинно, 500 грн за добу', 'Метро 5 минут в час пик', 'Цена 300$ в месяц']) assert.equal(isHourlyPriced(text), false, text);
 });
 

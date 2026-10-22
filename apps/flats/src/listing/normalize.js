@@ -164,7 +164,7 @@ export function makeListing(partial) {
 
   // "4 000 ⃀ / час": an hourly price is not a night or a month. The card stays a short stay, the
   // hourly figure moves to pricePerHour and the price slot stays empty.
-  if (isHourlyPriced(text) && priced.price != null) {
+  if (priced.price != null && isHourlyPriced(text, priced.price)) {
     return { ...priced, dealType: 'shortRent', roomOnly: false, price: null, pricePerHour: priced.price, priceUnit: 'hour' };
   }
   return priced;

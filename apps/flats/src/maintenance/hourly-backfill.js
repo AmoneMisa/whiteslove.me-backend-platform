@@ -9,7 +9,7 @@ export function planHourlyBackfill(rows) {
   const changes = [];
   for (const row of rows ?? []) {
     if (row?.price == null) continue;
-    if (!isHourlyPriced(`${row.title ?? ''}\n${row.description ?? ''}`)) continue;
+    if (!isHourlyPriced(`${row.title ?? ''}\n${row.description ?? ''}`, row.price)) continue;
     changes.push({
       id: String(row.id),
       source: row.source ?? null,
