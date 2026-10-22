@@ -20,6 +20,16 @@ const SOCIAL_LIMIT = Math.max(5, Math.min(100, Number(process.env.SOCIAL_HOUSING
 const SHORT_RENT_MARKER_RE = /(?:посуточ|погодин|подобов|на\s+сутк|за\s+добу|за\s+сутк|kunlik|sutkalik|кунлик|суткалик|тәулік|тәуліктік|regim\s+hotelier|pe\s+noapte|termen\s+scurt)/iu;
 const HOUSING_CONTEXT_RE = /(?:квартир|апартамент|apartament|garsonier|studio|kvartira|пәтер|\buy\b|\bуй\b|xona|хона|житл|жиль)/iu;
 
+// A post can say "продам"/"аренда" about a laptop or a phone ("iPhone ... аренда с
+// выкупом"). Without a housing word, rooms or an area it is not a listing.
+// Short words need real word boundaries (the JS word-boundary escape ignores Cyrillic): "уй", "uy", "дом",
+// "дім", "house", "home" must not match inside "буй", "рядом", "homework".
+const HOUSING_SIGNAL_RE = /(?:квартир|апартамент|apartament|garsonier|studio|студи|kvartira|пәтер|xona|хона|житл|жиль|комнат|кімнат|будинк|хостел|hostel|койко|(?<![\p{L}\p{N}_])(?:uy|уй|дом(?:а|е|у|ик)?|дім|house|home)(?![\p{L}\p{N}_]))/iu;
+
+export function hasHousingSignal(value) {
+  return HOUSING_SIGNAL_RE.test(value) || parseRoomsFromText(value) != null || parseAreaFromText(value) != null;
+}
+
 function housingIntent(value) {
   return resolveHousingIntent(String(value || '').replace(/[ \t]+/g, ' ').trim());
 }
@@ -47,6 +57,7 @@ function socialTarget(value) {
 export function classifyHousingOffer(text, forced = null) {
   const value = String(text || '').replace(/[ \t]+/g, ' ').trim();
   if (value.length < 12) return null;
+  if (!hasHousingSignal(value)) return null;
 
   const intent = housingIntent(value);
   if (isHousingWanted(intent)) return null;

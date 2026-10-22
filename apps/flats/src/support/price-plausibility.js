@@ -26,3 +26,22 @@ export function plausiblePriceUsdSql(priceUsdExpr, dealTypeExpr, roomOnlyExpr) {
 // Histogram of plausible prices per deal type, trimmed to the 2nd–98th
 // percentile so a handful of leftovers cannot flatten the whole curve.
 export const PRICE_DISTRIBUTION_BUCKETS = 24;
+
+/**
+ * Ukrainian sources quote flats in dollars but the crawler labels a bare number
+ * with the country default ("69 000 UAH" for a 45 m² flat, "150 UAH" a month).
+ * A hryvnia price in these ranges cannot be a real flat price in hryvnia, so
+ * the number is read as USD. Only Ukraine: elsewhere (Romania, Kazakhstan) the
+ * same low numbers are often genuine local-currency prices.
+ *
+ * Returns 'USD' when the label should be replaced, otherwise null.
+ */
+export function inferHardCurrency({ country, dealType, price, currency, roomOnly = false } = {}) {
+  if (String(country || '').toUpperCase() !== 'UA') return null;
+  if (String(currency || '').toUpperCase() !== 'UAH') return null;
+  const amount = Number(price);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  if (dealType === 'sale' && amount >= 5_000 && amount < 125_000) return 'USD';
+  if (dealType === 'longRent' && !roomOnly && amount >= 100 && amount < 2_500) return 'USD';
+  return null;
+}

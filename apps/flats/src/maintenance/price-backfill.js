@@ -1,6 +1,6 @@
 import { parseHousingPrice } from '@whiteslove/parsing-lexicon/housing-money';
 import { COUNTRIES } from '../geo/countries.js';
-import { PLAUSIBLE_PRICE_USD } from '../support/price-plausibility.js';
+import { PLAUSIBLE_PRICE_USD, inferHardCurrency } from '../support/price-plausibility.js';
 
 const FOREIGN_LABELS = new Set(['USD', 'EUR']);
 // Relabelling guesses a currency, so it only fires when the local reading lands
@@ -68,6 +68,10 @@ function planStoredPrice(row, rates) {
   const key = dealPriceKey(row.deal_type, row.room_only);
 
   if (price <= 0) return { action: 'clear', reason: 'non-positive-price', key };
+  // Ukraine quotes flats in dollars under the hryvnia default label (same rule the
+  // normalizer applies to new listings).
+  const hard = inferHardCurrency({ country: row.country, dealType: row.deal_type, price, currency, roomOnly: row.room_only === true });
+  if (hard) return { action: 'currency', reason: 'ua-uah-label-is-usd', currency: hard, key };
   if (plausible(price / rate, key)) return null;
 
   const local = COUNTRIES[String(row.country || '').toUpperCase()]?.currency?.toUpperCase();

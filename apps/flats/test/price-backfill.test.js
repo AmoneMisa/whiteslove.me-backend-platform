@@ -27,9 +27,17 @@ test('a rent priced like a sale is reported but not changed', () => {
   assert.deepEqual(plan({ country: 'RO', price: 85_000, currency: 'EUR' }), { action: 'report', reason: 'rent-priced-like-sale', key: 'longRent' });
 });
 
-test('a hard-currency-looking amount under a local label is reported, not cleared', () => {
-  assert.equal(plan({ country: 'UA', price: 150, currency: 'UAH' }).action, 'report');
-  assert.equal(plan({ country: 'UA', price: 150, currency: 'UAH' }).reason, 'price-reads-as-hard-currency');
+test('a Ukrainian hryvnia label on a dollar-sized price is relabelled to USD', () => {
+  assert.deepEqual(plan({ country: 'UA', price: 150, currency: 'UAH' }), { action: 'currency', reason: 'ua-uah-label-is-usd', currency: 'USD', key: 'longRent' });
+  assert.equal(plan({ country: 'UA', deal_type: 'sale', price: 69_000, currency: 'UAH' }).currency, 'USD');
+  // Real hryvnia rents and sales are left alone.
+  assert.equal(plan({ country: 'UA', price: 14_000, currency: 'UAH' }), null);
+  assert.equal(plan({ country: 'UA', deal_type: 'sale', price: 4_500_000, currency: 'UAH' }), null);
+});
+
+test('elsewhere a hard-currency-looking amount under a local label is only reported', () => {
+  assert.equal(plan({ country: 'KZ', price: 150, currency: 'KZT' }).action, 'report');
+  assert.equal(plan({ country: 'KZ', price: 150, currency: 'KZT' }).reason, 'price-reads-as-hard-currency');
 });
 
 test('missing price, unknown currency or unknown rate are not judged', () => {

@@ -291,3 +291,26 @@ test('page footer text glued onto the last card does not leak prices or currenci
   assert.equal(listing.currency, 'USD');
   assert.equal(/суперлайк|50000/iu.test(listing.description), false);
 });
+
+test('rieltor.ua list position is not part of the price, and comment remnants are dropped', () => {
+  const html = [
+    '<div class="catalog-card">',
+    '<div class="catalog-card__number">13</div>',
+    '<div class="catalog-card__price">550 $/міс</div>',
+    '<a href="/flats-rent/view/13105979/">Віктора Некрасова вул., 6 Київ 1 кімната 45 м² поверх 6 з 26</a>',
+    '</div>',
+  ].join('');
+  const flattened = '<div class="catalog-card">13 550 $/міс --> --> Віктора Некрасова вул., 6 Київ 1 кімната 45 м² поверх 6 з 26 <a href="/flats-rent/view/13105979/">x</a></div>';
+  const country = { ...COUNTRIES.UA, code: 'UA' };
+  for (const markup of [html, flattened]) {
+    const [listing] = extractKnownOwnerHtml(markup, country, 'https://rieltor.ua/kiev/flats-rent/', 'longRent');
+    assert.ok(listing, 'card was read');
+    assert.equal(listing.price, 550);
+    assert.equal(listing.currency, 'USD');
+  }
+});
+
+test('anuntul.ro article teasers taken for a card are dropped', () => {
+  const html = '<article>Articole recomandate A investi sau nu în imobiliare 17.01.2024 Imobiliare 13.275 Ce poți închiria cu maximum 200 de euro în București Garsoniere mici 14.906 euro apartament 2 camere</article>';
+  assert.deepEqual(extractKnownOwnerHtml(html, { ...COUNTRIES.RO, code: 'RO' }, 'https://www.anuntul.ro/anunturi-imobiliare-inchirieri/', 'longRent'), []);
+});

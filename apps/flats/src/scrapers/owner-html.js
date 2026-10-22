@@ -156,11 +156,14 @@ function stripHtml(fragment) {
     String(fragment || '')
       .replace(/<script\b[^>]*>[\s\S]*?<\/script>/giu, ' ')
       .replace(/<style\b[^>]*>[\s\S]*?<\/style>/giu, ' ')
+      .replace(/<!--[\s\S]*?-->/gu, ' ')
       .replace(CURRENCY_TOGGLE_RE, ' ')
       .replace(BLOCK_END_RE, '\n')
       .replace(/<br\s*\/?>/giu, '\n')
       .replace(/<[^>]+>/g, ' '),
   ))
+    // Card fragments are cut mid-comment, which leaves bare "-->" behind.
+    .replace(/-->/gu, ' ')
     .replace(/[ \t]+/g, ' ')
     .replace(/\s*\n\s*/g, '\n')
     .replace(/\n{2,}/g, '\n')
@@ -317,13 +320,16 @@ function heading(fragment, fallbackText) {
 // UZS" on realting.uz). Everything from the first such marker on is page chrome.
 const PAGE_CHROME_RE = /(?:Показать\s+следующие\s+\d+\s+объект|Show\s+next\s+\d+\s+(?:propert|listing|object)|Типы\s+недвижимости\s+в\s|©\s*20\d\d)/iu;
 
-function cutPageChrome(text) {
+export function cutPageChrome(text) {
   const value = String(text || '');
   const match = PAGE_CHROME_RE.exec(value);
   return match ? value.slice(0, match.index) : value;
 }
 
-const NON_LISTING_CARD_RE =/\bpm__plan\b|\bplan-action-btn\b|\/create-payment\/|\bmodal-plan-card\b/iu;
+const INDEXED_CARD_HOSTS = new Set(['rieltor.ua', 'blagovist.ua']);
+const NON_LISTING_TEXT_RE = /^\W*(?:Articole\s+recomandate|Salvare\s+cautare|Nume\s+cautare|Salveaz[ăa]\s+c[ăa]utarea|A\s+investi\s+sau\s+nu)/iu;
+
+const NON_LISTING_CARD_RE = /\bpm__plan\b|\bplan-action-btn\b|\/create-payment\/|\bmodal-plan-card\b/iu;
 
 function plausibleCard(text, country, priceText = text) {
   if (!text || text.length < 18 || text.length > 2200) return false;
@@ -512,10 +518,16 @@ export function extractKnownOwnerHtml(html, country, sourceUrl, sourceDealType =
     // housing-sounding copy but are not listings.
     if (NON_LISTING_CARD_RE.test(String(fragment || ''))) return;
     text = cutPageChrome(text);
+    // rieltor.ua and blagovist.ua print the card's list position first ("13 550 $/міс"
+    // is card 13 at 550 $); left in, it glues onto the price digits.
+    if (INDEXED_CARD_HOSTS.has(host)) text = String(text || '').replace(/^\s*\d{1,3}(?=\s)/u, '');
     const normalized = String(text || '').replace(/\s+/g, ' ').trim();
     // Price parsing keeps the card's line breaks: flattening them would glue a
     // street number or id onto the next line's price ("Одеська 3" + "18 000 ₴").
     const priceText = String(text || '').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+    // A whole page section taken for a card: the article teasers and saved-search
+    // box that open anuntul.ro pages carry view counters, not prices.
+    if (NON_LISTING_TEXT_RE.test(normalized.slice(0, 80))) return;
     if (!plausibleCard(normalized, country, priceText)) return;
     const key = normalized.toLocaleLowerCase().slice(0, 420);
     if (seen.has(key)) return;
