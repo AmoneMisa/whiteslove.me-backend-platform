@@ -57,3 +57,9 @@ test('a "house" at a bed price is a room too, commercial space is never classifi
   assert.equal(flat({ propertyType: 'house', description: 'Коттедж на длительный срок', price: 2_500_000, currency: 'UZS' }).roomOnly, false);
   assert.equal(flat({ propertyType: 'commercial', description: 'Офис в центре', price: 900_000, currency: 'UZS' }).roomOnly, false);
 });
+
+test('an impossibly low number is a price error, not a room', () => {
+  assert.equal(flat({ propertyType: 'house', description: '3xonalik uy ijaraga beriladi', price: 2_500, currency: 'UZS' }).roomOnly, false);
+  assert.equal(flat({ price: 5, currency: 'USD' }).roomOnly, false);
+  assert.equal(flat({ price: 200_000, currency: 'UZS' }).roomOnly, true);
+});

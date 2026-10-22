@@ -162,12 +162,21 @@ const WEAK_SHARE_CAP = Object.freeze({
   KG: Object.freeze({ KGS: 11_800, USD: 135 }),
 });
 
+// Below this a number is a price error ("3xonalik uy ... 2500 UZS"), not a bed: it is left to
+// the price repair instead of being filed as a room.
+const MIN_SHARE_PRICE = Object.freeze({
+  UZ: Object.freeze({ UZS: 150_000, USD: 20 }),
+  KG: Object.freeze({ KGS: 1_700, USD: 20 }),
+});
+
 function monthlyPriceAtMost(listing, table) {
   const price = Number(listing?.price);
   if (!Number.isFinite(price) || price <= 0) return false;
-  const limits = table[String(listing?.country || '').toUpperCase()];
-  const limit = limits?.[String(listing?.currency || '').toUpperCase()];
-  return limit != null && price <= limit;
+  const country = String(listing?.country || '').toUpperCase();
+  const currency = String(listing?.currency || '').toUpperCase();
+  const limit = table[country]?.[currency];
+  const minimum = MIN_SHARE_PRICE[country]?.[currency];
+  return limit != null && price <= limit && (minimum == null || price >= minimum);
 }
 
 function isLongRentFlat(listing) {
