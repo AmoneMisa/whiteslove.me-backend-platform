@@ -147,6 +147,13 @@ const MONTHLY_SOURCES = new Set<Job['source']>([
   'olx',
 ])
 
+// A re-enriched stored job carries the period an earlier pass settled on. For a board that quotes pay
+// per month, a stored "year" is that pass's default, not something the source said, so it is not kept.
+function sourceStatedSalaryPeriod(job: Job): SalaryPeriod | undefined {
+  if (job.salaryPeriod === 'year' && MONTHLY_SOURCES.has(job.source)) return undefined
+  return job.salaryPeriod
+}
+
 function detectSalaryPeriod(job: Job, text: string): SalaryPeriod {
   const explicit = explicitSalaryPeriod(text)
   if (explicit) return explicit
@@ -408,7 +415,7 @@ export function enrichJob(job: Job): Job {
   const experienceMinYears = experience.min
   const country = detectCountry(clean)
   const salaryPeriod = hasSalary
-    ? extractedSalary.salaryPeriod ?? job.salaryPeriod ?? detectSalaryPeriod(clean, text)
+    ? extractedSalary.salaryPeriod ?? sourceStatedSalaryPeriod(job) ?? detectSalaryPeriod(clean, text)
     : undefined
   const annual = salaryPeriod ? annualSalary(clean, salaryPeriod) : undefined
   // Hard-blocked industry + "this posting never says what you'd do" warning.

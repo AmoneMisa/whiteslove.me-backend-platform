@@ -35,3 +35,16 @@ test('a range with a mistyped top uses the bottom', async () => {
   assert.equal(annualSalary({ ...job, salaryMax: 120000 }, 'year')?.usd, 110000)
   assert.equal(annualSalary({ salaryMin: 5, salaryMax: 77098, salaryCurrency: 'USD' }, 'year')?.usd, 77098)
 })
+
+test('re-enriching a stored hh job does not turn its monthly pay back into a yearly one', async () => {
+  const { enrichJob } = await import('../server/vacancies/domain/enrich.ts')
+  const job = {
+    id: '138359638', source: 'hh', title: 'Бухгалтер', company: 'ТОО Тест', location: 'Алматы', country: 'KZ',
+    url: 'https://hh.kz/vacancy/138359638', postedAt: new Date().toISOString(), description: 'Работа в офисе', tags: [],
+    salaryMin: 400000, salaryMax: 600000, salaryCurrency: 'KZT', salaryPeriod: 'year',
+  }
+  const once = enrichJob(job)
+  assert.equal(once.salaryPeriod, 'month')
+  assert.ok(once.salaryUsd > 8000 && once.salaryUsd < 20000, String(once.salaryUsd))
+  assert.equal(enrichJob(once).salaryUsd, once.salaryUsd)
+})
