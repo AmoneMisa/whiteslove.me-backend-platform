@@ -141,12 +141,12 @@ export function parseHiringExperience(text: string) {
   return parseExperience(text)
 }
 
-export function parseHiringSalary(text: string) {
+export function parseHiringSalary(text: string, country?: string) {
   // parseHiringVacancySalary narrows its compensation window when
   // funding/valuation/revenue language is present (AI-recruiting postings
   // like Mercor mention those alongside the real salary), falling back to
   // the plain parser for short strings that aren't full vacancy prose.
-  return parseHiringVacancySalary(text, { currencyFallback: 'language' })
+  return parseHiringVacancySalary(text, { currencyFallback: 'language', country })
 }
 
 export function parseSharedLanguageContext(text: string, mode: 'vacancy' | 'candidate' | null = null) {

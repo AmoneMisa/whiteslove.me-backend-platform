@@ -130,7 +130,7 @@ export function detectDistrict(text: string, city: string | null): string | null
 }
 
 function parseSalary(text: string, country: string): Pick<CvProfile, 'salaryMin' | 'salaryMax' | 'currency'> {
-  const parsed = parseHiringSalary(text)
+  const parsed = parseHiringSalary(text, country)
   if (!parsed || (parsed.min == null && parsed.max == null)) return {}
   const currency = parsed.currency || defaultHiringCurrency(country) || undefined
   return {
