@@ -21,6 +21,26 @@ function priceToUsd(value, currency, rates) {
 
 
 
+// USD bounds from the database, expressed in the currency the visitor filters
+// by. Rounded outward so the cheapest and dearest listings stay inside.
+function priceRangeIn(row, currency, rates) {
+  const priceCount = Number(row?.price_count) || 0;
+  const minUsd = Number(row?.min_usd);
+  const maxUsd = Number(row?.max_usd);
+  // Without FX rates the prices are still in mixed native currencies.
+  if (!safeRateEntries(rates).length) return null;
+  if (!priceCount || !Number.isFinite(minUsd) || !Number.isFinite(maxUsd)) return null;
+  const code = String(currency || 'USD').toUpperCase();
+  const rate = code === 'USD' ? 1 : Number(rates?.[code]);
+  if (!Number.isFinite(rate) || rate <= 0) return null;
+  return {
+    currency: code,
+    min: Math.floor(minUsd * rate),
+    max: Math.ceil(maxUsd * rate),
+    priceCount,
+  };
+}
+
 function encodeCursor(value) {
   return Buffer.from(JSON.stringify(value), 'utf8').toString('base64url');
 }
@@ -372,6 +392,31 @@ export async function searchPostgresListings({ filters, countries, rates = null,
       ) AS suspected_fake`);
 
   const countSql = `SELECT COUNT(*)::int AS count FROM (${countRankedSql}) l WHERE l.dedupe_rank = 1`;
+
+  if (filters.priceRangeOnly) {
+    // Same plausibility guard as the statistics, so one parse error (a phone
+    // number read as a price) cannot stretch the website's slider to millions.
+    const rangeRankedSql = rankedSqlFor(`
+      l.id, l.created_at,
+      ${plausiblePriceUsdSql(context.priceUsdExpr, 'l.deal_type', 'l.room_only')} AS price_usd`);
+    const rangeResult = await pool.query(`
+      SELECT COUNT(*)::int AS count,
+        COUNT(price_usd)::int AS price_count,
+        MIN(price_usd) AS min_usd,
+        MAX(price_usd) AS max_usd
+      FROM (${rangeRankedSql}) l
+      WHERE l.dedupe_rank = 1
+    `, baseParams);
+    const row = rangeResult.rows[0] || {};
+    return {
+      count: Number(row.count) || 0,
+      listings: [],
+      priceRange: priceRangeIn(row, filters.priceCurrency, rates),
+      nextCursor: null,
+      queryMs: Math.round((performance.now() - startedAt) * 10) / 10,
+      searchPath: searchMatches ? 'postgres+elasticsearch' : 'postgres',
+    };
+  }
 
   const statsSql = `
     WITH ranked AS MATERIALIZED (${statsRankedSql}),

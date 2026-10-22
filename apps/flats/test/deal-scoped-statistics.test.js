@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 
 const source = await readFile(new URL('../src/infrastructure/search/postgres-search-core.js', import.meta.url), 'utf8');
 const routes = await readFile(new URL('../src/routes/listing-routes.js', import.meta.url), 'utf8');
@@ -47,4 +48,14 @@ test('stats-only requests do not repeat the full ranked page query', () => {
   assert.match(source, /let pageResult = \{rows: \[\]\}/u);
   assert.match(source, /const hasMore = !filters\.statsOnly && pageResult\.rows\.length > limit/u);
   assert.match(source, /const rows = filters\.statsOnly \? \[\] : pageResult\.rows\.slice\(0, limit\)/u);
+});
+
+test('price-range requests return plausible bounds without the price filter or a page query', () => {
+  const fastCore = readFileSync(new URL('../src/infrastructure/search/postgres-search-fast-core.js', import.meta.url), 'utf8');
+  assert.match(routes, /priceRangeOnly: bool\(q\.priceRangeOnly\) === true/u);
+  assert.match(routes, /if \(filters\.priceRangeOnly\)[\s\S]*priceMin: null,\s*priceMax: null,\s*priceTolerance: null/u);
+  assert.match(routes, /priceRange: result\.priceRange/u);
+  assert.match(source, /if \(filters\.priceRangeOnly\)[\s\S]*plausiblePriceUsdSql\(context\.priceUsdExpr/u);
+  assert.match(source, /MIN\(price_usd\) AS min_usd,\s*MAX\(price_usd\) AS max_usd/u);
+  assert.match(fastCore, /filters\.mapOnly \|\| filters\.priceRangeOnly\) return false/u);
 });

@@ -11,6 +11,7 @@ const NON_SEMANTIC_FILTER_KEYS = new Set([
   'includeStats',
   'statsOnly',
   'mapOnly',
+  'priceRangeOnly',
 ]);
 
 function normalizeScopeValue(value) {

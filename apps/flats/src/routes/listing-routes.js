@@ -1,6 +1,6 @@
 import {COUNTRY_CODES} from '../geo/countries.js';
 import {canonicalCity} from '@whiteslove/parsing-lexicon/geography';
-import {attachResolvedSearchGeometry} from '../geo/search-filter-geometry.js';
+import {attachResolvedSearchGeometry, copyResolvedSearchGeometry} from '../geo/search-filter-geometry.js';
 import {getRates} from '../support/fx.js';
 import {refreshAll} from '../scheduling/scheduler.js';
 import {searchPostgresListings} from '../support/postgres-search-fast.js';
@@ -181,6 +181,7 @@ export function parseListingFilters(q) {
     includeStats: bool(q.includeStats) === true,
     statsOnly: bool(q.statsOnly) === true,
     mapOnly: bool(q.mapOnly) === true,
+    priceRangeOnly: bool(q.priceRangeOnly) === true,
   };
 }
 
@@ -222,6 +223,39 @@ async function tryPostgresSearch({filters, codes, force}) {
   try {
     fxRates = (await getRates()).rates;
   } catch {}
+
+  if (filters.priceRangeOnly) {
+    // Bounds for the website's price slider: every other filter applies, the
+    // price filter itself does not, or the slider could never widen again.
+    const result = await searchPostgresListings({
+      filters: copyResolvedSearchGeometry(filters, {
+        ...filters,
+        priceMin: null,
+        priceMax: null,
+        priceTolerance: null,
+      }),
+      countries: codes,
+      rates: fxRates,
+      searchMatches,
+    });
+    return {
+      count: result.count,
+      priceRange: result.priceRange,
+      degradedCountries: [],
+      sourceCounts: {},
+      sourceErrors: searchError
+        ? [{source: 'elasticsearch', error: searchError}]
+        : [],
+      warming: false,
+      filters,
+      searchEngine: filters.query
+        ? (searchMatches ? 'elasticsearch+postgres' : 'postgres-fallback')
+        : 'postgres',
+      queryMs: result.queryMs,
+      listings: [],
+      nextCursor: null,
+    };
+  }
 
   if (filters.mapOnly) {
     const result = await searchPostgresMapPoints({

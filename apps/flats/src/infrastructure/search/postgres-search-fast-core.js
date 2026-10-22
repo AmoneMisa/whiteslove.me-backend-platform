@@ -60,14 +60,14 @@ function hasSecondaryFilters(filters) {
 
 export function canUseFastListingPath(filters, countries, searchMatches) {
   if (!filters.listingId || searchMatches) return false;
-  if (filters.includeStats || filters.statsOnly || filters.mapOnly) return false;
+  if (filters.includeStats || filters.statsOnly || filters.mapOnly || filters.priceRangeOnly) return false;
   if (filters.sources?.length !== 1 || countries?.length !== 1) return false;
   return !hasSecondaryFilters(filters);
 }
 
 export function canUseFastFeedPath(filters, searchMatches) {
   if (searchMatches) return false;
-  if (filters.includeStats || filters.statsOnly || filters.mapOnly) return false;
+  if (filters.includeStats || filters.statsOnly || filters.mapOnly || filters.priceRangeOnly) return false;
   if (filters.listingId) return false;
   if (filters.customSources?.length || filters.customSites?.length || filters.query) return false;
   if (filters.sort && !['newest', 'oldest'].includes(filters.sort)) return false;
