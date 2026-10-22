@@ -143,18 +143,39 @@ function parseNearbyLandmarks(text) {
 // a low number there is a currency problem, not a room. Floors are therefore set
 // per country and currency, and a country without an entry is never classified.
 const FLAT_RENT_FLOOR = Object.freeze({
-  UZ: Object.freeze({ UZS: 950_000, USD: 75 }),
-  KG: Object.freeze({ KGS: 6_500, USD: 75 }),
+  UZ: Object.freeze({ UZS: 1_300_000, USD: 100 }),
+  KG: Object.freeze({ KGS: 8_800, USD: 100 }),
 });
 
-function isBelowFlatRentFloor(listing) {
-  if (listing?.dealType !== 'longRent') return false;
-  if (listing?.propertyType && listing.propertyType !== 'flat') return false;
+// A post addressed to one group only ("только женщинам", "студентам", "qizlarga") is a
+// shared flat: the tenants each take a room or a bed. Up to this monthly price it is
+// treated as a room rental even when the text names no room count; above it the same
+// wording can describe a whole flat rented to that group.
+const RESTRICTED_AUDIENCES = new Set(['women', 'men', 'students']);
+const RESTRICTED_AUDIENCE_SHARE_CAP = Object.freeze({
+  UZ: Object.freeze({ UZS: 3_000_000, USD: 250 }),
+  KG: Object.freeze({ KGS: 22_000, USD: 250 }),
+});
+
+function monthlyPriceAtMost(listing, table) {
   const price = Number(listing?.price);
   if (!Number.isFinite(price) || price <= 0) return false;
-  const floors = FLAT_RENT_FLOOR[String(listing?.country || '').toUpperCase()];
-  const floor = floors?.[String(listing?.currency || '').toUpperCase()];
-  return floor != null && price <= floor;
+  const limits = table[String(listing?.country || '').toUpperCase()];
+  const limit = limits?.[String(listing?.currency || '').toUpperCase()];
+  return limit != null && price <= limit;
+}
+
+function isLongRentFlat(listing) {
+  if (listing?.dealType !== 'longRent') return false;
+  return !listing?.propertyType || listing.propertyType === 'flat';
+}
+
+function isBelowFlatRentFloor(listing) {
+  return isLongRentFlat(listing) && monthlyPriceAtMost(listing, FLAT_RENT_FLOOR);
+}
+
+function isRestrictedAudienceShare(listing, audience) {
+  return isLongRentFlat(listing) && RESTRICTED_AUDIENCES.has(audience) && monthlyPriceAtMost(listing, RESTRICTED_AUDIENCE_SHARE_CAP);
 }
 
 function isLowRoomPrice(listing) {
@@ -219,7 +240,9 @@ export function enrichListingDetails(listing) {
   const compactLayout = parseCompactLayout(text);
 
   const commissionPercent = parseCommissionPercent(text);
-  const roomOnly = source.roomOnly === true || enrichment.roomOnly === true || isBelowFlatRentFloor(source);
+  const roomOnly = source.roomOnly === true || enrichment.roomOnly === true
+    || isBelowFlatRentFloor(source)
+    || isRestrictedAudienceShare(source, source.audience ?? enrichment.audience);
 
   const parsedNearby = [
     ...(Array.isArray(enrichment.nearby) ? enrichment.nearby : []),

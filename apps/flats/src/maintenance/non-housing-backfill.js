@@ -2,7 +2,9 @@ import { hasHousingSignal } from '../scrapers/social.js';
 
 // Social posts ("продам ноутбук", "iPhone ... аренда с выкупом") that were stored
 // as listings before the crawler required a housing word, rooms or an area.
-const SOCIAL_SOURCES = ['threads', 'facebook', 'telegram'];
+// Telegram has its own filter (scrapers/telegram.js) and many real posts use abbreviations
+// ("2шку", "1 кВ"), so only the crawlers that share social.js are cleaned here.
+const SOCIAL_SOURCES = ['threads', 'facebook'];
 
 /** Active social rows whose title+description carry no housing signal at all. */
 export function planNonHousingBackfill(rows) {

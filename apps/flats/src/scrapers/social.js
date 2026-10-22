@@ -24,7 +24,7 @@ const HOUSING_CONTEXT_RE = /(?:квартир|апартамент|apartament|ga
 // выкупом"). Without a housing word, rooms or an area it is not a listing.
 // Short words need real word boundaries (the JS word-boundary escape ignores Cyrillic): "уй", "uy", "дом",
 // "дім", "house", "home" must not match inside "буй", "рядом", "homework".
-const HOUSING_SIGNAL_RE = /(?:квартир|апартамент|apartament|garsonier|studio|студи|kvartira|пәтер|xona|хона|житл|жиль|комнат|кімнат|будинк|хостел|hostel|койко|(?<![\p{L}\p{N}_])(?:uy|уй|дом(?:а|е|у|ик)?|дім|house|home)(?![\p{L}\p{N}_]))/iu;
+const HOUSING_SIGNAL_RE = /(?:квартир|апартамент|apartament|garsonier|studio|студи|kvartira|пәтер|xona|хона|житл|жиль|комнат|кімнат|будинк|хостел|hostel|койко|однушк|двушк|трешк|трёшк|гостинк|подсел|сдаю|сдаётся|сдается|сдам|здам|здаю|здається|оренду|ijaraga|ijara|жалға|бөлме|(?<![\p{L}\p{N}_])(?:uy|уй|үй|дом(?:а|е|у|ик)?|дім|house|home|кв|жк|жк\.|р-н|район|этаж|поверх|эт|м2|м²)(?![\p{L}\p{N}_])|\d\s*-?\s*к(?:\.|\s|$)|\d\s*к\s*кв)/iu;
 
 export function hasHousingSignal(value) {
   return HOUSING_SIGNAL_RE.test(value) || parseRoomsFromText(value) != null || parseAreaFromText(value) != null;

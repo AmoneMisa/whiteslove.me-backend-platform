@@ -6,6 +6,8 @@ const flat = (extra) => enrichListingDetails({ country: 'UZ', propertyType: 'fla
 
 test('a Uzbek or Kyrgyz long-rent "flat" priced like a bed is a room rental', () => {
   assert.equal(flat({ price: 800_000, currency: 'UZS' }).roomOnly, true);
+  assert.equal(flat({ price: 1_000_000, currency: 'UZS' }).roomOnly, true);
+  assert.equal(flat({ price: 100, currency: 'USD' }).roomOnly, true);
   assert.equal(flat({ price: 450_000, currency: 'UZS' }).roomOnly, true);
   assert.equal(flat({ price: 60, currency: 'USD' }).roomOnly, true);
   assert.equal(flat({ country: 'KG', price: 3_000, currency: 'KGS' }).roomOnly, true);
@@ -26,4 +28,15 @@ test('countries whose sources mislabel hard currency are never classified by pri
   assert.equal(flat({ country: 'KZ', price: 30_000, currency: 'KZT' }).roomOnly, false);
   // A currency label that does not belong to the country is not trusted either.
   assert.equal(flat({ country: 'UZ', price: 1_400, currency: 'KZT' }).roomOnly, false);
+});
+
+test('a flat offered to one group only is a shared stay up to the audience price cap', () => {
+  const women = { description: 'Сдаётся 2-комнатная квартира, только женщинам, без животных' };
+  assert.equal(flat({ ...women, price: 2_000_000, currency: 'UZS' }).roomOnly, true);
+  assert.equal(flat({ ...women, price: 200, currency: 'USD' }).roomOnly, true);
+  assert.equal(flat({ description: 'Talabalar uchun kvartira ijaraga', price: 2_500_000, currency: 'UZS' }).roomOnly, true);
+  // Above the cap the same wording is a whole flat for that group; a family flat is never shared by audience.
+  assert.equal(flat({ ...women, price: 4_000_000, currency: 'UZS' }).roomOnly, false);
+  assert.equal(flat({ description: 'Сдам квартиру семье на долгий срок', price: 2_000_000, currency: 'UZS' }).roomOnly, false);
+  assert.equal(flat({ ...women, country: 'UA', price: 2_000, currency: 'UAH' }).roomOnly, false);
 });
