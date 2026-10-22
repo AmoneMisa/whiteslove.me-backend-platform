@@ -1,4 +1,4 @@
-import { parseHousingListingEnrichment } from '@whiteslove/parsing-lexicon/housing-listing-enrichment';
+import { parseHousingListingEnrichment, parseHousingWeakShareSignal } from '@whiteslove/parsing-lexicon/housing-listing-enrichment';
 import { chooseField, collectFieldProvenance, FIELD_SOURCES } from './field-provenance.js';
 
 function locationName(value) {
@@ -157,6 +157,11 @@ const RESTRICTED_AUDIENCE_SHARE_CAP = Object.freeze({
   KG: Object.freeze({ KGS: 22_000, USD: 250 }),
 });
 
+const WEAK_SHARE_CAP = Object.freeze({
+  UZ: Object.freeze({ UZS: 1_700_000, USD: 135 }),
+  KG: Object.freeze({ KGS: 11_800, USD: 135 }),
+});
+
 function monthlyPriceAtMost(listing, table) {
   const price = Number(listing?.price);
   if (!Number.isFinite(price) || price <= 0) return false;
@@ -174,8 +179,14 @@ function isBelowFlatRentFloor(listing) {
   return isLongRentFlat(listing) && monthlyPriceAtMost(listing, FLAT_RENT_FLOOR);
 }
 
-function isRestrictedAudienceShare(listing, audience) {
-  return isLongRentFlat(listing) && RESTRICTED_AUDIENCES.has(audience) && monthlyPriceAtMost(listing, RESTRICTED_AUDIENCE_SHARE_CAP);
+// Audience-only wording and the weaker dormitory/"for 1 person"/boys-only phrases both mean a
+// shared stay only together with a low price: "yotoqxona" is also a bedroom and "bollarga"
+// appears in ordinary flats.
+function isRestrictedAudienceShare(listing, audience, text) {
+  if (!isLongRentFlat(listing)) return false;
+  if (RESTRICTED_AUDIENCES.has(audience) && monthlyPriceAtMost(listing, RESTRICTED_AUDIENCE_SHARE_CAP)) return true;
+  // The weaker phrases are ambiguous, so they need a lower cap than an explicit audience.
+  return parseHousingWeakShareSignal(text) && monthlyPriceAtMost(listing, WEAK_SHARE_CAP);
 }
 
 function isLowRoomPrice(listing) {
@@ -242,7 +253,7 @@ export function enrichListingDetails(listing) {
   const commissionPercent = parseCommissionPercent(text);
   const roomOnly = source.roomOnly === true || enrichment.roomOnly === true
     || isBelowFlatRentFloor(source)
-    || isRestrictedAudienceShare(source, source.audience ?? enrichment.audience);
+    || isRestrictedAudienceShare(source, source.audience ?? enrichment.audience, text);
 
   const parsedNearby = [
     ...(Array.isArray(enrichment.nearby) ? enrichment.nearby : []),

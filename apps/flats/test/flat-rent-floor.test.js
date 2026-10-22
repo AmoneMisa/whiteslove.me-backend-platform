@@ -40,3 +40,13 @@ test('a flat offered to one group only is a shared stay up to the audience price
   assert.equal(flat({ description: 'Сдам квартиру семье на долгий срок', price: 2_000_000, currency: 'UZS' }).roomOnly, false);
   assert.equal(flat({ ...women, country: 'UA', price: 2_000, currency: 'UAH' }).roomOnly, false);
 });
+
+test('weak shared-stay wording only counts together with a low price', () => {
+  const dorm = { description: 'Kvartira bor 1 kishiga, yotoqxona' };
+  assert.equal(flat({ ...dorm, price: 1_500_000, currency: 'UZS' }).roomOnly, true);
+  assert.equal(flat({ ...dorm, price: 2_400_000, currency: 'UZS' }).roomOnly, false);
+  // "yotoqxona" is a bedroom in a plain family flat, and "bollarga" appears in ordinary ads.
+  assert.equal(flat({ description: 'Oilaga 3 xonali kvartira, 2 ta yotoqxona, bollarga qulay', price: 6_000_000, currency: 'UZS' }).roomOnly, false);
+  assert.equal(flat({ description: 'Sergeli 2 xonali kvartira, yotoqxona 12 m2', price: 3_500_000, currency: 'UZS' }).roomOnly, false);
+  assert.equal(flat({ description: 'Сдаётся 1 комнатная квартира, бывшее общежитие, метро рядом', price: 3_500_000, currency: 'UZS' }).roomOnly, false);
+});
