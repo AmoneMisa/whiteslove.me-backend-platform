@@ -153,13 +153,16 @@ function detectSalaryPeriod(job: Job, text: string): SalaryPeriod {
   return MONTHLY_SOURCES.has(job.source) ? 'month' : 'year'
 }
 
+const MAX_RANGE_SPREAD = 8
+
 // Annual midpoint in USD (undefined when no usable salary/rate).
 // The period a source or its text names is sometimes wrong for the number it carries; the
 // plausibility rules settle that (see salaryPlausibility.ts) and report the period actually used.
 export function annualSalary(job: Job, period: SalaryPeriod): ReturnType<typeof annualSalaryUsd> {
   const lo = toUsd(job.salaryMin, job.salaryCurrency)
   const hi = toUsd(job.salaryMax, job.salaryCurrency)
-  const mid = lo && hi ? (lo + hi) / 2 : lo || hi
+  // A range whose top is many times its bottom ("$100000 - $80000000") has a mistyped top; the bottom is the honest figure.
+  const mid = lo && hi ? (hi > lo * MAX_RANGE_SPREAD ? lo : (lo + hi) / 2) : lo || hi
   if (!mid || !PER_YEAR[period]) return undefined
   return annualSalaryUsd(mid, period as PayPeriod, job.salaryCurrency)
 }

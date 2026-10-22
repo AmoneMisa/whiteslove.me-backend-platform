@@ -25,3 +25,10 @@ test('amounts that are not a wage at all have no salary', () => {
   assert.equal(annualSalaryUsd(undefined, 'month', 'USD'), undefined)
   assert.equal(annualSalaryUsd(20, 'month', 'KZT'), undefined)
 })
+
+test('a range with a mistyped top uses the bottom', async () => {
+  const { annualSalary } = await import('../server/vacancies/domain/enrich.ts')
+  const job = { salaryMin: 100000, salaryMax: 80000000, salaryCurrency: 'USD' }
+  assert.equal(annualSalary(job, 'year')?.usd, 100000)
+  assert.equal(annualSalary({ ...job, salaryMax: 120000 }, 'year')?.usd, 110000)
+})

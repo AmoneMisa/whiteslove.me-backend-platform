@@ -44,6 +44,8 @@ for (const row of rows) {
   const after = annual?.usd ?? null
   const before = row.salary_usd == null ? null : Number(row.salary_usd)
   if (after === before && (annual?.period ?? period) === was) continue
+  // Only salaries that were already stored are repaired here; filling a missing one is the crawler's job.
+  if (before == null) continue
   changes.push({
     key: row.identity_key,
     source: row.source,
@@ -57,14 +59,23 @@ for (const row of rows) {
   })
 }
 
+const kinds = {
+  cleared: changes.filter((change) => change.before != null && change.after == null).length,
+  gained: changes.filter((change) => change.before == null && change.after != null).length,
+  rescaled: changes.filter((change) => change.before != null && change.after != null).length,
+}
 const bySource: Record<string, { n: number; cleared: number }> = {}
 for (const change of changes) {
   const entry = (bySource[change.source] ||= { n: 0, cleared: 0 })
   entry.n += 1
   if (change.after == null) entry.cleared += 1
 }
-console.log(JSON.stringify({ scanned: rows.length, changes: changes.length, apply, bySource }, null, 1))
-for (const change of changes.sort(() => Math.random() - 0.5).slice(0, sample)) console.log(JSON.stringify(change))
+console.log(JSON.stringify({ scanned: rows.length, changes: changes.length, kinds, apply, bySource }, null, 1))
+for (const kind of ['cleared', 'gained', 'rescaled'] as const) {
+  const pick = changes.filter((change) => (kind === 'cleared' ? change.before != null && change.after == null : kind === 'gained' ? change.before == null && change.after != null : change.before != null && change.after != null))
+  console.log(`--- ${kind}`)
+  for (const change of pick.sort(() => Math.random() - 0.5).slice(0, sample)) console.log(JSON.stringify(change))
+}
 
 if (apply && changes.length) {
   let updated = 0
