@@ -4,8 +4,11 @@
 // aggregates only; the listing itself is untouched and still shown in the feed.
 export const PLAUSIBLE_PRICE_USD = {
   sale: [3000, 20_000_000],
-  longRent: [30, 30_000],
-  shortRent: [3, 10_000],
+  // A flat on a long lease does not cost under 60 USD a month and a night does not cost under 8 or over
+  // 1 500: anything outside is a parse error (glued digits, a phone number, a per-month price in a
+  // per-night slot), not a real price.
+  longRent: [60, 30_000],
+  shortRent: [8, 1_500],
   roomRent: [15, 5_000],
   unknown: [1, 20_000_000],
 };

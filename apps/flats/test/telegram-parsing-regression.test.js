@@ -129,3 +129,10 @@ test('drops a group welcome/intro post even when it names a rental group', () =>
   );
   assert.deepEqual(listings, []);
 });
+
+test('a bot advertisement is not a housing offer', () => {
+  const ad = '🏡 Открыть бота Rent 777 В Самарканд на пару дней? Найдите свой уютный адрес: квартира посуточно, без посредников';
+  assert.deepEqual(telegramMessageToListings({id: 1, text: ad, date: new Date().toISOString()}, {name: 'samarkand_rent'}, UZ), []);
+  const real = telegramMessageToListings({id: 2, text: 'Сдам 2-комнатную квартиру посуточно в Самарканде, 400000 сум за сутки', date: new Date().toISOString()}, {name: 'samarkand_rent'}, UZ);
+  assert.equal(real.length, 1);
+});

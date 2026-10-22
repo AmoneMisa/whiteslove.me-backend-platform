@@ -4,6 +4,7 @@ import { PLAUSIBLE_PRICE_USD, inferHardCurrency } from '../support/price-plausib
 
 const FOREIGN_LABELS = new Set(['USD', 'EUR']);
 const IMPOSSIBLE_RENT_USD = 50_000;
+const IMPOSSIBLE_NIGHT_USD = 1_500;
 // Relabelling guesses a currency, so it only fires when the local reading lands
 // in a typical market range, not merely the wide "could exist" range above.
 const RELABEL_USD = {
@@ -79,6 +80,8 @@ function planStoredPrice(row, rates) {
   if (local && local !== currency && FOREIGN_LABELS.has(currency) && rates[local] && typical(price / rates[local], key)) {
     return { action: 'currency', reason: 'currency-label-is-local', currency: local, key };
   }
+  // Under 5 USD a month/night is no price in any currency reading ("100 KZT"): hide it.
+  if ((key === 'longRent' || key === 'shortRent') && price / rate < 5) return { action: 'clear', reason: 'impossible-low-price', key };
   // Too cheap in the labelled currency but a normal price read as USD/EUR: the
   // source quoted hard currency and the label fell back to the country default.
   // The real price is probably intact, so it is reported, never cleared.
@@ -91,7 +94,7 @@ function planStoredPrice(row, rates) {
     // Above this a monthly rent is never real. These are digits glued from a street number or a card
     // index to the price ("82 70 080 ⃀" -> 8 270 080), left by crawls before the line breaks were
     // kept; hide the price until the card is crawled again.
-    if (usd > IMPOSSIBLE_RENT_USD) return { action: 'clear', reason: 'impossible-rent-price', key };
+    if (usd > (key === 'shortRent' ? IMPOSSIBLE_NIGHT_USD : IMPOSSIBLE_RENT_USD)) return { action: 'clear', reason: key === 'shortRent' ? 'impossible-night-price' : 'impossible-rent-price', key };
     if (usd >= min && usd <= max) return { action: 'report', reason: 'rent-priced-like-sale', key };
   }
   return { action: 'clear', reason: 'implausible-price', key };

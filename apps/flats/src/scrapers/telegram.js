@@ -144,6 +144,9 @@ function messageToListing(msg, channelConfig, country, suffix = null) {
   const text = (msg.text || '').replace(/[ \t]+/g, ' ').trim();
 
   if (resolveHousingIntent(text)?.listingKind === 'propertyWanted') return null;
+  // A bot advertisement ("Открыть бота Rent 777 — в Самарканд на пару дней?") is not an offer, and
+  // its name must not become a price.
+  if (/(?:открыть|открой|запусти(?:ть)?)\s+бота|(?:open|start)\s+(?:the\s+)?bot\b/iu.test(text)) return null;
   if (text.length < 10) return null;
   if (!HOUSING_RE.test(text)) return null;
   // A group's own welcome/intro post is often named after what the group

@@ -27,7 +27,8 @@ test('statistics ignore implausible prices and expose a price distribution per d
   const { plausiblePriceUsdSql, PLAUSIBLE_PRICE_USD } = await import('../src/support/price-plausibility.js');
   const snapshot = await readFile(new URL('../src/support/statistics-snapshot.js', import.meta.url), 'utf8');
   const sql = plausiblePriceUsdSql('x.p', 'x.deal_type', 'x.room_only');
-  assert.match(sql, /WHEN 'longRent' THEN \(p\.value >= 30 AND p\.value <= 30000\)/u);
+  assert.match(sql, /WHEN 'longRent' THEN \(p\.value >= 60 AND p\.value <= 30000\)/u);
+  assert.match(sql, /WHEN 'shortRent' THEN \(p\.value >= 8 AND p\.value <= 1500\)/u);
   assert.ok(PLAUSIBLE_PRICE_USD.longRent[1] < 11_000_000);
   assert.ok(PLAUSIBLE_PRICE_USD.longRent[0] > 0);
   for (const file of [source, snapshot]) {

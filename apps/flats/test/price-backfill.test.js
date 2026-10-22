@@ -36,8 +36,8 @@ test('a Ukrainian hryvnia label on a dollar-sized price is relabelled to USD', (
 });
 
 test('elsewhere a hard-currency-looking amount under a local label is only reported', () => {
-  assert.equal(plan({ country: 'KZ', price: 150, currency: 'KZT' }).action, 'report');
-  assert.equal(plan({ country: 'KZ', price: 150, currency: 'KZT' }).reason, 'price-reads-as-hard-currency');
+  assert.equal(plan({ country: 'KZ', price: 3_000, currency: 'KZT' }).action, 'report');
+  assert.equal(plan({ country: 'KZ', price: 3_000, currency: 'KZT' }).reason, 'price-reads-as-hard-currency');
 });
 
 test('missing price, unknown currency or unknown rate are not judged', () => {
@@ -113,4 +113,19 @@ test('a monthly rent above 50 000 USD is a glued-digits error and is hidden, a l
   // 8 000 USD a month is an expensive but real penthouse rent: untouched. 35 000 EUR is reported only.
   assert.equal(plan({ country: 'UA', price: 8_000, currency: 'USD' }), null);
   assert.equal(plan({ country: 'RO', price: 35_000, currency: 'EUR' }).action, 'report');
+});
+
+test('night and month price bounds: glued or impossible numbers are hidden, real ones are kept', () => {
+  const night = (extra) => plan({ deal_type: 'shortRent', ...extra });
+  // 1 752 000 KGS a night (glued digits) and a phone number priced "Договорная".
+  assert.deepEqual(night({ country: 'KG', price: 1_752_000, currency: 'KGS' }), { action: 'clear', reason: 'impossible-night-price', key: 'shortRent' });
+  assert.equal(night({ country: 'KG', price: 996_772, currency: 'KGS' }).action, 'clear');
+  // "300 KGS" for "2 300 сом / сутки" is under 8 USD: flagged so the text is read again, or hidden.
+  assert.ok(night({ country: 'KG', price: 300, currency: 'KGS' }));
+  // A normal night is untouched.
+  assert.equal(night({ country: 'KG', price: 2_300, currency: 'KGS' }), null);
+  // Under 5 USD a month is no price at all.
+  assert.deepEqual(plan({ country: 'KZ', price: 100, currency: 'KZT' }), { action: 'clear', reason: 'impossible-low-price', key: 'longRent' });
+  // "150 RON" for a "450 €" ad is under the new 60 USD floor: flagged, not trusted.
+  assert.ok(plan({ country: 'RO', price: 150, currency: 'RON' }));
 });
