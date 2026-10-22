@@ -154,6 +154,8 @@ function detectSalaryPeriod(job: Job, text: string): SalaryPeriod {
 }
 
 const MAX_RANGE_SPREAD = 8
+// Under this the bottom of a lopsided range is a stray digit ("$5 - $77,098"), so the top is kept.
+const MIN_SANE_RANGE_BOTTOM_USD = 1000
 
 // Annual midpoint in USD (undefined when no usable salary/rate).
 // The period a source or its text names is sometimes wrong for the number it carries; the
@@ -162,7 +164,7 @@ export function annualSalary(job: Job, period: SalaryPeriod): ReturnType<typeof 
   const lo = toUsd(job.salaryMin, job.salaryCurrency)
   const hi = toUsd(job.salaryMax, job.salaryCurrency)
   // A range whose top is many times its bottom ("$100000 - $80000000") has a mistyped top; the bottom is the honest figure.
-  const mid = lo && hi ? (hi > lo * MAX_RANGE_SPREAD ? lo : (lo + hi) / 2) : lo || hi
+  const mid = lo && hi ? (hi > lo * MAX_RANGE_SPREAD ? (lo >= MIN_SANE_RANGE_BOTTOM_USD ? lo : hi) : (lo + hi) / 2) : lo || hi
   if (!mid || !PER_YEAR[period]) return undefined
   return annualSalaryUsd(mid, period as PayPeriod, job.salaryCurrency)
 }

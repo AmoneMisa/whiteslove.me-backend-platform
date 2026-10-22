@@ -16,6 +16,8 @@ test('a yearly amount labelled monthly is not multiplied by twelve', () => {
 test('a small yearly amount is an hourly wage in dollars and a monthly one in a local currency', () => {
   assert.deepEqual(annualSalaryUsd(16, 'year', 'USD'), { usd: 30720, period: 'hour' })
   assert.deepEqual(annualSalaryUsd(240, 'year', 'KZT'), { usd: 2880, period: 'month' })
+  assert.deepEqual(annualSalaryUsd(428, 'year', 'KZT'), { usd: 5136, period: 'month' })
+  assert.deepEqual(annualSalaryUsd(60000, 'year', 'KZT'), { usd: 60000, period: 'year' })
 })
 
 test('amounts that are not a wage at all have no salary', () => {
@@ -31,4 +33,5 @@ test('a range with a mistyped top uses the bottom', async () => {
   const job = { salaryMin: 100000, salaryMax: 80000000, salaryCurrency: 'USD' }
   assert.equal(annualSalary(job, 'year')?.usd, 100000)
   assert.equal(annualSalary({ ...job, salaryMax: 120000 }, 'year')?.usd, 110000)
+  assert.equal(annualSalary({ salaryMin: 5, salaryMax: 77098, salaryCurrency: 'USD' }, 'year')?.usd, 77098)
 })

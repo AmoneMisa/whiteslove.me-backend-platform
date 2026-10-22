@@ -17,6 +17,9 @@ const MAX_PLAUSIBLE_HOURLY_USD = 500
 const MIN_PLAUSIBLE_HOURLY_USD = 8
 const MAX_HOURLY_WAGE_MISTAKEN_FOR_YEAR_USD = 400
 
+// A local-currency amount below this, labelled yearly, is a monthly one (60 000 USD a month is not a local wage).
+const MAX_LOCAL_CURRENCY_MONTHLY_AS_YEAR_USD = 5000
+
 const MONTHS = 12
 
 // A small "yearly" amount in one of these is an hourly wage; in a local currency (KZT, UZS, KGS, UAH…) it is a
@@ -35,9 +38,16 @@ export function annualSalaryUsd(amountUsd: number | undefined, period: PayPeriod
   let effective = period
   if (period === 'month' && amountUsd > MAX_PLAUSIBLE_MONTHLY_USD) effective = 'year'
   else if (period === 'hour' && amountUsd > MAX_PLAUSIBLE_HOURLY_USD) effective = 'year'
-  else if (period === 'year' && amountUsd < MAX_HOURLY_WAGE_MISTAKEN_FOR_YEAR_USD) {
-    if (amountUsd < MIN_PLAUSIBLE_HOURLY_USD) return undefined
-    effective = HARD_CURRENCIES.has(String(currency || '').toUpperCase()) ? 'hour' : 'month'
+  else if (period === 'year') {
+    if (HARD_CURRENCIES.has(String(currency || '').toUpperCase())) {
+      if (amountUsd < MAX_HOURLY_WAGE_MISTAKEN_FOR_YEAR_USD) {
+        if (amountUsd < MIN_PLAUSIBLE_HOURLY_USD) return undefined
+        effective = 'hour'
+      }
+    } else if (amountUsd < MAX_LOCAL_CURRENCY_MONTHLY_AS_YEAR_USD) {
+      // Local-currency boards (KZT, UZS, KGS, UAH…) quote pay per month; a "yearly" 200 000 ₸ is a month.
+      effective = 'month'
+    }
   }
 
   const factor = effective === 'hour' ? HOURS_PER_YEAR : effective === 'month' ? MONTHS : 1
