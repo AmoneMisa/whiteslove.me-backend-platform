@@ -15,6 +15,7 @@ import { extractCandidateAge, extractCandidateGender, extractCandidateName } fro
 import { ishBorLocationFromText, trimIshBorProfileText } from '../../../shared/hiring/ishBorFields'
 import { careeristRoleFromText, trimCareeristProfileText } from './hiringCareeristFields'
 import { parseSalary as parseWebSalary } from '../../../shared/hiring/webFields'
+import { convertCurrency } from '../support/currency'
 import {
   candidateFieldRegex,
   detectCandidateFeatureCodes,
@@ -400,6 +401,27 @@ function normalizeCandidateNameCase(value: string): string {
   ))
 }
 
+// A desired salary is a monthly figure. Anything outside this USD range is a parsed age, a date, a
+// placeholder ("1 so'm") or a mistyped zero count, not a wish, so it is dropped instead of being filed
+// as a 0-dollar or a 950-million-dollar candidate.
+export const MIN_CANDIDATE_MONTHLY_SALARY_USD = 40
+export const MAX_CANDIDATE_MONTHLY_SALARY_USD = 60_000
+
+export function plausibleCandidateSalary(
+  salary: Pick<CvProfile, 'salaryMin' | 'salaryMax' | 'currency'>,
+): Pick<CvProfile, 'salaryMin' | 'salaryMax' | 'currency'> {
+  const currency = String(salary.currency || '').toUpperCase()
+  const values = [salary.salaryMin, salary.salaryMax].filter((value): value is number => value != null)
+  if (!values.length) return salary
+  for (const value of values) {
+    const usd = convertCurrency(value, currency, 'USD')
+    // Unknown currency/rate: nothing to judge by, keep the value as parsed.
+    if (usd === undefined) { if (value > 0) continue; return {} }
+    if (usd < MIN_CANDIDATE_MONTHLY_SALARY_USD || usd > MAX_CANDIDATE_MONTHLY_SALARY_USD) return {}
+  }
+  return salary
+}
+
 export function normalizeCandidate(profile: CvProfile): CvProfile {
   // Repair rows parsed before Material Icon ligatures were removed from the
   // source HTML. Underscored glyph names are presentation markup, not CV text.
@@ -462,9 +484,11 @@ export function normalizeCandidate(profile: CvProfile): CvProfile {
       ? extractCandidateSalary(originalText, profile.country)
       : {}
   const replaceStoredSalary = profile.sourceKey === 'careerist-uz' && extractedSalary.salaryMin != null
-  const salaryMin = replaceStoredSalary ? extractedSalary.salaryMin : profile.salaryMin ?? extractedSalary.salaryMin
-  const salaryMax = replaceStoredSalary ? extractedSalary.salaryMax : profile.salaryMax ?? extractedSalary.salaryMax
-  const currency = replaceStoredSalary ? extractedSalary.currency : profile.currency ?? extractedSalary.currency
+  const { salaryMin, salaryMax, currency } = plausibleCandidateSalary({
+    salaryMin: replaceStoredSalary ? extractedSalary.salaryMin : profile.salaryMin ?? extractedSalary.salaryMin,
+    salaryMax: replaceStoredSalary ? extractedSalary.salaryMax : profile.salaryMax ?? extractedSalary.salaryMax,
+    currency: replaceStoredSalary ? extractedSalary.currency : profile.currency ?? extractedSalary.currency,
+  })
   const education = normalizeCandidateEducation(profile, originalText)
   const gender = profile.gender === 'male' || profile.gender === 'female'
     ? profile.gender

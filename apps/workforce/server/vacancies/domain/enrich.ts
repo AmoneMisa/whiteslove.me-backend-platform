@@ -28,6 +28,7 @@ import type {
   WorkMode,
 } from '~~/shared/contracts/jobs'
 import { toUsd } from '../../utils/support/currency'
+import { annualSalaryUsd, type PayPeriod } from './salaryPlausibility'
 import {
   detectEmploymentTypes,
   detectExperienceRequirement,
@@ -136,6 +137,7 @@ export function extractSalaryFromText(raw: string | undefined): ExtractedSalary 
 // Sources that quote monthly salaries by convention (CIS boards) when text gives
 // no explicit period. Everything else defaults to yearly (typical for remote/EU/US).
 const MONTHLY_SOURCES = new Set<Job['source']>([
+  'hh',
   'jooble',
   'rss',
   'devkg',
@@ -152,13 +154,14 @@ function detectSalaryPeriod(job: Job, text: string): SalaryPeriod {
 }
 
 // Annual midpoint in USD (undefined when no usable salary/rate).
-function salaryUsd(job: Job, period: SalaryPeriod): number | undefined {
+// The period a source or its text names is sometimes wrong for the number it carries; the
+// plausibility rules settle that (see salaryPlausibility.ts) and report the period actually used.
+export function annualSalary(job: Job, period: SalaryPeriod): ReturnType<typeof annualSalaryUsd> {
   const lo = toUsd(job.salaryMin, job.salaryCurrency)
   const hi = toUsd(job.salaryMax, job.salaryCurrency)
   const mid = lo && hi ? (lo + hi) / 2 : lo || hi
-  const factor = PER_YEAR[period]
-  if (!mid || !factor) return undefined
-  return Math.round(mid * factor)
+  if (!mid || !PER_YEAR[period]) return undefined
+  return annualSalaryUsd(mid, period as PayPeriod, job.salaryCurrency)
 }
 
 // ---- Country detection from location text ----
@@ -402,6 +405,7 @@ export function enrichJob(job: Job): Job {
   const salaryPeriod = hasSalary
     ? extractedSalary.salaryPeriod ?? job.salaryPeriod ?? detectSalaryPeriod(clean, text)
     : undefined
+  const annual = salaryPeriod ? annualSalary(clean, salaryPeriod) : undefined
   // Hard-blocked industry + "this posting never says what you'd do" warning.
   const suspicion = classifySuspicion({
     title,
@@ -449,8 +453,8 @@ export function enrichJob(job: Job): Job {
     benefits: hiringContext.benefits,
     applicationRequirements: hiringContext.application,
     openingCount: hiringContext.openingCount ?? undefined,
-    salaryPeriod,
-    salaryUsd: salaryPeriod ? salaryUsd(clean, salaryPeriod) : undefined,
+    salaryPeriod: annual?.period ?? salaryPeriod,
+    salaryUsd: annual?.usd,
     ...suspicion,
   }
 }

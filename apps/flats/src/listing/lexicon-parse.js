@@ -6,6 +6,7 @@ import {
   HOUSING_OCCUPANCY_TYPES,
   aliasesOf,
   canonicalAnyCity,
+  stripSettlementPrefix,
   canonicalCentralAsiaCity,
   canonicalCountryCode,
   canonicalRegion,
@@ -72,11 +73,13 @@ export function parseCanonicalCountryCode(value) {
 
 export function parseCanonicalCity(countryCode, value) {
   if (!value) return '';
-  if (countryCode === 'UA') return canonicalUkraineCity(value) || String(value).trim();
+  // A city the catalogue does not know keeps its own name, without the "город"/"г." a source wrote in front.
+  const plain = stripSettlementPrefix(value);
+  if (countryCode === 'UA') return canonicalUkraineCity(value) || plain;
   if (countryCode === 'KZ' || countryCode === 'UZ') {
-    return canonicalCentralAsiaCity(value, countryCode) || String(value).trim();
+    return canonicalCentralAsiaCity(value, countryCode) || plain;
   }
-  return canonicalAnyCity(value, countryCode) || String(value).trim();
+  return canonicalAnyCity(value, countryCode) || plain;
 }
 
 export function parseCanonicalRegion(countryCode, value) {

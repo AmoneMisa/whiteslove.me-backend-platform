@@ -9,6 +9,7 @@ import {
   findCanonical,
   parseSalary as parseSharedSalary,
 } from '@whiteslove/parsing-lexicon'
+import { defaultHiringCurrency } from '@whiteslove/parsing-lexicon/hiring-source-semantics'
 import {
   extractCandidateAge,
   extractCandidateContacts,
@@ -98,8 +99,9 @@ export function parseExperience(text: string): number | null {
   return extractCandidateExperienceYears(text)
 }
 
-export function parseSalary(text: string, _country: string): Pick<CvProfile, 'salaryMin' | 'salaryMax' | 'currency'> {
-  const parsed = parseSharedSalary(text)
+export function parseSalary(text: string, country: string): Pick<CvProfile, 'salaryMin' | 'salaryMax' | 'currency'> {
+  // A bare "сом" is both the Kyrgyz and the Uzbek currency; the board's country settles it.
+  const parsed = parseSharedSalary(text, { fallbackCurrency: defaultHiringCurrency(country) })
   if (!parsed?.currency || (parsed.min == null && parsed.max == null)) return {}
   const first = parsed.min ?? parsed.max
   const second = parsed.max ?? parsed.min
