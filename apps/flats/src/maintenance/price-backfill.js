@@ -3,6 +3,7 @@ import { COUNTRIES } from '../geo/countries.js';
 import { PLAUSIBLE_PRICE_USD, inferHardCurrency } from '../support/price-plausibility.js';
 
 const FOREIGN_LABELS = new Set(['USD', 'EUR']);
+const IMPOSSIBLE_RENT_USD = 50_000;
 // Relabelling guesses a currency, so it only fires when the local reading lands
 // in a typical market range, not merely the wide "could exist" range above.
 const RELABEL_USD = {
@@ -87,6 +88,10 @@ function planStoredPrice(row, rates) {
   if (key === 'longRent' || key === 'shortRent') {
     const [min, max] = PLAUSIBLE_PRICE_USD.sale;
     const usd = price / rate;
+    // Above this a monthly rent is never real. These are digits glued from a street number or a card
+    // index to the price ("82 70 080 ⃀" -> 8 270 080), left by crawls before the line breaks were
+    // kept; hide the price until the card is crawled again.
+    if (usd > IMPOSSIBLE_RENT_USD) return { action: 'clear', reason: 'impossible-rent-price', key };
     if (usd >= min && usd <= max) return { action: 'report', reason: 'rent-priced-like-sale', key };
   }
   return { action: 'clear', reason: 'implausible-price', key };

@@ -24,7 +24,7 @@ test('phone digits, zero and unreadable numbers are cleared, not guessed', () =>
 });
 
 test('a rent priced like a sale is reported but not changed', () => {
-  assert.deepEqual(plan({ country: 'RO', price: 85_000, currency: 'EUR' }), { action: 'report', reason: 'rent-priced-like-sale', key: 'longRent' });
+  assert.deepEqual(plan({ country: 'RO', price: 35_000, currency: 'EUR' }), { action: 'report', reason: 'rent-priced-like-sale', key: 'longRent' });
 });
 
 test('a Ukrainian hryvnia label on a dollar-sized price is relabelled to USD', () => {
@@ -55,7 +55,7 @@ test('apply rewrites only the planned rows and keeps the original in data.priceR
         return { rows: [
           { id: '1', country: 'UZ', source: 'telegram', deal_type: 'longRent', price: 4_000_000, currency: 'EUR', room_only: null, title: 'a' },
           { id: '2', country: 'UZ', source: 'olx', deal_type: 'longRent', price: 500, currency: 'USD', room_only: null, title: 'b' },
-          { id: '3', country: 'RO', source: 'olx', deal_type: 'longRent', price: 85_000, currency: 'EUR', room_only: null, title: 'c' },
+          { id: '3', country: 'RO', source: 'olx', deal_type: 'longRent', price: 35_000, currency: 'EUR', room_only: null, title: 'c' },
         ] };
       }
       return { rowCount: params[0].length };
@@ -104,4 +104,13 @@ test('apply writes the re-read price and currency together', async () => {
   assert.deepEqual(update.params[2], ['USD']);
   assert.deepEqual(update.params[4], [475]);
   assert.deepEqual(update.params[5], [47_500]);
+});
+
+test('a monthly rent above 50 000 USD is a glued-digits error and is hidden, a luxury rent is left alone', () => {
+  assert.deepEqual(plan({ country: 'KG', price: 996_708_772, currency: 'KGS' }), { action: 'clear', reason: 'impossible-rent-price', key: 'longRent' });
+  assert.equal(plan({ country: 'UA', price: 1_716_500, currency: 'EUR' }).reason, 'impossible-rent-price');
+  assert.equal(plan({ country: 'UA', price: 181_000, currency: 'UAH' }), null);
+  // 8 000 USD a month is an expensive but real penthouse rent: untouched. 35 000 EUR is reported only.
+  assert.equal(plan({ country: 'UA', price: 8_000, currency: 'USD' }), null);
+  assert.equal(plan({ country: 'RO', price: 35_000, currency: 'EUR' }).action, 'report');
 });
