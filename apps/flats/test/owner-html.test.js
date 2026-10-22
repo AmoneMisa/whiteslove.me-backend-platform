@@ -314,3 +314,15 @@ test('anuntul.ro article teasers taken for a card are dropped', () => {
   const html = '<article>Articole recomandate A investi sau nu în imobiliare 17.01.2024 Imobiliare 13.275 Ce poți închiria cu maximum 200 de euro în București Garsoniere mici 14.906 euro apartament 2 camere</article>';
   assert.deepEqual(extractKnownOwnerHtml(html, { ...COUNTRIES.RO, code: 'RO' }, 'https://www.anuntul.ro/anunturi-imobiliare-inchirieri/', 'longRent'), []);
 });
+
+test('a promo heading inside a card is not its title (m2bomber "Быстрая регистрация по email*")', () => {
+  const html = [
+    '<div class="item-card-long">',
+    '<h3>Быстрая регистрация по email*</h3>',
+    '<a class="title" href="/obj/1408546585/view/flat-rent/x">Arzon Kvartira bor, Yangi hayot 5-bekat</a>',
+    '<p>Сдаётся 2-комнатная квартира, Ташкент, Сергелийский район 750 000 сўм 3/5 эт</p>',
+    '</div>',
+  ].join('');
+  const [listing] = extractKnownOwnerHtml(html, { ...COUNTRIES.UZ, code: 'UZ' }, 'https://uz.m2bomber.com/search/', 'longRent');
+  assert.match(listing.title, /^Arzon Kvartira bor/u);
+});

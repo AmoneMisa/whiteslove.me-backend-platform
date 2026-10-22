@@ -15,19 +15,27 @@ export function planRoomOnlyBackfill(rows) {
       country: row.country,
       dealType: 'longRent',
       propertyType: row.property_type ?? null,
+      // The audience stored with the card (it may come from structured parsing the text rules miss).
+      audience: row.audience ?? undefined,
       price: row.price == null ? null : Number(row.price),
       currency: row.currency,
       title: row.title ?? '',
       description: row.description ?? '',
     };
     if (enrichListingDetails(listing).roomOnly !== true) continue;
+    // Which rule fired: strong wording alone, the bare price floor, or an audience / weak phrase that
+    // only counts together with a low price. A wrong rule can then be told apart in the report.
     const byText = enrichListingDetails({ ...listing, price: null }).roomOnly === true;
+    const byFloor = enrichListingDetails({ ...listing, title: '', description: '', audience: null }).roomOnly === true;
+    let reason = 'audience-or-weak-phrase-with-low-price';
+    if (byText) reason = 'room-share-text';
+    else if (byFloor) reason = 'price-below-flat-rent-floor';
     changes.push({
       id: String(row.id),
       source: row.source ?? null,
       price: listing.price,
       currency: listing.currency ?? null,
-      reason: byText ? 'room-share-text' : 'price-below-flat-rent-floor',
+      reason,
       title: String(row.title ?? '').replace(/\s+/gu, ' ').slice(0, 70),
     });
   }
@@ -44,7 +52,8 @@ export function planRoomOnlyBackfill(rows) {
 export async function runRoomOnlyBackfillBatch(client, { afterId = 0, batchSize = 500, country = null, apply = false } = {}) {
   const rows = await client.query(
     `
-      SELECT id, source, country, property_type, price, currency, title, description
+      SELECT id, source, country, property_type, price, currency, title, description,
+             NULLIF(data->>'audience', '') AS audience
       FROM listings
       WHERE id > $1::bigint
         AND active = TRUE

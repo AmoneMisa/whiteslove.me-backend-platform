@@ -302,15 +302,17 @@ function cityFromUrl(url, countryCode) {
   }
 }
 
+const PROMO_HEADING_RE = /^(?:быстрая\s+регистрация|регистрация|войти|вход|quick\s+registration|sign\s+(?:in|up)|log\s*in)(?![\p{L}\p{N}_])/iu;
+
 function heading(fragment, fallbackText) {
   const raw = String(fragment || '');
   const headingMatch = raw.match(/<h[1-6]\b[^>]*>([\s\S]*?)<\/h[1-6]>/iu);
   // Some catalogues (e.g. m2bomber) put the card title in a plain link with a
   // "title" class instead of a heading tag.
   const titleLinkMatch = raw.match(/<a\b[^>]*\bclass=["'][^"']*\btitle\b[^"']*["'][^>]*>([\s\S]*?)<\/a>/iu);
-  const value =
-    stripHtml(headingMatch?.[1] || '')
-    || stripHtml(titleLinkMatch?.[1] || '')
+  // A card can carry a promo heading ("Быстрая регистрация по email*"); it is never the title.
+  const usable = (text) => text && !PROMO_HEADING_RE.test(text.trim());
+  const value = [stripHtml(headingMatch?.[1] || ''), stripHtml(titleLinkMatch?.[1] || '')].find(usable)
     || String(fallbackText || '').split('\n')[0];
   return value.trim().slice(0, 120) || 'Listing';
 }

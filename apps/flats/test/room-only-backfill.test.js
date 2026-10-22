@@ -37,3 +37,14 @@ test('apply sets roomOnly and keeps the previous deal type', async () => {
   assert.deepEqual(update.params[0], ['7']);
   assert.equal(applied.nextAfterId, '8');
 });
+
+test('the stored audience and per-person wording are honoured, and the reason says which rule fired', () => {
+  const stored = { id: 11, source: 'custom', country: 'UZ', property_type: 'flat', price: 1_500_000, currency: 'UZS', title: 'Аренда', description: 'Аренда ишловчи студентов 4-комн 95 м2', audience: 'men' };
+  const perPerson = { id: 12, source: 'olx', country: 'UZ', property_type: 'flat', price: 1_504_350, currency: 'UZS', title: 'Kvartira', description: 'narxi 125 dollardan odam boshiga kvartira 2 xonali 1 ta xonada 2 kishi' };
+  const family = { id: 13, source: 'olx', country: 'UZ', property_type: 'flat', price: 1_500_000, currency: 'UZS', title: 'Kvartira', description: 'Ijaraga 3 xonali kvartira oilaga', audience: 'family' };
+  const changes = planRoomOnlyBackfill([stored, perPerson, family]);
+  assert.deepEqual(changes.map((change) => [change.id, change.reason]), [
+    ['11', 'audience-or-weak-phrase-with-low-price'],
+    ['12', 'room-share-text'],
+  ]);
+});
