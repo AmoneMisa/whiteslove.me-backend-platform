@@ -23,3 +23,9 @@ test('a district named in passing does not become the listing street', () => {
   assert.notEqual(location.street, 'Подільський провулок');
   assert.notEqual(location.street, 'Татарська вулиця');
 });
+
+test('an area only travelled to is not the microdistrict', () => {
+  const travelled = matchDictionaryEntities('Швидкий спуск на Поділ. Тихий район Татарка.', 'UA', 'Kyiv');
+  assert.notEqual(travelled.microdistrict, 'Podil');
+  assert.equal(matchDictionaryEntities('Київ, Поділ, вул. Сагайдачного', 'UA', 'Kyiv').microdistrict, 'Podil');
+});

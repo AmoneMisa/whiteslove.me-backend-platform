@@ -27,6 +27,7 @@ import { matchTashkentHousingTransit } from '@whiteslove/parsing-lexicon/tashken
 // touches ~14.5k entries (Tashkent alone catalogues 4k streets), which cost
 // seconds per listing and dominated every crawl.
 import { matchFirstEntry } from '@whiteslove/parsing-lexicon/alias-prefilter';
+import { isDestinationMention } from '@whiteslove/parsing-lexicon/housing-context';
 import { canonicalCityName } from './countries.js';
 
 let mergedUkraine = null;
@@ -130,6 +131,26 @@ function notOtherCity(countryCode, cityName) {
   return (_entry, matchedText) =>
     !matchedTooShort(matchedText)
     && !matchedOtherCityName(countryCode, cityName, matchedText);
+}
+
+/**
+ * An area named only as somewhere to travel to ("спуск на Поділ") is not the
+ * listing's own district/microdistrict.
+ */
+function notOnlyDestination(text, accept) {
+  return (entry, matchedText) => {
+    if (accept && !accept(entry, matchedText)) return false;
+    if (!entry?.re) return true;
+    const scanner = new RegExp(entry.re.source, entry.re.flags.includes('g') ? entry.re.flags : `${entry.re.flags}g`);
+    let seen = false;
+    for (const match of String(text).matchAll(scanner)) {
+      seen = true;
+      // The pattern consumes its leading boundary character; the name starts after it.
+      const start = (match.index ?? 0) + (/^[\p{L}\p{N}_]/u.test(match[0]) ? 0 : 1);
+      if (!isDestinationMention(text, start)) return true;
+    }
+    return !seen;
+  };
 }
 
 /** Whether any occurrence of `re` in the text carries explicit metro wording. */
@@ -358,8 +379,8 @@ export function matchDictionaryEntities(text, countryCode, preferredCity = null)
 
   for (const [cityName, data] of ordered) {
     const accept = notOtherCity(countryCode, cityName);
-    const district = matchFirstEntry(data.districts, text, accept);
-    const microdistrict = matchFirstEntry(data.microdistricts, text, accept);
+    const district = matchFirstEntry(data.districts, text, notOnlyDestination(text, accept));
+    const microdistrict = matchFirstEntry(data.microdistricts, text, notOnlyDestination(text, accept));
     const metro = matchMetro(text, data.metro, microdistrict?.name || null, cityName, countryCode);
     const residentialComplex = countryCode === 'UZ' && cityName === 'Tashkent'
       ? matchTashkentResidentialComplex(text)
