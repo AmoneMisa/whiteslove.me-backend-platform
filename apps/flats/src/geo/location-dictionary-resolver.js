@@ -144,33 +144,39 @@ function hasContextualMetroMention(text, re) {
   return false;
 }
 
+function globalPattern(re) {
+  return re.global ? new RegExp(re.source, re.flags) : new RegExp(re.source, `${re.flags}g`);
+}
+
 function matchMetro(text, entries, overlappingAreaName = null, cityName = null, countryCode = null) {
   const value = String(text);
   const matches = [];
 
   for (const entry of entries || []) {
-    const match = value.match(entry.re);
-    if (!match) continue;
+    // Every mention is judged on its own: a station named in a street address
+    // ("вул. Лук'янівська, 22") must not hide the later "метро «Лук'янівська»".
+    const mentions = value.matchAll(globalPattern(entry.re));
+    for (const match of mentions) {
+      const start = match.index ?? 0;
+      const end = start + match[0].length;
+      const contextual = metroContextAt(value, start, end);
+      const after = value.slice(end, end + 64);
 
-    const start = match.index ?? 0;
-    const end = start + match[0].length;
-    const contextual = metroContextAt(value, start, end);
-    const after = value.slice(end, end + 64);
+      // Some names denote both a neighbourhood and a metro station. A bare
+      // place name means the area; mark metro only when the text says metro/station.
+      if (overlappingAreaName && entry.name === overlappingAreaName && !contextual) continue;
 
-    // Some names denote both a neighbourhood and a metro station. A bare
-    // place name means the area; mark metro only when the text says metro/station.
-    if (overlappingAreaName && entry.name === overlappingAreaName && !contextual) continue;
+      // Same rule for a station that carries the country's or the city's own name.
+      if (!contextual && stationNamedAfterItsPlace(countryCode, cityName, entry.name)) continue;
 
-    // Same rule for a station that carries the country's or the city's own name.
-    if (!contextual && stationNamedAfterItsPlace(countryCode, cityName, entry.name)) continue;
+      // Numbered massifs/kvartals such as Chilonzor 12 / Yunusobod 19 are not subway mentions.
+      const numberedArea = /^\s*[-№#]?\s*\d{1,3}(?=$|[\s,.;-])/u.test(after);
+      if (!contextual && numberedArea) continue;
 
-    // Numbered massifs/kvartals such as Chilonzor 12 / Yunusobod 19 are not subway mentions.
-    const numberedArea = /^\s*[-№#]?\s*\d{1,3}(?=$|[\s,.;-])/u.test(after);
-    if (!contextual && numberedArea) continue;
+      if (entry.name === 'Toshkent' && matchTashkentHousingTransit(value.slice(start, end + 64))) continue;
 
-    if (entry.name === 'Toshkent' && matchTashkentHousingTransit(value.slice(start, end + 64))) continue;
-
-    matches.push({ entry, contextual });
+      matches.push({ entry, contextual });
+    }
   }
 
   return matches.find((item) => item.contextual)?.entry ?? matches[0]?.entry ?? null;
