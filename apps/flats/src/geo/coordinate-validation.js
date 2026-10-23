@@ -21,6 +21,18 @@ export function coordinateInsideBbox(lat, lng, bbox, padding = DEFAULT_PADDING_D
     && Number(lng) <= east + lngPadding;
 }
 
+/**
+ * Some sites publish latitude and longitude the wrong way round (lun.ua does
+ * for part of its cards). Only a point that is outside the area as given and
+ * inside it when swapped is treated as swapped; anything else is left alone.
+ */
+export function orientCoordinates(lat, lng, bbox, padding = DEFAULT_PADDING_DEG) {
+  if (!Array.isArray(bbox) || bbox.length !== 4 || !bbox.every(Number.isFinite)) return { lat, lng, swapped: false };
+  if (coordinateInsideBbox(lat, lng, bbox, padding)) return { lat, lng, swapped: false };
+  if (coordinateInsideBbox(lng, lat, bbox, padding)) return { lat: Number(lng), lng: Number(lat), swapped: true };
+  return { lat, lng, swapped: false };
+}
+
 async function bboxFor(country, area) {
   const query = [area, country?.name].filter(Boolean).join(', ');
   if (!query) return null;
@@ -76,4 +88,25 @@ export async function rejectOutOfAreaCoordinates(
   }
 
   return rejected;
+}
+
+/**
+ * Repairs swapped lat/lng in place, against the listing's city bbox or, with no
+ * city, the country's. Listings whose coordinates fit neither way are left for
+ * the other validators.
+ */
+export async function repairSwappedCoordinates(listings, country, { areaHint = null } = {}) {
+  if (!Array.isArray(listings) || !country) return 0;
+  let repaired = 0;
+  for (const listing of listings) {
+    if (!Number.isFinite(Number(listing?.lat)) || !Number.isFinite(Number(listing?.lng))) continue;
+    const area = areaHint || canonicalCityName(country.code, listing.city || '') || '';
+    const bbox = await bboxFor(country, area);
+    const next = orientCoordinates(Number(listing.lat), Number(listing.lng), bbox);
+    if (!next.swapped) continue;
+    listing.lat = next.lat;
+    listing.lng = next.lng;
+    repaired += 1;
+  }
+  return repaired;
 }

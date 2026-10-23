@@ -14,7 +14,7 @@ import {readEnrichmentSnapshots, updateListingEnrichment} from '../infrastructur
 import { indexListings } from '../infrastructure/search/elasticsearch.js';
 import { executeQueueTaskOnce } from '../infrastructure/queue/queueTaskDedup.js';
 import { geocodeListingsPersistent } from '../geo/geocode-persistent.js';
-import { rejectOutOfAreaCoordinates } from '../geo/coordinate-validation.js';
+import { rejectOutOfAreaCoordinates, repairSwappedCoordinates } from '../geo/coordinate-validation.js';
 import { reconcileAuthoritativeOlxSegment } from '../sources/crawl-reconciliation.js';
 import { olxSegmentDealType } from '../geo/olx-segment.js';
 import { scheduleListingsVision } from '../listing/vision-enrichment.js';
@@ -494,6 +494,7 @@ async function processQueueTaskInner(task) {
       customSourceUrl: sourceUrl,
       curatedSource: task.curated === true,
     }));
+    await repairSwappedCoordinates(listings, COUNTRIES[country]);
     const persisted = await persist(listings, task);
     // A catalog page is not an authoritative snapshot of the whole source.
     // Missing records expire through the normal listing lifecycle instead.
