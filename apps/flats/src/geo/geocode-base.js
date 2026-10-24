@@ -243,8 +243,12 @@ export function geocodeCandidates(listing, country) {
   const { city, countryName } = contextParts(listing, country)
   const area = listing.area || listing.kvartal
   const localContext = [listing.district, city, countryName]
+  // A bare street ("Свет 24/7", "вулиці") with no city to anchor it is looked up across the
+  // whole country; the first hit can be in another oblast, and reverse geocoding then writes
+  // that place back as the listing's city. Without a city only entity candidates are tried.
+  const streetAnchored = Boolean(city)
   const candidates = [
-    listing.address && {
+    streetAnchored && listing.address && {
       q: [listing.address, listing.district, city, countryName].filter(Boolean).join(', '),
       source: 'address',
       role: 'primary',
@@ -269,7 +273,7 @@ export function geocodeCandidates(listing, country) {
       approximate: true,
       nominatim: { kind: 'entity', name: listing.residenceComplex, city },
     },
-    listing.street && {
+    streetAnchored && listing.street && {
       q: [listing.street, listing.district, city, countryName].filter(Boolean).join(', '),
       source: 'street',
       role: locationRole(listing, 'street', listing.street),
