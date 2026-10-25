@@ -1,4 +1,5 @@
 import { resolveHousingIntent } from '@whiteslove/parsing-lexicon/housing-intent';
+import { detectCityFromText } from '@whiteslove/parsing-lexicon/geography-detection';
 import { parseHousingSeller } from '@whiteslove/parsing-lexicon/housing-structured';
 import { resolveHousingPropertyType } from '@whiteslove/parsing-lexicon/housing';
 import { makeListing } from '../listing/normalize.js';
@@ -81,10 +82,15 @@ function itemToListing(item, source, targetConfig, country) {
   const id = String(item?.id || item?.url || '').trim();
   if (!id) return null;
 
+  // The search query only found the post; the post says where the flat is. A
+  // "Tashkent" query also returns "Аренда квартиры в Алматы", which must not be
+  // filed under Tashkent. The first city named in the text wins over the query.
+  const textCity = detectCityFromText(text);
+
   return makeListing({
     id: `${source}-${id}`,
     source,
-    country: country.code,
+    country: textCity?.country || country.code,
     title: text.split('\n')[0].slice(0, 90),
     description: text,
     propertyType: resolveHousingPropertyType(text),
@@ -93,7 +99,7 @@ function itemToListing(item, source, targetConfig, country) {
     currency,
     rooms: parseRoomsFromText(text),
     areaSqm: parseAreaFromText(text),
-    city: targetConfig.city,
+    city: textCity?.canonical || targetConfig.city,
     lat: null,
     lng: null,
     photos: Array.isArray(item?.images) ? item.images.filter(Boolean) : [],
