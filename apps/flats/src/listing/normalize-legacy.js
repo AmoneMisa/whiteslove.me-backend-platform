@@ -90,7 +90,9 @@ function sourceCoordinates(partial, city, country) {
 export function makeListing(partial) {
   const sourceTitle = partial.title ?? '';
   const description = stripHtml(partial.description ?? '');
-  const combined = `${sourceTitle} ${description}`;
+  // The title and body are separate lines: joined by a space, a street name at
+  // the end of the title swallows the body's first word ("улица Карасарай Описание").
+  const combined = `${sourceTitle}\n${description}`;
   const country = parseCanonicalCountryCode(partial.country) || '';
   const propertyType = partial.propertyType === 'house' ? 'house' : 'flat';
   const listingFields = parseHousingListingFields(combined, {country});

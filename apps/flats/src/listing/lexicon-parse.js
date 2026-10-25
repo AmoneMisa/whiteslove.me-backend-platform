@@ -37,7 +37,7 @@ const streetMarkerPart = alternatives([ADDRESS_TERMS.street, ADDRESS_TERMS.avenu
 const WORD_LEFT_BOUND = '(?:^|[^\\p{L}\\p{N}_])';
 const addressLabelRe = new RegExp(`${WORD_LEFT_BOUND}(?:${addressLabelPart})\\s*[:\\-–—]\\s*([^\\n]{3,100})`, 'iu');
 const markedStreetRe = new RegExp(
-  `${WORD_LEFT_BOUND}((?:${streetMarkerPart})\\.?[\\s\\u00a0]*[^\\n,;.]{2,70}(?:,?\\s*(?:${alternatives([ADDRESS_TERMS.house])})?\\.?\\s*\\d+[\\p{L}0-9/-]*)?)`,
+  `${WORD_LEFT_BOUND}((?:${streetMarkerPart})(?![\\p{L}\\p{N}_])\\.?[\\s\\u00a0]*[^\\n,;.]{2,70}(?:,?\\s*(?:${alternatives([ADDRESS_TERMS.house])})?\\.?\\s*\\d+[\\p{L}0-9/-]*)?)`,
   'iu',
 );
 const ADDRESS_NOISE_RE = /(?:поверх|этаж|підвал|подвал|цоколь|ремонт|площа|площад|кімнат|комнат|техник|мебел|меблі|риелтор|ріелтор|рієлтор|телефон|^тел\b|контакт|номер|звонит|дзвон)/iu;
