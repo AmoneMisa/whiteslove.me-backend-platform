@@ -335,11 +335,39 @@ export function isPropertyClusterMatch(match) {
   if (!match?.relation) return false;
   const exactCount = Number(match.exactPhotoCount || 0);
   const perceptualCount = Number(match.perceptualPhotoCount || 0);
-  const total = Number(match.matchedPhotoCount || exactCount + perceptualCount || 0);
   if (exactCount >= 2 || perceptualCount >= 2) return true;
   if (exactCount >= 1 && match.relation.propertyFactsConsistent) return true;
-  if (perceptualCount >= 1 && match.relation.propertyFactsConsistent && match.relation.score >= 55) return true;
-  return total >= 1 && ['high', 'very_high'].includes(match.relation.locationConflict?.level) && match.relation.score >= 65;
+  // The relationship score measures suspicious differences, not property
+  // identity. A city/price conflict must never turn one weak image into proof
+  // that both adverts describe the same flat.
+  const distance = match.minimumPerceptualDistance ?? match.relation.perceptualDistance;
+  return perceptualCount >= 1 && match.relation.propertyFactsConsistent
+    && match.relation.propertyFacts?.roomsAgree !== false
+    && match.relation.propertyFacts?.areaAgree !== false
+    && Number.isFinite(distance) && distance <= 3;
+}
+
+export function summarizeCloneMatches(cloneMatches) {
+  const supported = cloneMatches.filter(isPropertyClusterMatch);
+  const crossCountry = supported.some((match) => match.crossCountry);
+  const crossCity = supported.some((match) => match.crossCity);
+  const strongLocationConflict = supported.some((match) =>
+    ['high', 'very_high'].includes(match.relation.locationConflict?.level));
+  const currentCopyCandidate = supported.some((match) => match.relation.currentCopyCandidate && match.relation.score >= 70);
+  const matchedCopyCandidate = supported.some((match) => match.relation.matchedCopyCandidate && match.relation.score >= 70);
+  const conflictingClone = supported.some((match) => match.relation.score >= 65 && (
+    match.relation.priceDirection === 'higher' || match.relation.priceDirection === 'lower'
+    || (match.relation.sellerRelation !== 'same' && match.relation.sellerRelation !== 'unknown')
+    || ['high', 'very_high'].includes(match.relation.locationConflict?.level)));
+  return {
+    suspectedClone: currentCopyCandidate,
+    matchedListingMayBeClone: matchedCopyCandidate,
+    conflictingClone,
+    propertyIdentityConflict: strongLocationConflict ? 'high' : crossCity ? 'medium' : 'none',
+    reasonCodes: [...new Set(supported.flatMap((match) => match.relation.reasonCodes || []))],
+    risk: crossCountry || strongLocationConflict ? 'very_high'
+      : crossCity || currentCopyCandidate || conflictingClone ? 'high' : supported.length ? 'medium' : 'none',
+  };
 }
 
 function photoRowKey(row) {
@@ -626,41 +654,11 @@ export async function detectExactDuplicatePhotos(listing, images) {
   const cloneMatches = groupMatches(uniqueMatches);
   const propertyCluster = await assignPropertyCluster(identity, cloneMatches);
 
-  const crossCountry = uniqueMatches.some((match) => match.crossCountry);
-  const crossCity = uniqueMatches.some((match) => match.crossCity);
-  const strongLocationConflict = cloneMatches.some((match) =>
-    isPropertyClusterMatch(match) && ['high', 'very_high'].includes(match.relation.locationConflict?.level),
-  );
-  const currentCopyCandidate = cloneMatches.some((match) => match.relation.currentCopyCandidate && match.relation.score >= 70);
-  const matchedCopyCandidate = cloneMatches.some((match) => match.relation.matchedCopyCandidate && match.relation.score >= 70);
-  const conflictingClone = cloneMatches.some((match) =>
-    match.relation.score >= 65 && (
-      match.relation.priceDirection === 'higher'
-      || match.relation.priceDirection === 'lower'
-      || match.relation.sellerRelation !== 'same'
-      || ['high', 'very_high'].includes(match.relation.locationConflict?.level)
-    ),
-  );
-
-  const reasonCodes = [...new Set(cloneMatches.flatMap((match) => match.relation.reasonCodes || []))];
-  const risk = crossCountry || strongLocationConflict
-    ? 'very_high'
-    : crossCity || currentCopyCandidate || conflictingClone
-      ? 'high'
-      : uniqueMatches.length
-        ? 'medium'
-        : 'none';
-
   return {
     exactDuplicatePhoto: uniqueMatches.some((match) => match.matchType === 'exact'),
     perceptualDuplicatePhoto: uniqueMatches.some((match) => match.matchType === 'perceptual'),
-    suspectedClone: currentCopyCandidate,
-    matchedListingMayBeClone: matchedCopyCandidate,
-    conflictingClone,
-    propertyIdentityConflict: strongLocationConflict ? 'high' : crossCity ? 'medium' : 'none',
+    ...summarizeCloneMatches(cloneMatches),
     propertyCluster,
-    reasonCodes,
-    risk,
     hashes: hashes.map(({ id, hash, perceptualHash }) => ({ id, hash, perceptualHash })),
     matches: uniqueMatches,
     cloneMatches,

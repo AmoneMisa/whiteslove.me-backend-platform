@@ -10,6 +10,7 @@ import {
   isPropertyClusterMatch,
   isVectorImageUrl,
   scoreCloneRelationship,
+  summarizeCloneMatches,
 } from '../src/listing/photo-antifake.js';
 
 test('the perceptual-hash helper path points at the real script', () => {
@@ -167,4 +168,39 @@ test('vector images are site chrome, not listing photos', () => {
   assert.equal(isVectorImageUrl('https://api.uybor.uz/api/v1/media/n/1111.jpg?width=660&height=460'), false);
   assert.equal(isVectorImageUrl('https://static2.realting.com/uploads/thumbs/7ff/f9db.webp'), false);
   assert.equal(isVectorImageUrl(null), false);
+});
+
+test('Tashkent/Bukhara single-photo collision stays separate despite a suspicion score of 95', () => {
+  const relation = scoreCloneRelationship(
+    listing({city: 'Tashkent', district: 'Chilanzar', rooms: 1, areaSqm: 46,
+      title: 'Ijaraga kvartira Yakkasaroy 16gor balnisa yaqinida. FAQAT OILA',
+      price: 5373675, currency: 'UZS', byAgency: true, createdAt: '2026-10-26T05:37:53Z'}),
+    stored({city: 'Bukhara', district: null, rooms: 2, area_sqm: 3,
+      title: 'Квартира ижарага берилади ОИЛАГА ёки студент кизларга',
+      price: 3000000, currency: 'UZS', by_agency: true, created_at: '2026-10-20T11:13:05Z'}),
+    {matchType: 'perceptual', perceptualDistance: 7},
+  );
+  assert.equal(relation.score, 95);
+  assert.equal(relation.propertyFactsConsistent, false);
+  assert.equal(isPropertyClusterMatch({matchedPhotoCount: 1, exactPhotoCount: 0,
+    perceptualPhotoCount: 1, relation}), false);
+  assert.equal(isPropertyClusterMatch({matchedPhotoCount: 1, exactPhotoCount: 0,
+    perceptualPhotoCount: 1, relation: {...relation, score: 100}}), false);
+  const verdict = summarizeCloneMatches([{matchedPhotoCount: 1, exactPhotoCount: 0,
+    perceptualPhotoCount: 1, crossCity: true, relation}]);
+  assert.equal(verdict.risk, 'none');
+  assert.equal(verdict.suspectedClone, false);
+  assert.equal(verdict.propertyIdentityConflict, 'none');
+});
+
+test('single perceptual identity needs a close photo and supporting facts, independently of suspicion', () => {
+  const relation = scoreCloneRelationship(listing(), stored(), {matchType: 'perceptual', perceptualDistance: 2});
+  const match = {matchedPhotoCount: 1, exactPhotoCount: 0, perceptualPhotoCount: 1, relation};
+  assert.equal(isPropertyClusterMatch(match), true);
+  assert.equal(isPropertyClusterMatch({...match, relation: {...relation, score: 0}}), true);
+  assert.equal(isPropertyClusterMatch({...match, relation: {...relation, score: 100, perceptualDistance: 7}}), false);
+  assert.equal(isPropertyClusterMatch({...match, relation: {...relation, propertyFacts: {roomsAgree: false, areaAgree: true}}}), false);
+  // Strong evidence of reused photos still survives an address contradiction.
+  assert.equal(isPropertyClusterMatch({...match, exactPhotoCount: 2,
+    relation: {...relation, propertyFactsConsistent: false}}), true);
 });
