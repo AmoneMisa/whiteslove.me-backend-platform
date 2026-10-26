@@ -28,28 +28,61 @@ export const DIRECTION_PROFESSIONS: Record<JobDirection, readonly string[]> = {
   ],
   design: ['product_designer', 'ui_designer', 'ux_designer', 'ui_ux_designer', 'web_designer'],
   product: ['product_manager', 'product_owner', 'growth_product_manager', 'product_analyst'],
-  // Doctors and nurses are the lexicon's medicine group. Specialists such as
-  // cardiologist or cleaner are added here once the lexicon release that defines
-  // them is installed, so this list never names a canonical the workspace cannot resolve.
-  healthcare: [
-    'doctor',
-    'therapist_doctor',
-    'nurse',
-    'dentist',
-    'pharmacist',
-    'medical_assistant',
-    'surgeon',
-    'pediatrician',
-    'gynecologist',
-    'radiologist',
-    'psychologist',
-  ],
-  driving: ['driver', 'truck_driver', 'taxi_driver', 'bus_driver', 'courier', 'forklift_operator'],
+  auto: ['auto_mechanic'],
+  // The directions below are classified by lexicon group (DIRECTION_GROUPS).
+  healthcare: [],
+  driving: [],
+  accounting: [],
+  hr: [],
+  marketing: [],
+  sales: [],
+  support: [],
+  office: [],
+  management: [],
+  horeca: [],
+  retail: [],
+  logistics: [],
+  legal: [],
+  education: [],
+  trades: [],
+  beauty: [],
+  content: [],
+  guarding: [],
+}
+
+// Professions whose lexicon group names the sphere. Canonicals listed above win
+// over their group, so IT groups are not mapped wholesale (a "Business Analyst"
+// is in the same data group as a "Data Scientist") and only non-IT groups appear here.
+export const DIRECTION_GROUPS: Partial<Record<string, JobDirection>> = {
+  finance: 'accounting',
+  human_resources: 'hr',
+  marketing: 'marketing',
+  sales: 'sales',
+  customer_support: 'support',
+  administration: 'office',
+  project_management: 'management',
+  hospitality: 'horeca',
+  retail: 'retail',
+  logistics: 'logistics',
+  legal: 'legal',
+  education: 'education',
+  construction: 'trades',
+  manufacturing: 'trades',
+  beauty_wellness: 'beauty',
+  media_content: 'content',
+  security: 'guarding',
+  medicine: 'healthcare',
+  transport: 'driving',
 }
 
 const PROFESSION_DIRECTION = new Map<string, JobDirection>(
   JOB_DIRECTIONS.flatMap((direction) => DIRECTION_PROFESSIONS[direction].map((canonical) => [canonical, direction] as const)),
 )
+
+/** A canonical's own direction wins; otherwise its lexicon group decides. */
+function directionOf(canonical: string, group: string): JobDirection | undefined {
+  return PROFESSION_DIRECTION.get(canonical) ?? DIRECTION_GROUPS[group]
+}
 
 // Lexicon skill subcategories that point at one direction. 'QA & Security' is
 // deliberately absent: its skills mix testing and security, so those roles are
@@ -72,7 +105,7 @@ const cache = new Map<string, { fingerprint: string; directions: JobDirection[] 
 
 function professionDirections(text: string): JobDirection[] {
   return matchProfessions(text, { allowWeak: false, limit: 10 })
-    .map((match) => PROFESSION_DIRECTION.get(match.canonical))
+    .map((match) => directionOf(match.canonical, match.group))
     .filter((direction): direction is JobDirection => direction !== undefined)
 }
 

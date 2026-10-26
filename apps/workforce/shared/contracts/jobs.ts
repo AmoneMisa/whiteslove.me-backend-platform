@@ -51,6 +51,23 @@ export type JobDirection =
   | 'product'
   | 'healthcare'
   | 'driving'
+  | 'accounting'
+  | 'hr'
+  | 'marketing'
+  | 'sales'
+  | 'support'
+  | 'office'
+  | 'management'
+  | 'horeca'
+  | 'retail'
+  | 'logistics'
+  | 'legal'
+  | 'education'
+  | 'trades'
+  | 'beauty'
+  | 'content'
+  | 'guarding'
+  | 'auto'
 
 export const JOB_DIRECTIONS: JobDirection[] = [
   'frontend',
@@ -66,6 +83,23 @@ export const JOB_DIRECTIONS: JobDirection[] = [
   'product',
   'healthcare',
   'driving',
+  'accounting',
+  'hr',
+  'marketing',
+  'sales',
+  'support',
+  'office',
+  'management',
+  'horeca',
+  'retail',
+  'logistics',
+  'legal',
+  'education',
+  'trades',
+  'beauty',
+  'content',
+  'guarding',
+  'auto',
 ]
 
 export const JOB_DIRECTION_LABELS: Record<JobDirection, { en: string; ru: string }> = {
@@ -82,6 +116,23 @@ export const JOB_DIRECTION_LABELS: Record<JobDirection, { en: string; ru: string
   product: { en: 'Product', ru: 'Продукт' },
   healthcare: { en: 'Healthcare / Medicine', ru: 'Медицина / Здравоохранение' },
   driving: { en: 'Driving / Delivery', ru: 'Водители / Доставка' },
+  accounting: { en: 'Accounting / Finance', ru: 'Бухгалтерия / Финансы' },
+  hr: { en: 'HR / Recruitment', ru: 'HR / Рекрутинг' },
+  marketing: { en: 'Marketing / SMM / Targeting', ru: 'Маркетинг / SMM / Таргет' },
+  sales: { en: 'Sales / Account management', ru: 'Продажи / Работа с клиентами' },
+  support: { en: 'Customer support / Call center', ru: 'Поддержка / Колл-центр' },
+  office: { en: 'Office / Administration / Secretary', ru: 'Офис / Администрирование / Секретарь' },
+  management: { en: 'Management', ru: 'Управление / Руководство' },
+  horeca: { en: 'Restaurants / HoReCa', ru: 'Рестораны / HoReCa' },
+  retail: { en: 'Retail / Cashier', ru: 'Розница / Кассиры' },
+  logistics: { en: 'Logistics / Warehouse', ru: 'Логистика / Склад' },
+  legal: { en: 'Legal', ru: 'Юриспруденция' },
+  education: { en: 'Education / Teaching', ru: 'Образование' },
+  trades: { en: 'Construction / Manufacturing / Trades', ru: 'Строительство / Производство / Рабочие специальности' },
+  beauty: { en: 'Beauty / Wellness', ru: 'Красота / Велнес' },
+  content: { en: 'Content / Media / Editorial', ru: 'Контент / Медиа / Редакция' },
+  guarding: { en: 'Security guarding', ru: 'Охрана' },
+  auto: { en: 'Auto service', ru: 'Автосервис' },
 }
 
 export const EMPLOYMENT_KINDS: EmploymentKind[] = [

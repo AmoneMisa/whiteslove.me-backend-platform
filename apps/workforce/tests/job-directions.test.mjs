@@ -2,11 +2,12 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 
-import { professionByCanonical } from '@whiteslove/parsing-lexicon/hiring-professions'
+import { PROFESSION_CATALOG, professionByCanonical } from '@whiteslove/parsing-lexicon/hiring-professions'
 
 import { JOB_DIRECTIONS, JOB_DIRECTION_LABELS } from '../shared/contracts/jobs.ts'
 import { filterAndPaginate } from '../server/vacancies/domain/aggregate.ts'
 import {
+  DIRECTION_GROUPS,
   DIRECTION_PROFESSIONS,
   classifyJobDirections,
   matchesJobDirections,
@@ -72,13 +73,21 @@ function query(overrides = {}) {
   }
 }
 
-test('every direction has labels and a non-empty canonical profession list', () => {
+test('every direction has labels and a canonical or group mapping', () => {
+  const groupsMapped = new Set(Object.values(DIRECTION_GROUPS))
   for (const direction of JOB_DIRECTIONS) {
     assert.ok(JOB_DIRECTION_LABELS[direction].en, direction)
     assert.ok(JOB_DIRECTION_LABELS[direction].ru, direction)
-    assert.ok(DIRECTION_PROFESSIONS[direction].length > 0, direction)
+    assert.ok(DIRECTION_PROFESSIONS[direction].length > 0 || groupsMapped.has(direction), direction)
   }
   assert.deepEqual(Object.keys(DIRECTION_PROFESSIONS).sort(), [...JOB_DIRECTIONS].sort())
+})
+
+test('every mapped lexicon group exists in parsing-lexicon', () => {
+  const lexiconGroups = new Set(PROFESSION_CATALOG.map((entry) => entry.group))
+  for (const group of Object.keys(DIRECTION_GROUPS)) {
+    assert.ok(lexiconGroups.has(group), `${group} is missing from parsing-lexicon`)
+  }
 })
 
 test('direction professions are canonical lexicon professions, not local names', () => {
@@ -124,6 +133,22 @@ test('title names the direction', () => {
     ['Водитель', ['driving']],
     ['Driver category B', ['driving']],
     ['Курьер', ['driving']],
+    ['Бухгалтер', ['accounting']],
+    ['Рекрутер', ['hr']],
+    ['Секретарь', ['office']],
+    ['Кассир', ['retail']],
+    ['Продавец', ['retail']],
+    ['Официант', ['horeca']],
+    ['Бариста', ['horeca']],
+    ['Грузчик', ['logistics']],
+    ['Логист', ['logistics']],
+    ['Сварщик', ['trades']],
+    ['Учитель', ['education']],
+    ['Юрист', ['legal']],
+    ['Журналист', ['content']],
+    ['Массажист', ['beauty']],
+    ['Охранник', ['guarding']],
+    ['Автомеханик', ['auto']],
   ]
   for (const [title, expected] of cases) {
     assert.deepEqual(classifyJobDirections(job({ title })), expected, title)
@@ -131,7 +156,7 @@ test('title names the direction', () => {
 })
 
 test('unrelated titles stay unclassified instead of guessed', () => {
-  for (const title of ['Бухгалтер', 'Cashier', 'Waiter', 'Business Analyst']) {
+  for (const title of ['Астролог', 'Business Analyst']) {
     assert.deepEqual(classifyJobDirections(job({ title })), [], title)
   }
 })
