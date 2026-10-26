@@ -1,7 +1,7 @@
 import { cacheGet, cacheSet } from '../support/cache.js';
 import {copyEnrichmentSnapshot, updateListingEnrichment} from '../infrastructure/database/listingEnrichmentRepository.js';
 import { indexListings } from '../infrastructure/search/elasticsearch.js';
-import { detectExactDuplicatePhotos } from './photo-antifake.js';
+import { detectExactDuplicatePhotos, isPhotoAnalysisComplete } from './photo-antifake.js';
 import {
   aiWorkerEnabled,
   scheduleVisionAnalysis,
@@ -228,7 +228,7 @@ async function applyAntiFake(countryCode, id, fingerprint, result) {
 
   const merged = {
     ...current,
-    antiFake: result,
+    antiFake: {...result, fingerprint, status: 'completed'},
     duplicatePhotoRisk: result.risk,
     exactDuplicatePhoto: result.exactDuplicatePhoto,
   };
@@ -236,6 +236,7 @@ async function applyAntiFake(countryCode, id, fingerprint, result) {
   entry.antiFake = entry.antiFake || {};
   entry.antiFake[id] = {
     fingerprint,
+    policyVersion: result.policyVersion,
     status: 'completed',
     risk: result.risk,
     matches: result.matches.length,
@@ -265,8 +266,7 @@ export function scheduleListingsVision(listings) {
     const images = listingImages(listing);
     if (!images.length) continue;
     const fingerprint = visionFingerprint(images);
-    const antiFakeComplete = listing.antiFake?.fingerprint === fingerprint
-      && listing.antiFake.status === 'completed';
+    const antiFakeComplete = isPhotoAnalysisComplete(listing.antiFake, fingerprint);
     if (!antiFakeComplete) {
       const key = `${listing.country}:${listingKey(listing)}`;
       if (!antiFakeRunning.has(key)) {
@@ -339,7 +339,7 @@ export function scheduleCountryVision(countryCode, entry) {
     const priorAntiFake = entry.antiFake[id];
     if (
       antiFakeQueued < batchSize &&
-      !(priorAntiFake?.fingerprint === fingerprint && priorAntiFake.status === 'completed') &&
+      !isPhotoAnalysisComplete(priorAntiFake, fingerprint) &&
       scheduleAntiFake(countryCode, listing, images, fingerprint)
     ) {
       entry.antiFake[id] = { fingerprint, status: 'pending', updatedAt: new Date().toISOString() };

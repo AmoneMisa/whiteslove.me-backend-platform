@@ -8,6 +8,12 @@ const FETCH_TIMEOUT_MS = Math.max(2000, Number(process.env.ANTIFAKE_IMAGE_TIMEOU
 const PRICE_CONFLICT_PCT = Math.max(5, Number(process.env.ANTIFAKE_PRICE_CONFLICT_PCT) || 15);
 const CHRONOLOGY_GAP_MS = Math.max(60_000, (Number(process.env.ANTIFAKE_CHRONOLOGY_GAP_MINUTES) || 15) * 60_000);
 const PERCEPTUAL_MAX_DISTANCE = Math.max(0, Math.min(7, Number(process.env.ANTIFAKE_PERCEPTUAL_MAX_DISTANCE) || 7));
+export const PHOTO_ANALYSIS_VERSION = 2;
+
+export function isPhotoAnalysisComplete(analysis, fingerprint) {
+  return analysis?.fingerprint === fingerprint && analysis.status === 'completed'
+    && analysis.policyVersion === PHOTO_ANALYSIS_VERSION;
+}
 // The helper lives in src/, one level above this module. It used to be
 // resolved as './perceptual-hash.py' (src/listing/), a path that does not
 // exist, so python exited at once on every image.
@@ -74,7 +80,7 @@ async function isSiteChromeHash(exactHash) {
   return Number(result.rows[0]?.listings || 0) >= SITE_CHROME_MIN_LISTINGS;
 }
 
-export const __photoAntifakeTest = {runPerceptualHash, PERCEPTUAL_HASH_SCRIPT};
+export const __photoAntifakeTest = {runPerceptualHash, PERCEPTUAL_HASH_SCRIPT, indexPhotoGallery, groupMatches};
 
 async function hashRemoteImage(url) {
   const response = await fetch(url, {
@@ -609,43 +615,58 @@ async function assignPropertyCluster(identity, cloneMatches) {
   };
 }
 
-export async function detectExactDuplicatePhotos(listing, images) {
+async function indexPhotoGallery(listing, images, {
+  hashImage = hashRemoteImage, isChrome = isSiteChromeHash, storeHash = storePhotoHash,
+  findExact = exactMatches, findPerceptual = perceptualMatches,
+} = {}) {
   const identity = listingIdentity(listing);
   const matches = [];
   const hashes = [];
+  const indexed = [];
 
+  // Publish the ENTIRE gallery before searching it. If two listings arrive
+  // concurrently, whichever finishes publishing last must see the other's
+  // gallery. Looking up each image before inserting allowed both to miss all
+  // four identical photos and cache an empty result as completed forever.
   for (const image of images || []) {
     const url = String(image?.url || image || '');
     if (!/^https?:\/\//i.test(url) || isVectorImageUrl(url)) continue;
     const normalizedImage = { id: image?.id || null, url };
 
+    let imageHashes;
     try {
-      const imageHashes = await hashRemoteImage(url);
-      if (await isSiteChromeHash(imageHashes.exactHash)) continue;
-      hashes.push({
-        id: normalizedImage.id,
-        url,
-        hash: imageHashes.exactHash,
-        perceptualHash: imageHashes.perceptualHash,
-      });
-
-      const candidates = new Map();
-      for (const candidate of await exactMatches(imageHashes.exactHash, identity)) {
-        candidates.set(photoRowKey(candidate.row), candidate);
-      }
-      for (const candidate of await perceptualMatches(imageHashes.perceptualHash, identity)) {
-        const key = photoRowKey(candidate.row);
-        if (!candidates.has(key)) candidates.set(key, candidate);
-      }
-      for (const candidate of candidates.values()) {
-        matches.push(makeMatch(listing, normalizedImage, imageHashes, candidate));
-      }
-
-      await storePhotoHash(listing, identity, url, imageHashes);
+      imageHashes = await hashImage(url);
     } catch (error) {
       console.warn(`[flats:antifake] ${identity.source}:${identity.sourceId} image skipped: ${error.message}`);
+      continue;
+    }
+    if (await isChrome(imageHashes.exactHash)) continue;
+    await storeHash(listing, identity, url, imageHashes);
+    hashes.push({id: normalizedImage.id, url, hash: imageHashes.exactHash, perceptualHash: imageHashes.perceptualHash});
+    indexed.push({image: normalizedImage, hashes: imageHashes});
+  }
+
+  for (const {image, hashes: imageHashes} of indexed) {
+    const candidates = new Map();
+    for (const candidate of await findExact(imageHashes.exactHash, identity)) {
+      candidates.set(photoRowKey(candidate.row), candidate);
+    }
+    for (const candidate of await findPerceptual(imageHashes.perceptualHash, identity)) {
+      const key = photoRowKey(candidate.row);
+      if (!candidates.has(key)) candidates.set(key, candidate);
+    }
+    for (const candidate of candidates.values()) {
+      matches.push(makeMatch(listing, image, imageHashes, candidate));
     }
   }
+  // Lookup errors must reject the analysis instead of persisting a misleading
+  // completed/no-matches verdict. The existing scheduler retries failed runs.
+  return {matches, hashes};
+}
+
+export async function detectExactDuplicatePhotos(listing, images) {
+  const identity = listingIdentity(listing);
+  const {matches, hashes} = await indexPhotoGallery(listing, images);
 
   const uniqueMatches = [...new Map(matches.map((match) => [
     `${match.matchType}:${match.matchedSource}:${match.matchedCountry}:${match.matchedListingId}:${match.matchedPhotoUrl}:${match.photoUrl}`,
@@ -656,6 +677,7 @@ export async function detectExactDuplicatePhotos(listing, images) {
 
   return {
     exactDuplicatePhoto: uniqueMatches.some((match) => match.matchType === 'exact'),
+    policyVersion: PHOTO_ANALYSIS_VERSION,
     perceptualDuplicatePhoto: uniqueMatches.some((match) => match.matchType === 'perceptual'),
     ...summarizeCloneMatches(cloneMatches),
     propertyCluster,
