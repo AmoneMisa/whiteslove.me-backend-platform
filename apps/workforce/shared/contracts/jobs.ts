@@ -32,6 +32,58 @@ export type WorkSchedule =
 export type ProbationKind = 'probation' | 'noProbation' | 'paidProbation' | 'unpaidProbation'
 export type ExperienceRequirement = 'noExperience' | 'experienceRequired'
 
+/**
+ * Professional directions (сферы) a vacancy can be filtered by. The ids are
+ * the public contract; classification from title/tags/skills lives on the
+ * server (server/vacancies/domain/jobDirections.ts).
+ */
+export type JobDirection =
+  | 'frontend'
+  | 'mobile'
+  | 'backend'
+  | 'fullstack'
+  | 'gamedev'
+  | 'devops'
+  | 'qa'
+  | 'data'
+  | 'security'
+  | 'design'
+  | 'product'
+  | 'healthcare'
+  | 'driving'
+
+export const JOB_DIRECTIONS: JobDirection[] = [
+  'frontend',
+  'mobile',
+  'backend',
+  'fullstack',
+  'gamedev',
+  'devops',
+  'qa',
+  'data',
+  'security',
+  'design',
+  'product',
+  'healthcare',
+  'driving',
+]
+
+export const JOB_DIRECTION_LABELS: Record<JobDirection, { en: string; ru: string }> = {
+  frontend: { en: 'Frontend', ru: 'Фронтенд' },
+  mobile: { en: 'Mobile (iOS / Android / cross-platform)', ru: 'Мобильная разработка' },
+  backend: { en: 'Backend', ru: 'Бэкенд' },
+  fullstack: { en: 'Fullstack', ru: 'Фулстек' },
+  gamedev: { en: 'Game development', ru: 'Разработка игр' },
+  devops: { en: 'DevOps / SRE', ru: 'DevOps / SRE' },
+  qa: { en: 'QA / Testing', ru: 'QA / Тестирование' },
+  data: { en: 'Data / Analytics / ML', ru: 'Данные / Аналитика / ML' },
+  security: { en: 'Information security', ru: 'Информационная безопасность' },
+  design: { en: 'Design', ru: 'Дизайн' },
+  product: { en: 'Product', ru: 'Продукт' },
+  healthcare: { en: 'Healthcare / Medicine', ru: 'Медицина / Здравоохранение' },
+  driving: { en: 'Driving / Delivery', ru: 'Водители / Доставка' },
+}
+
 export const EMPLOYMENT_KINDS: EmploymentKind[] = [
   'fulltime',
   'parttime',
@@ -117,6 +169,7 @@ export interface Job {
   riskReasons?: string[]
   suspicious?: boolean
   suspicionReasons?: string[]
+  directions?: JobDirection[]
 }
 
 export type JobSource =
@@ -193,6 +246,8 @@ export interface JobQuery {
   languageLevel?: string
   excludeLanguages: string[]
   skills: string[]
+  /** Multi-select OR: a vacancy matches when it belongs to any requested direction. */
+  directions?: JobDirection[]
 }
 
 export interface SalaryStat {

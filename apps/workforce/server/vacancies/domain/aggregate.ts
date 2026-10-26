@@ -4,6 +4,7 @@
 // structured filters and stats can operate on derived fields.
 
 import { enrichJob, resolveCountry } from './enrich'
+import { matchesJobDirections } from './jobDirections'
 import { normalizeJobSeniority } from '~~/shared/jobs/jobSeniority'
 import { canonicalSkillName } from '~~/shared/jobSkills'
 import type {
@@ -105,6 +106,7 @@ function matches(job: Job, query: JobQuery, oldestAllowed: number): boolean {
   if (query.workMode && job.workMode !== query.workMode) return false
   if (query.relocation && job.relocation !== query.relocation) return false
   if (query.employmentKind && job.employmentKind !== query.employmentKind) return false
+  if (!matchesJobDirections(job, query.directions)) return false
   if (query.hasSalary && job.salaryMin === undefined && job.salaryMax === undefined) return false
   if (
     query.maxExperienceYears !== undefined

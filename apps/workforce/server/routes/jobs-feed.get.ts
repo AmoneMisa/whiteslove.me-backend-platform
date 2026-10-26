@@ -9,6 +9,8 @@ import {
   EMPLOYMENT_KINDS,
   type EmploymentKind,
   FREE_SOURCES,
+  JOB_DIRECTIONS,
+  type JobDirection,
   type JobQuery,
   type JobSource,
   type Relocation,
@@ -16,6 +18,7 @@ import {
   type WorkMode,
 } from '~~/shared/contracts/jobs'
 import { filterAndPaginate } from '../vacancies/domain/aggregate'
+import { classifyJobDirections } from '../vacancies/domain/jobDirections'
 import { getStoredJobsSnapshot } from '../vacancies/infrastructure/jobsSnapshot'
 import { getRates, loadRates } from '../utils/support/currency'
 import { jobSearchKey, searchJobMatches } from '../vacancies/infrastructure/jobsElastic'
@@ -110,6 +113,12 @@ export default defineEventHandler(async (event) => {
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
+  // Multi-select direction filter (сферы): `directions=frontend,mobile` matches
+  // vacancies in either direction. Unknown ids are dropped, not rejected.
+  const directions = String(q.directions ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s): s is JobDirection => (JOB_DIRECTIONS as string[]).includes(s))
 
   // Rate refresh is independent of ingestion and never awaited by the feed.
   loadRates().catch(() => {})
@@ -138,6 +147,7 @@ export default defineEventHandler(async (event) => {
     languageLevel,
     excludeLanguages,
     skills,
+    directions,
     page: clampInt(q.page, 1, 1, 10000),
     pageSize: clampInt(q.pageSize, 20, 1, 100),
   }
@@ -145,7 +155,9 @@ export default defineEventHandler(async (event) => {
   // PostgreSQL is excellent for structured filtering, but its plainto_tsquery
   // fallback must not shadow the fuzzy/transliterated Elasticsearch index. A
   // textual q therefore goes through the existing ES + snapshot path below.
-  if (!search) {
+  // Direction is derived from title/tags/skills at read time and has no column
+  // in the read model, so a direction filter also takes the snapshot path.
+  if (!search && !directions.length) {
     const databaseResult = await queryJobsDb(jobQuery)
     if (databaseResult) {
       setResponseHeader(event, 'Cache-Control', 'private, max-age=30')
@@ -154,6 +166,7 @@ export default defineEventHandler(async (event) => {
         jobs: databaseResult.jobs.map((job) => ({
           ...job,
           publicId: publicEntityId('job', job.source, job.id),
+          directions: classifyJobDirections(job),
         })),
         rates: getRates(),
         warming: false,
@@ -208,6 +221,7 @@ export default defineEventHandler(async (event) => {
     jobs: result.jobs.map((job) => ({
       ...job,
       publicId: publicEntityId('job', job.source, job.id),
+      directions: classifyJobDirections(job),
     })),
     rates: getRates(),
     warming: false,
