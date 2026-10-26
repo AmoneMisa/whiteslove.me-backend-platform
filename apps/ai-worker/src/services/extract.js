@@ -16,6 +16,7 @@ import { TRANSLATION_SYSTEM, translationPayload } from '../prompts/translation.j
 import { tryFreeTranslation } from './free-translation.js';
 import { maskContacts } from '../util/privacy.js';
 import { log } from '../util/logger.js';
+import { shadowEncoder } from './encoder-shadow.js';
 
 export const EXTRACTION_KINDS = Object.freeze({
   apartment: {
@@ -120,6 +121,7 @@ async function extractUnmasked(kind, input) {
   }
 
   const confidence = typeof data.confidence === 'number' ? data.confidence : 0;
+  if (kind === 'apartment') shadowEncoder(input, data); // learns from this text; changes nothing (ENCODER_SHADOW)
   return {
     data,
     provider,

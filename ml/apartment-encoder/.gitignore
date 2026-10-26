@@ -1,0 +1,7 @@
+data/
+model/
+__pycache__/
+.venv/
+span-model*/
+review/
+review-hard/

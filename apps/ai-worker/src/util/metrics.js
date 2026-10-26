@@ -17,6 +17,8 @@ export const metrics = {
   byKind: {},
   visionProviders: {},
   textProviders: {},
+  // Shadow comparison of the apartment encoder with the parser and the provider answer (services/encoder-shadow.js).
+  encoderShadow: { requests: 0, failures: 0, fields: {}, found: {} },
 };
 
 function kindMetrics(kind) {
