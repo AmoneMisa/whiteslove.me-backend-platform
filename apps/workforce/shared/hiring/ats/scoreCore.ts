@@ -129,14 +129,13 @@ export function buildCvProfile(cvText: string, referenceDate: Date = new Date())
   }
 }
 
+// Seniority labels are evaluative and weakly tied to actual skill, so they
+// carry little weight here: an unknown level is not penalized, and a gap only
+// shows up as a missing criterion.
 function seniorityScore(candidate: Seniority | undefined, required: Seniority | undefined): { score: number, gap: number } {
-  if (!required) return { score: 100, gap: 0 }
-  if (!candidate) return { score: 45, gap: 1 }
+  if (!required || !candidate) return { score: 100, gap: 0 }
   const gap = SENIORITY_RANK[required] - SENIORITY_RANK[candidate]
-  if (gap <= 0) return { score: 100, gap }
-  if (gap === 1) return { score: 65, gap }
-  if (gap === 2) return { score: 30, gap }
-  return { score: 10, gap }
+  return { score: gap <= 0 ? 100 : 80, gap }
 }
 
 function experienceScore(candidate: number | undefined, required: number | undefined): { score: number, gap: number } {
@@ -265,7 +264,8 @@ export function scoreJob(profile: CvProfile, job: AtsJob): AtsResult {
     const evidence = evidenceFor(skill)
     if (evidence > 0) { earned += 0.35 * evidence; matchedContext.push(skill) }
   }
-  const skillsScore = possible > 0 ? Math.round((earned / possible) * 100) : 60
+  // No recognizable vacancy skills is no evidence of a match, not a neutral 60.
+  const skillsScore = possible > 0 ? Math.round((earned / possible) * 100) : 0
   const requiredExperience = job.experienceMinYears ?? extractRequiredExperienceYears(`${buckets.required} ${description}`) ?? undefined
   const exp = experienceScore(profile.experienceYears, requiredExperience)
   const requiredSeniority = detectHiringSeniority(titleText) || (job.seniority ? detectHiringSeniority(job.seniority) : null) || undefined
@@ -275,16 +275,18 @@ export function scoreJob(profile: CvProfile, job: AtsJob): AtsResult {
   const education = educationScore(profile, educationRequirement)
   const keywordSource = buckets.required || buckets.optional ? `${buckets.required} ${buckets.optional}` : `${titleText} ${tagText} ${buckets.context.slice(0, 1800)}`
   const jobTerms = extractTerms(keywordSource)
-  const relevanceScore = jobTerms.size ? Math.round(coverage(profile.terms, jobTerms) * 100) : 60
+  const relevanceScore = jobTerms.size ? Math.round(coverage(profile.terms, jobTerms) * 100) : 0
   const breakdown: AtsBreakdown = {
     skills: Math.max(0, Math.min(100, skillsScore)), experience: exp.score, seniority: seniority.score, scope: scope.score, education: education.score, relevance: relevanceScore,
   }
-  let fitScore = Math.round(breakdown.skills * 0.30 + breakdown.experience * 0.20 + breakdown.seniority * 0.20 + breakdown.scope * 0.15 + breakdown.education * 0.10 + breakdown.relevance * 0.05)
-  if (seniority.gap >= 3) fitScore = Math.min(fitScore, 45)
-  else if (seniority.gap === 2) fitScore = Math.min(fitScore, 58)
+  let fitScore = Math.round(breakdown.skills * 0.45 + breakdown.experience * 0.20 + breakdown.seniority * 0.05 + breakdown.scope * 0.15 + breakdown.education * 0.10 + breakdown.relevance * 0.05)
   if (exp.gap >= 2) fitScore = Math.min(fitScore, 55)
   if (education.fieldMismatch && !educationRequirement.equivalentExperience) fitScore = Math.min(fitScore, 60)
   if (scope.requiredCount >= 3 && scope.score < 40) fitScore = Math.min(fitScore, 45)
+  // Unspecified requirements score 100 per dimension, so a vacancy with zero
+  // skill overlap would otherwise still land near 65. No overlap caps the fit.
+  const hasSkillOverlap = matchedRequired.length + matchedOptional.length + matchedContext.length > 0
+  if (!hasSkillOverlap) fitScore = Math.min(fitScore, 40)
   fitScore = Math.max(0, Math.min(100, fitScore))
   const blockers: AtsBlocker[] = []
   const sponsorshipText = `${description} ${tagText} ${(job.sponsorshipEvidence || []).join(' ')}`
