@@ -38,6 +38,19 @@ export const config = Object.freeze({
   // FreeLLMAPI is the default production gateway. It only catalogs free-tier
   // endpoints and performs provider/model failover internally. Direct providers
   // remain available for explicit opt-in/debugging, but are no longer defaults.
+  // Self-hosted apartment encoder (ml/apartment-encoder/serve.py). Unset = off.
+  encoderUrl: env('ENCODER_URL').replace(/\/$/, ''),
+  encoderTimeoutMs: number('ENCODER_TIMEOUT_MS', 5_000, { min: 1, integer: true }),
+  // A flag is only emitted when the encoder is at least this sure; else null.
+  encoderMinProb: number('ENCODER_MIN_PROB', 0.8, { min: 0, max: 1 }),
+  // Fields the encoder may answer; the rest are returned as null and filled by
+  // the next provider in TEXT_PROVIDERS (the encoder is a partial provider).
+  // Default is the fields with validation F1 >= 0.85 on the first model
+  // (2026-10-24). '*' allows every field the model was trained on.
+  encoderFields: list('ENCODER_FIELDS', 'balcony,newBuilding,furnished,internet,terrace,walkInCloset'),
+  // Shadow mode: ask the encoder about every apartment text too, compare, record, and use nothing. Needs ENCODER_URL.
+  encoderShadow: bool('ENCODER_SHADOW', false),
+  encoderShadowLogPerMinute: number('ENCODER_SHADOW_LOG_PER_MINUTE', 20, { min: 0, integer: true }),
   textProviders: list('TEXT_PROVIDERS', 'freellmapi'),
   translationProviders: list('TRANSLATION_PROVIDERS', 'freellmapi'),
   visionProviders: list('VISION_PROVIDERS', 'freellmapi'),

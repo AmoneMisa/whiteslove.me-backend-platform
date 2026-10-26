@@ -7,6 +7,7 @@ import { config } from '../config.js';
 import { fetchJson, parseModelJson } from '../util/httpProvider.js';
 import { resolveFreeLlmApiKey } from '../util/freellmapiKey.js';
 import { log } from '../util/logger.js';
+import { encoder } from './encoder-provider.js';
 
 function validate(value) {
   try {
@@ -157,6 +158,9 @@ async function mistral(request) {
   }, request);
 }
 
+/** Providers that answer only part of the schema; runText completes them with the next provider. */
+export const PARTIAL_PROVIDERS = Object.freeze(new Set(['encoder']));
+
 export const TEXT_PROVIDERS = Object.freeze({
-  freellmapi, apinex, groq, gemini, nvidia, huggingface, llm7, openrouter, mistral,
+  encoder, freellmapi, apinex, groq, gemini, nvidia, huggingface, llm7, openrouter, mistral,
 });
