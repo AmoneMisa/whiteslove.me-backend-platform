@@ -444,7 +444,9 @@ services:
       flats-olx-fetcher-ua: { condition: service_healthy }
     networks: [ platform ]
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O - http://localhost:4021/health >/dev/null || exit 1"]
+      # IPv4 loopback explicitly: in this alpine image `localhost` resolves to ::1 first, busybox wget does not fall
+      # back to 127.0.0.1, and nginx listens on IPv4 only, so the probe was refused while the router served fine.
+      test: ["CMD-SHELL", "wget -q -O - http://127.0.0.1:4021/health >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 10
