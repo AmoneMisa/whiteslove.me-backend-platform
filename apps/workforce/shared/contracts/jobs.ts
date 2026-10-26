@@ -1,6 +1,15 @@
 // Runtime-neutral jobs domain and transport contracts shared by Nuxt and workers.
 
 export type RiskCategory = 'gambling' | 'adult' | 'scam'
+
+export interface ListingActivitySummary {
+  firstSeenAt?: string | null
+  dateUpdateCount?: number
+  reappearanceCount?: number
+  duplicateCount?: number
+  latestSourcePublishedAt?: string | null
+  repostCount?: number
+}
 export type WorkMode = 'remote' | 'hybrid' | 'office' | 'unknown'
 export type Relocation = 'offered' | 'none' | 'unknown'
 export type SalaryPeriod = 'hour' | 'day' | 'shift' | 'week' | 'month' | 'year' | 'project' | 'piece'
@@ -57,6 +66,7 @@ export interface JobSkillDetail {
 }
 
 export interface Job {
+  activitySummary?: ListingActivitySummary
   id: string
   publicId?: number
   title: string

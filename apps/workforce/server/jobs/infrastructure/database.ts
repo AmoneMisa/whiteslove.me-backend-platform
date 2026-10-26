@@ -7,6 +7,7 @@ import { toPostgresJson } from '../../../shared/postgresJson'
 import { BoundedTtlCache } from '../../utils/support/boundedTtlCache'
 import { jobProfessionArea } from '../../vacancies/domain/aggregate'
 import { keepUsaForeignerCandidate } from '../../vacancies/domain/jobVisaSponsorship'
+import { groupJobPostings } from '../domain/jobActivity'
 
 const SCHEMA_RE = /^[a-z_][a-z0-9_]*$/i
 const UPSERT_BATCH = 500
@@ -601,7 +602,9 @@ export async function queryJobsDb(query: JobQuery): Promise<(JobResponse & { loa
     const [pageResult, summaryResult, stats] = await Promise.all([
       db().query({
         text: `
-          SELECT data
+          SELECT data, first_seen_at, posted_at,
+            (SELECT count(*)::int FROM ${schema()}.posting_history h
+              WHERE h.identity_key = vacancies.identity_key AND h.kind = 'date_updated') AS date_update_count
           FROM ${schema()}.vacancies
           WHERE ${pageWhere}
           ORDER BY ${orderBy(query.sort)}
@@ -633,7 +636,10 @@ export async function queryJobsDb(query: JobQuery): Promise<(JobResponse & { loa
     if (!summary || (Number(summary.database_total) || 0) === 0) return null
 
     return {
-      jobs: pageResult.rows.map((row) => row.data).filter(Boolean),
+      jobs: pageResult.rows.filter((row) => row.data).map((row) => ({...row.data,
+        activitySummary: {firstSeenAt: row.first_seen_at, dateUpdateCount: row.date_update_count,
+          latestSourcePublishedAt: row.date_update_count > 0 ? row.posted_at : null},
+      })),
       total: Number(summary.total) || 0,
       page: query.page,
       pageSize: query.pageSize,
@@ -659,6 +665,39 @@ export async function getJobByPublicIdDb(publicId: string): Promise<Job | null> 
   } catch {
     return null
   }
+}
+
+/** Read only: a role match is a candidate duplicate, never proof of the same opening. */
+export async function getJobActivityDb(publicId: string, section: string, before?: string) {
+  if (!jobsDbEnabled()) throw new Error('Jobs database unavailable')
+  await ensureSchema()
+  return readJobActivity(db(), schema(), publicId, section, before)
+}
+
+export async function readJobActivity(client: Pick<Pool, 'query'>, name: string, publicId: string, section: string, before?: string) {
+  if (!SCHEMA_RE.test(name)) throw new Error('Invalid schema')
+  const found = await client.query(`SELECT identity_key, cluster_key, first_seen_at, company
+    FROM ${name}.vacancies WHERE public_id = $1::bigint LIMIT 1`, [publicId])
+  const row = found.rows[0]
+  if (!row) return null
+  if (section === 'duplicates') {
+    const result = await client.query(`SELECT data, active, first_seen_at, public_id, identity_key
+      FROM ${name}.vacancies WHERE identity_key = $1
+        OR ($2::text IS NOT NULL AND cluster_key = $2)
+      ORDER BY first_seen_at, identity_key`, [row.identity_key, row.cluster_key])
+    return {
+      duplicateCount: Math.max(0, result.rows.length - 1),
+      groups: groupJobPostings(result.rows, row.identity_key),
+    }
+  }
+  const result = await client.query(`SELECT id, observed_at, kind, source_published_at, salary
+    FROM ${name}.posting_history WHERE identity_key = $1
+      AND ($2::bigint IS NULL OR id < $2::bigint) ORDER BY id DESC LIMIT 41`, [row.identity_key, before || null])
+  const page = result.rows.slice(0, 40)
+  return {firstSeenAt: row.first_seen_at, events: page.filter((e) => e.kind !== 'first_seen').map((e) => ({
+    id: String(e.id), kind: e.kind, observedAt: e.observed_at,
+    sourcePublishedAt: e.source_published_at, salary: e.salary,
+  })), nextCursor: result.rows.length > 40 ? String(page.at(-1).id) : null}
 }
 
 /**

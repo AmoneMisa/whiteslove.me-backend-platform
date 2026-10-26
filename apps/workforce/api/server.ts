@@ -12,17 +12,19 @@ const port = Number(process.env.PORT) || (domain === 'vacancies' ? 4010 : 4011)
 
 async function routes(): Promise<Map<string, Handler>> {
   if (domain === 'vacancies') {
-    const [feed, vacancy, employers, employer] = await Promise.all([
+    const [feed, vacancy, employers, employer, activity] = await Promise.all([
       import('../server/routes/jobs-feed.get.ts'),
       import('../server/routes/jobs-vacancy.get.ts'),
       import('../server/routes/jobs-employers.get.ts'),
       import('../server/routes/jobs-employer.get.ts'),
+      import('../server/routes/jobs-activity.get.ts'),
     ])
     return new Map([
       ['/jobs-feed', feed.default],
       ['/jobs-vacancy', vacancy.default],
       ['/jobs-employers', employers.default],
       ['/jobs-employer', employer.default],
+      ['/jobs-activity', activity.default],
     ])
   }
 
@@ -75,7 +77,9 @@ const server = createServer(async (req, res) => {
     res.end(JSON.stringify(body))
   } catch (error) {
     console.error(`[${domain}:api] request failed:`, error instanceof Error ? error.stack || error.message : error)
-    res.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' })
+    const requestedStatus = Number((error as {statusCode?: number})?.statusCode)
+    const status = [400, 404].includes(requestedStatus) ? requestedStatus : 500
+    res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' })
     res.end(JSON.stringify({ error: 'internal_error' }))
   }
 })
