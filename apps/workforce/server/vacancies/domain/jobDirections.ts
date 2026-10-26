@@ -38,7 +38,7 @@ export const DIRECTION_PROFESSIONS: Record<JobDirection, readonly string[]> = {
   sales: [],
   support: [],
   office: [],
-  management: [],
+  management: ['manager', 'general_manager', 'general_director'],
   horeca: [],
   retail: [],
   logistics: [],
@@ -103,8 +103,14 @@ const MIN_SKILLS_PER_DIRECTION = 2
 const CACHE_MAX = 20_000
 const cache = new Map<string, { fingerprint: string; directions: JobDirection[] }>()
 
+// A bare "manager" or "specialist" is compatible with every sphere, so it only
+// counts when the title names nothing more specific ("Product Manager" is product).
+const GENERIC_CANONICALS = new Set(['manager', 'specialist', 'engineer', 'operator', 'consultant'])
+
 function professionDirections(text: string): JobDirection[] {
-  return matchProfessions(text, { allowWeak: false, limit: 10 })
+  const matches = matchProfessions(text, { allowWeak: false, limit: 10 })
+  const specific = matches.filter((match) => !GENERIC_CANONICALS.has(match.canonical))
+  return (specific.length ? specific : matches)
     .map((match) => directionOf(match.canonical, match.group))
     .filter((direction): direction is JobDirection => direction !== undefined)
 }
