@@ -1,5 +1,6 @@
 import {pool} from './pool.js';
 import {attachContactActions} from '../../listing/listing-contact-actions.js';
+import {findProbableOriginal} from '../../listing/probable-original.js';
 
 export function snapshotEvents(rows) {
   return rows.flatMap((row) => {
@@ -105,14 +106,16 @@ export async function readListingDuplicates(publicId, client = pool) {
       JOIN platform.listing_lineage e ON (e.to_source = s.source AND e.to_country = s.country AND e.to_source_id = s.source_id)
       JOIN listings l ON l.source = e.from_source AND l.country = e.from_country AND l.source_id = e.from_source_id
     )
-    SELECT DISTINCT ON (l.id) l.id, l.source, l.source_id, l.data, l.price,
-      l.currency, l.active, l.first_seen_at, l.created_at, r.match_kind
+    SELECT DISTINCT ON (l.id) l.id, l.source, l.country, l.source_id, l.data, l.price,
+      l.currency, l.active, l.first_seen_at, l.created_at, r.match_kind,
+      LEAST(l.created_at, (SELECT min(s.source_published_at) FROM platform.listing_snapshots s
+        WHERE s.listing_id = l.id)) AS source_first_published_at
     FROM related r JOIN listings l ON l.id = r.id
     ORDER BY l.id, r.match_kind
   `, [publicId]);
   if (!result.rows.length) return null;
   const groups = groupDuplicateListings(result.rows, publicId);
-  return {duplicateCount: result.rows.length - 1, groups};
+  return {duplicateCount: result.rows.length - 1, groups, origin: findProbableOriginal(result.rows)};
 }
 
 /** One indexed batched lookup per feed page. */

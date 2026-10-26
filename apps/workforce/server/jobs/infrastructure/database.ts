@@ -8,6 +8,7 @@ import { BoundedTtlCache } from '../../utils/support/boundedTtlCache'
 import { jobProfessionArea } from '../../vacancies/domain/aggregate'
 import { keepUsaForeignerCandidate } from '../../vacancies/domain/jobVisaSponsorship'
 import { groupJobPostings } from '../domain/jobActivity'
+import { findProbableJobOriginal } from '../domain/jobOriginal'
 
 const SCHEMA_RE = /^[a-z_][a-z0-9_]*$/i
 const UPSERT_BATCH = 500
@@ -688,6 +689,7 @@ export async function readJobActivity(client: Pick<Pool, 'query'>, name: string,
     return {
       duplicateCount: Math.max(0, result.rows.length - 1),
       groups: groupJobPostings(result.rows, row.identity_key),
+      origin: findProbableJobOriginal(result.rows),
     }
   }
   const result = await client.query(`SELECT id, observed_at, kind, source_published_at, salary

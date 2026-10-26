@@ -321,6 +321,7 @@ export function scoreCloneRelationship(current, matched, evidence = {}) {
     priceDirection,
     priceDeltaPct: priceDeltaPct == null ? null : Math.round(priceDeltaPct * 10) / 10,
     propertyFactsConsistent,
+    propertyFacts: {roomsAgree, areaAgree},
     titleSimilarity: titleScore == null ? null : Math.round(titleScore * 100) / 100,
     locationConflict: location,
     matchType,
