@@ -8,6 +8,7 @@ import {searchPostgresMapPoints} from './map-feed.js';
 import {attachMarketComparisons} from '../geo/market-comparison.js';
 import {attachContactActions, attachListingLines} from '../listing/listing-contact-actions.js';
 import {loadStoredListingLines} from '../infrastructure/database/listingLineRepository.js';
+import {attachActivitySummaries} from '../infrastructure/database/listingActivityRepository.js';
 import {searchListingMatches} from '../infrastructure/search/elasticsearch.js';
 import {checkRate} from '../support/request-rate-limit.js';
 import {prepareCustomSources} from '../sources/custom-source-queue.js';
@@ -313,6 +314,7 @@ async function tryPostgresSearch({filters, codes, force}) {
   listings = listings.map(attachContactActions);
   // Coloured card lines, as stored by the worker: one primary-key lookup.
   listings = await attachListingLines(listings, {loadLines: loadStoredListingLines});
+  listings = await attachActivitySummaries(listings);
 
   // Keep the list endpoint cheap. Nearby transport is intentionally hydrated
   // only by the single-listing response pipeline (preparePublicListing), where

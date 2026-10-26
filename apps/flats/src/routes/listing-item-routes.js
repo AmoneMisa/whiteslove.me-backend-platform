@@ -8,6 +8,7 @@ import {fetchOlxOffer} from '../scrapers/olx.js';
 import {validateCustomSource} from '../sources/custom-source-queue.js';
 import {checkRate} from '../support/request-rate-limit.js';
 import {pool} from '../infrastructure/database/pool.js';
+import {readListingActivity, readListingDuplicates} from '../infrastructure/database/listingActivityRepository.js';
 import {findContactListings, getOwner, isOwnerKey, listOwners, loadStoredListingLines, parseOwnerCursor} from '../infrastructure/database/listingLineRepository.js';
 import {attachContactActions, attachListingLines} from '../listing/listing-contact-actions.js';
 import {
@@ -34,6 +35,23 @@ async function readStoredListing({source, country, id}) {
 }
 
 export function installListingItemRoutes(app) {
+  for (const [path, read] of [['history', readListingActivity], ['duplicates', readListingDuplicates]]) {
+    app.get(`/api/listing/by-public-id/:publicId/${path}`, async (req, res) => {
+      if (!checkRate(req, res, 'listingActivity', 100)) return;
+      const publicId = Number(req.params.publicId);
+      if (!Number.isSafeInteger(publicId) || publicId <= 0) return res.status(400).json({error: 'Invalid public id'});
+      if (req.query.before != null && !/^\d{1,19}$/u.test(String(req.query.before))) return res.status(400).json({error: 'Invalid cursor'});
+      try {
+        const result = path === 'history' ? await read(publicId, {before: req.query.before}) : await read(publicId);
+        if (!result) return res.status(404).json({error: 'Listing not found'});
+        res.set('Cache-Control', 'public, max-age=30');
+        return res.json(result);
+      } catch (error) {
+        console.warn(`[listing-${path}] failed: ${error?.code ?? 'error'}`);
+        return res.status(502).json({error: 'Listing activity unavailable'});
+      }
+    });
+  }
   // The listings.id BIGSERIAL is stamped onto every row's data->>'publicId' by
   // the listings_sync_public_id trigger (migration 018), so it is a stable,
   // source-independent way to look an advert back up from a short shared link
