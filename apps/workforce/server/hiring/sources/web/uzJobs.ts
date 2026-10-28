@@ -102,6 +102,7 @@ export async function crawlUzJobs(
     const rows = html.match(/<tr\b[^>]*>[\s\S]*?<\/tr>/gi) || []
     run.fetched += rows.length
     let recentOnPage = 0
+    let fresh = 0
 
     for (const row of rows) {
       const candidate = rowCandidate(row)
@@ -131,17 +132,19 @@ export async function crawlUzJobs(
         break
       }
 
-      const previous = byUrl.get(profile.url)
-      if (previous) run.duplicate += 1
+      if (byUrl.has(profile.url)) run.duplicate += 1
+      else fresh += 1
       byUrl.set(profile.url, profile)
     }
 
-    return { rows: rows.length, recent: recentOnPage }
+    // Past its last page the site answers with the last page again; a page that adds no profile
+    // we have not already seen means the source is exhausted, not that the crawl should go on.
+    return { rows: rows.length, recent: recentOnPage, fresh }
   }
 
   for (let page = 1; !reachedKnown && (page === 1 || Boolean(cursor.lastSeenProfileId)); page++) {
     const result = await readPage(page, true, true)
-    if (!result.rows || !result.recent) break
+    if (!result.rows || !result.recent || !result.fresh) break
   }
 
   let nextBackfillPage = Math.max(2, cursor.backfillPage || 1)
@@ -152,7 +155,7 @@ export async function crawlUzJobs(
     for (let page = startPage; ; page++) {
       lastPage = page
       const result = await readPage(page, false, false)
-      if (!result.rows || !result.recent) {
+      if (!result.rows || !result.recent || !result.fresh) {
         bootstrapComplete = true
         break
       }
