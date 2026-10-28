@@ -320,7 +320,11 @@ export const SEEN_UPSERT_SQL = (name: string): string => {
   return sql
 }
 
-/** The cluster counters of these clusters, recounted from the live vacancies (a source only sees its own). */
+/**
+ * The cluster counters of these clusters, recounted from the live vacancies (a source only sees its own).
+ * cluster_key is CHAR(64), so the keys are typed char(64)[] as well: compared as text they bypass the index on that
+ * column and every key scans the live rows (350 ms each on production, minutes for one merge; 0.08 ms typed right).
+ */
 export const CLUSTER_RECOUNT_SQL = (name: string) => `
   UPDATE ${name}.job_clusters c
      SET posting_count = counted.n
@@ -328,7 +332,7 @@ export const CLUSTER_RECOUNT_SQL = (name: string) => `
       SELECT k.cluster_key, (
         SELECT COUNT(*)::int FROM ${name}.vacancies v WHERE v.active = TRUE AND v.cluster_key = k.cluster_key
       ) AS n
-      FROM unnest($1::text[]) AS k(cluster_key)
+      FROM unnest($1::char(64)[]) AS k(cluster_key)
     ) counted
    WHERE c.cluster_key = counted.cluster_key
      AND c.posting_count IS DISTINCT FROM counted.n

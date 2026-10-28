@@ -107,6 +107,7 @@ test('the incremental upsert is the existing one plus last_seen_at, and never mo
   assert.match(sql, /jobs\.vacancies\.last_seen_at < EXCLUDED\.last_seen_at - INTERVAL '1 hour'/)
   assert.match(sql, /\(jobs\.vacancies\.data - 'lastSeen'\) IS DISTINCT FROM \(EXCLUDED\.data - 'lastSeen'\)/, 'still skips unchanged rows')
   assert.match(database.CLUSTER_RECOUNT_SQL('jobs'), /v\.active = TRUE AND v\.cluster_key = k\.cluster_key/)
+  assert.match(database.CLUSTER_RECOUNT_SQL('jobs'), /unnest\(\$1::char\(64\)\[\]\)/, 'cluster_key is CHAR(64): typed text the index is not used')
 })
 
 test('without a configured database the incremental operations do nothing and read nothing', async () => {
