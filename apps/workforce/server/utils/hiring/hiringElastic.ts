@@ -24,7 +24,24 @@ function searchableText() {
     }
 }
 
-function indexDefinition() {
+/**
+ * A keyword field with its two text views. Elasticsearch 8 and later reject a multi-field inside a multi-field
+ * ("chained multi-fields is not supported"), which is what `x` -> `text` -> `latin` was: the index could not be
+ * created on the current cluster at all. The views are siblings now: `x.text` as written, `x.latin` with Cyrillic
+ * transliterated to Latin.
+ */
+function keywordWithText() {
+    return {
+        type: 'keyword',
+        normalizer: 'candidate_keyword',
+        fields: {
+            text: { type: 'text', analyzer: 'candidate_text' },
+            latin: { type: 'text', analyzer: 'candidate_latin' },
+        },
+    }
+}
+
+export function indexDefinition() {
     return {
         settings: {
             number_of_shards: 1,
@@ -63,15 +80,15 @@ function indexDefinition() {
                 sourceKey: { type: 'keyword' },
                 origin: { type: 'keyword' },
                 country: { type: 'keyword' },
-                city: { type: 'keyword', normalizer: 'candidate_keyword', fields: { text: searchableText() } },
-                district: { type: 'keyword', normalizer: 'candidate_keyword', fields: { text: searchableText() } },
+                city: keywordWithText(),
+                district: keywordWithText(),
                 name: searchableText(),
                 role: searchableText(),
-                professions: { type: 'keyword', normalizer: 'candidate_keyword', fields: { text: searchableText() } },
-                previousProfessions: { type: 'keyword', normalizer: 'candidate_keyword', fields: { text: searchableText() } },
-                features: { type: 'keyword', normalizer: 'candidate_keyword', fields: { text: searchableText() } },
+                professions: keywordWithText(),
+                previousProfessions: keywordWithText(),
+                features: keywordWithText(),
                 description: searchableText(),
-                skills: { type: 'keyword', normalizer: 'candidate_keyword', fields: { text: searchableText() } },
+                skills: keywordWithText(),
                 languages: { type: 'keyword', normalizer: 'candidate_keyword' },
                 seniority: { type: 'keyword' },
                 age: { type: 'short' },
@@ -326,11 +343,11 @@ export async function searchCandidates(
                             query: text,
                             type: 'best_fields',
                             fields: [
-                                'professions.text.latin^7',
+                                'professions.latin^7',
                                 'role.latin^6',
                                 'name.latin^3',
-                                'skills.text.latin^3',
-                                'previousProfessions.text.latin',
+                                'skills.latin^3',
+                                'previousProfessions.latin',
                                 'description.latin',
                             ],
                             fuzziness: 'AUTO',
