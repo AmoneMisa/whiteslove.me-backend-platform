@@ -76,7 +76,8 @@ test('vacancy PostgreSQL read model stays indexed and is synchronized by ingesti
   // full ES/PostgreSQL sync no longer runs inside every merge or AI result.
   assert.match(jobsSourceRefresh, /await syncJobsDb\(snapshot\)/)
   assert.doesNotMatch(jobsSourceRefresh, /await syncJobsDb\((kept|stored)\)/)
-  assert.equal((jobsSourceRefresh.match(/^\s+scheduleSnapshotSync\(\)$/gm) || []).length, 2)
+  // two call sites per store mode: the source merge and the AI persistence, for the snapshot and for PostgreSQL
+  assert.equal((jobsSourceRefresh.match(/^\s+scheduleSnapshotSync\(\)$/gm) || []).length, 4)
   assert.match(jobsSourceRefresh, /snapshotSyncRunning \?\?= runSnapshotSyncs\(\)/)
 
   const dbIndex = jobsFeed.indexOf('await queryJobsDb(jobQuery)')

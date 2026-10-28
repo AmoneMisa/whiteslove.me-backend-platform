@@ -1,5 +1,15 @@
 import { useStateStore } from '~~/server/utils/support/stateStore'
-import { syncJobsDb } from '../../jobs/infrastructure/database'
+import {
+  closeJobsByKeys,
+  jobIdentityKey,
+  jobsDbEnabled,
+  listActiveJobsPage,
+  listJobsNeedingAi,
+  loadJobsAiState,
+  pruneJobs,
+  syncJobsDb,
+  upsertJobsIncremental,
+} from '../../jobs/infrastructure/database'
 import {
   configuredAviationJobTargets,
   fetchAviationJobTarget,
@@ -34,7 +44,7 @@ import {
 import { fetchIntelliasJobs } from '../../utils/sources/intelliasJobs'
 import { isJobSourceAvailable } from '../../utils/sources/jobSourceConfig'
 import { fetchJobSource } from '../../utils/sources/jobSourceFetchers'
-import { syncJobsSearchIndex } from '../infrastructure/jobsElastic'
+import { indexJobsIncremental, reconcileJobsSearchIndex, removeJobsFromIndex, syncJobsSearchIndex } from '../infrastructure/jobsElastic'
 import type { Job, JobSource } from '~~/shared/contracts/jobs'
 import { ALL_SOURCES } from '~~/shared/contracts/jobs'
 import { fetchJobsUaJobs } from '../../utils/sources/jobsUaSource'
@@ -182,6 +192,165 @@ export function sanitizeFetchedJob(input: Job): Job {
 
 let mergeLock: Promise<unknown> = Promise.resolve()
 
+// ---- JOBS_STORE=postgres ------------------------------------------------------------------------------------------
+//
+// The vacancy list used to live in one JSON file (STORE_KEY, hundreds of MB by now) that every source merge read,
+// parsed, merged into, serialised and wrote again, and that the snapshot sync then parsed once more: several copies
+// of it on the heap at once, until the worker ran out of memory on every start. With JOBS_STORE=postgres the table
+// jobs.vacancies is the store. A source writes only its own vacancies, a closed one is deactivated by key, ageing out
+// is a query, and Elasticsearch is told about what changed. The JSON file is still produced, in pieces and from the
+// database, because readers that have not moved yet (text search in jobs-feed, jobs-vacancy, share previews) read it
+// and because switching back to JOBS_STORE=snapshot must find it current. Default is the old behaviour.
+
+export type JobsStoreMode = 'snapshot' | 'postgres'
+
+export function jobsStoreMode(): JobsStoreMode {
+  const wanted = String(process.env.JOBS_STORE || 'snapshot').trim().toLowerCase()
+  if (wanted !== 'postgres') return 'snapshot'
+  if (!jobsDbEnabled()) {
+    console.warn('[jobs:store] JOBS_STORE=postgres but no jobs database is configured; staying on the snapshot')
+    return 'snapshot'
+  }
+  return 'postgres'
+}
+
+const PRUNE_INTERVAL_MS = 10 * 60_000
+const AI_CANDIDATE_WINDOW = 200
+// Looking for the next vacancies to enrich costs a query over the live table (~0.3 s); once a minute is plenty,
+// enrichment capacity is far below the intake anyway.
+const AI_CANDIDATE_SCAN_INTERVAL_MS = 60_000
+let lastAiScanAt = 0
+const SNAPSHOT_PAGE = 1000
+const SNAPSHOT_EXPORT_MIN_INTERVAL_MS = (Number(process.env.JOBS_SNAPSHOT_EXPORT_MIN_INTERVAL_SECONDS) || 300) * 1000
+const SEARCH_RECONCILE_INTERVAL_MS = 6 * 60 * 60_000
+let lastPruneAt = 0
+let lastSnapshotExportAt = 0
+let lastSearchReconcileAt = 0
+
+async function pruneStoredJobs(now: number) {
+  if (now - lastPruneAt < PRUNE_INTERVAL_MS) return []
+  lastPruneAt = now
+  return pruneJobs({ maxAgeDays: MAX_AGE_DAYS, staleDays: STALE_DAYS })
+}
+
+/** Search-index trouble must not fail a merge that the database already holds. */
+async function tellSearchIndex(changed: Job[], removed: Array<Pick<Job, 'source' | 'id'>>) {
+  try {
+    if (changed.length) await indexJobsIncremental(changed)
+    if (removed.length) await removeJobsFromIndex(removed)
+  } catch (error) {
+    console.error('[jobs:store] Elasticsearch update failed:', (error as Error).message)
+  }
+}
+
+async function mergeFetchedSourceToPostgres(source: JobSource, jobs: Job[]) {
+  const now = Date.now()
+  const nowIso = new Date(now).toISOString()
+  const oldestPosted = now - MAX_AGE_DAYS * 86_400_000
+  const closed: string[] = []
+  const incoming = new Map<string, StoredJob>()
+
+  for (const fetched of jobs) {
+    if (fetched.vacancyStatus === 'closed' || fetched.hiringKind === 'closed_vacancy') {
+      closed.push(jobIdentityKey(fetched))
+      continue
+    }
+    const enriched = { ...enrichJob(sanitizeFetchedJob(fetched)), lastSeen: nowIso } as StoredJob
+    // what prune() used to drop from the merged list: the same rules, applied to what comes in
+    const posted = Date.parse(enriched.postedAt)
+    if (!isVisible(enriched) || Number.isNaN(posted) || posted < oldestPosted) continue
+    incoming.set(jobIdentityKey(enriched), enriched)
+  }
+
+  // A fresh fetch has no AI state; the stored one is carried over, as the snapshot merge did.
+  const aiState = await loadJobsAiState([...incoming.keys()])
+  const stored = [...incoming].map(([key, job]) => {
+    const ai = aiState.get(key)
+    return ai ? { ...job, ai } : job
+  })
+  await upsertJobsIncremental(stored, { seenAt: nowIso })
+  const removed = [
+    ...(closed.length ? await closeJobsByKeys(closed) : []),
+    ...(await pruneStoredJobs(now)),
+  ]
+  await tellSearchIndex(stored, removed)
+  scheduleSnapshotSync()
+
+  // Enrichment looks at the newest vacancies without AI state, wherever they came from, plus this source's own.
+  const scanForAi = now - lastAiScanAt >= AI_CANDIDATE_SCAN_INTERVAL_MS
+  if (scanForAi) lastAiScanAt = now
+  const waiting = scanForAi
+    ? (await listJobsNeedingAi(AI_CANDIDATE_WINDOW)).map((job) => ({ ...job, lastSeen: job.lastSeen || nowIso }) as StoredJob)
+    : []
+  const queue = new Map<string, StoredJob>()
+  for (const job of [...stored, ...waiting]) if (!queue.has(jobIdentityKey(job))) queue.set(jobIdentityKey(job), job)
+  scheduleVacancyAi([...queue.values()], persistAiEnrichedJob)
+
+  return { source, fetched: jobs.length, stored: stored.length }
+}
+
+async function storeAiEnrichedJobsToPostgres(jobs: StoredJob[]) {
+  try {
+    // A vacancy closed or aged out while the model was thinking stays closed.
+    await upsertJobsIncremental(jobs, { onlyExisting: true })
+    await tellSearchIndex(jobs, [])
+    scheduleSnapshotSync()
+  } catch (error) {
+    console.error('[jobs:ai] enrichment persistence failed:', (error as Error).message)
+  }
+}
+
+/** The live vacancies as the JSON array the snapshot has always held, one page of the table at a time. */
+export async function* snapshotPieces(
+  page: (after: string | null, limit: number) => Promise<{ jobs: unknown[]; lastKey: string | null }> = listActiveJobsPage,
+): AsyncGenerator<string> {
+  let after: string | null = null
+  let count = 0
+  yield '['
+  for (;;) {
+    const next = await page(after, SNAPSHOT_PAGE)
+    if (!next.jobs.length) break
+    yield (count ? ',' : '') + next.jobs.map((job) => JSON.stringify(job)).join(',')
+    count += next.jobs.length
+    after = next.lastKey
+  }
+  // An empty table is a problem to look at, not a snapshot to publish: the write is abandoned and the old file stays.
+  if (!count) throw new Error('no live vacancies in the database; snapshot export skipped')
+  yield ']'
+}
+
+async function* livePages(): AsyncGenerator<Job[]> {
+  let after: string | null = null
+  for (;;) {
+    const next = await listActiveJobsPage(after, SNAPSHOT_PAGE)
+    if (!next.jobs.length) return
+    yield next.jobs
+    after = next.lastKey
+  }
+}
+
+async function runSnapshotExports() {
+  while (snapshotSyncRequested) {
+    const wait = SNAPSHOT_EXPORT_MIN_INTERVAL_MS - (Date.now() - lastSnapshotExportAt)
+    if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
+    snapshotSyncRequested = false
+    lastSnapshotExportAt = Date.now()
+    try {
+      await useStateStore().setStream(STORE_KEY, snapshotPieces(), 'EX', STORE_TTL_SECONDS)
+    } catch (error) {
+      console.error('[jobs:snapshot] export from PostgreSQL failed:', (error as Error).message)
+    }
+    if (Date.now() - lastSearchReconcileAt >= SEARCH_RECONCILE_INTERVAL_MS) {
+      try {
+        await reconcileJobsSearchIndex(livePages())
+        lastSearchReconcileAt = Date.now()
+      } catch (error) {
+        console.error('[jobs:store] Elasticsearch reconcile failed:', (error as Error).message)
+      }
+    }
+  }
+}
+
 /**
  * Publishing the stored snapshot to Elasticsearch and PostgreSQL.
  *
@@ -212,6 +381,7 @@ export function scheduleSnapshotSync(): Promise<void> {
 }
 
 async function runSnapshotSyncs() {
+  if (jobsStoreMode() === 'postgres') return runSnapshotExports()
   while (snapshotSyncRequested) {
     snapshotSyncRequested = false
     const startedAt = Date.now()
@@ -317,6 +487,7 @@ function prune(list: StoredJob[], now: number): StoredJob[] {
 }
 
 async function mergeFetchedSource(source: JobSource, jobs: Job[]) {
+  if (jobsStoreMode() === 'postgres') return mergeFetchedSourceToPostgres(source, jobs)
   const now = Date.now()
   const nowIso = new Date(now).toISOString()
   const store = useStateStore()
@@ -386,6 +557,7 @@ function persistAiEnrichedJob(job: StoredJob): Promise<void> {
 
 async function storeAiEnrichedJobs(jobs: StoredJob[]) {
   if (!jobs.length) return
+  if (jobsStoreMode() === 'postgres') return storeAiEnrichedJobsToPostgres(jobs)
   try {
     const store = useStateStore()
     const raw = await store.get(STORE_KEY)

@@ -101,7 +101,7 @@ function clusterOf(job: Job): JobClusterIdentity | null {
   return jobClusterIdentity({ company: job.company, title: job.title, location: job.location, city: job.city, country: job.country })
 }
 
-function jobRow(job: Job, syncToken: string) {
+export function jobRow(job: Job, syncToken: string) {
   return {
     identity_key: identityKey(job),
     source: job.source,
@@ -139,7 +139,7 @@ function jobRow(job: Job, syncToken: string) {
 }
 
 /** One job_clusters row per role in this sync, with its live posting count. */
-function clusterRows(jobs: Job[]) {
+export function clusterRows(jobs: Job[]) {
   const byKey = new Map<string, { cluster_key: string; country: string | null; company_normalized: string; title_normalized: string; locality: string | null; posting_count: number }>()
   for (const job of jobs) {
     const cluster = clusterOf(job)
@@ -160,7 +160,7 @@ function clusterRows(jobs: Job[]) {
 
 // first_seen_at and reason_codes are kept: a cluster outlives the postings of
 // one sync, and its history is what repost detection reads.
-const CLUSTER_UPSERT_SQL = (name: string) => `
+export const CLUSTER_UPSERT_SQL = (name: string) => `
   INSERT INTO ${name}.job_clusters (
     cluster_key, country, company_normalized, title_normalized, locality, posting_count, last_seen_at
   )
@@ -271,6 +271,195 @@ export async function syncJobsDb(jobs: Job[]): Promise<number> {
   } finally {
     client.release()
   }
+}
+
+// ---- incremental store ---------------------------------------------------------------------------------------
+//
+// syncJobsDb above replays the whole snapshot: it needs every live vacancy in memory at once and deactivates the
+// ones it does not hold. The functions below are the other way to keep this table current: a source writes only its
+// own vacancies, closes the ones it says are closed, and ageing out is a query. Nothing here reads or holds the
+// whole table. Used when JOBS_STORE=postgres (server/vacancies/application/jobsSourceRefresh.ts).
+
+type SeenJob = Job & { lastSeen?: string }
+
+function replaceOnce(source: string, from: string, to: string): string {
+  if (!source.includes(from)) throw new Error(`incremental upsert: expected SQL not found: ${from.slice(0, 60)}`)
+  return source.replace(from, to)
+}
+
+/**
+ * UPSERT_SQL plus last_seen_at, derived from it so the two cannot drift. A row is rewritten when the vacancy changed
+ * (as before), when it comes back, or when it was last re-seen more than an hour before: the hourly refresh is what
+ * keeps "not seen for N days" answerable without rewriting every row on every pass.
+ */
+export const SEEN_UPSERT_SQL = (name: string): string => {
+  let sql = UPSERT_SQL(name)
+  sql = replaceOnce(sql, 'sync_token, cluster_key, data, updated_at\n  )', 'sync_token, cluster_key, data, last_seen_at, updated_at\n  )')
+  sql = replaceOnce(sql, 'input.cluster_key, input.data, NOW()', 'input.cluster_key, input.data, input.last_seen_at, NOW()')
+  sql = replaceOnce(sql, 'search_text TEXT, sync_token TEXT, cluster_key TEXT, data JSONB\n  )', 'search_text TEXT, sync_token TEXT, cluster_key TEXT, data JSONB,\n    last_seen_at TIMESTAMPTZ\n  )')
+  // never backwards: a late AI result carries the lastSeen it was read with
+  sql = replaceOnce(sql, 'data = EXCLUDED.data, updated_at = NOW()', `data = EXCLUDED.data, last_seen_at = GREATEST(${name}.vacancies.last_seen_at, EXCLUDED.last_seen_at), updated_at = NOW()`)
+  sql = replaceOnce(
+    sql,
+    `WHERE ${name}.vacancies.active = FALSE`,
+    `WHERE ${name}.vacancies.active = FALSE
+     OR ${name}.vacancies.last_seen_at IS NULL
+     OR ${name}.vacancies.last_seen_at < EXCLUDED.last_seen_at - INTERVAL '1 hour'`,
+  )
+  return sql
+}
+
+/** The cluster counters of these clusters, recounted from the live vacancies (a source only sees its own). */
+export const CLUSTER_RECOUNT_SQL = (name: string) => `
+  UPDATE ${name}.job_clusters c
+     SET posting_count = counted.n
+    FROM (
+      SELECT k.cluster_key, (
+        SELECT COUNT(*)::int FROM ${name}.vacancies v WHERE v.active = TRUE AND v.cluster_key = k.cluster_key
+      ) AS n
+      FROM unnest($1::text[]) AS k(cluster_key)
+    ) counted
+   WHERE c.cluster_key = counted.cluster_key
+     AND c.posting_count IS DISTINCT FROM counted.n
+`
+
+export function jobIdentityKey(job: Pick<Job, 'source' | 'id' | 'url'>): string {
+  return identityKey(job as Job)
+}
+
+/** AI state already stored for these vacancies, by identity key (a fresh fetch does not carry it). */
+export async function loadJobsAiState(keys: string[]): Promise<Map<string, unknown>> {
+  const found = new Map<string, unknown>()
+  if (!jobsDbEnabled() || !keys.length) return found
+  await ensureSchema()
+  for (let offset = 0; offset < keys.length; offset += 2000) {
+    const result = await db().query(
+      `SELECT identity_key, data->'ai' AS ai FROM ${schema()}.vacancies WHERE identity_key = ANY($1::text[]) AND data ? 'ai'`,
+      [keys.slice(offset, offset + 2000)],
+    )
+    for (const row of result.rows) found.set(row.identity_key, row.ai)
+  }
+  return found
+}
+
+/**
+ * Writes these vacancies and refreshes the counters of the clusters they belong to, in one transaction.
+ * `onlyExisting` skips vacancies that are no longer live (used for late AI results, which must not bring back a
+ * vacancy that was closed or aged out meanwhile).
+ */
+export async function upsertJobsIncremental(
+  jobs: SeenJob[],
+  { seenAt, onlyExisting = false }: { seenAt?: string; onlyExisting?: boolean } = {},
+): Promise<number> {
+  if (!jobsDbEnabled() || !jobs.length) return 0
+  await ensureSchema()
+  let list = jobs
+  if (onlyExisting) {
+    const live = await db().query(
+      `SELECT identity_key FROM ${schema()}.vacancies WHERE active = TRUE AND identity_key = ANY($1::text[])`,
+      [jobs.map((job) => identityKey(job))],
+    )
+    const keys = new Set<string>(live.rows.map((row) => row.identity_key))
+    list = jobs.filter((job) => keys.has(identityKey(job)))
+    if (!list.length) return 0
+  }
+  // One command cannot touch the same row twice: the last copy of a vacancy wins.
+  list = [...new Map(list.map((job) => [identityKey(job), job])).values()]
+  const syncToken = `${Date.now()}:${Math.random().toString(36).slice(2)}`
+  const now = new Date().toISOString()
+  const rows = list.map((job) => ({ ...jobRow(job, syncToken), last_seen_at: seenAt || job.lastSeen || now }))
+  const client = await db().connect()
+  try {
+    await client.query('BEGIN')
+    const clusters = clusterRows(list)
+    for (let offset = 0; offset < clusters.length; offset += UPSERT_BATCH) {
+      await client.query(CLUSTER_UPSERT_SQL(schema()), [toPostgresJson(clusters.slice(offset, offset + UPSERT_BATCH))])
+    }
+    for (let offset = 0; offset < rows.length; offset += UPSERT_BATCH) {
+      await client.query(SEEN_UPSERT_SQL(schema()), [toPostgresJson(rows.slice(offset, offset + UPSERT_BATCH))])
+    }
+    // The cluster upsert above wrote this batch's own count; the real one is over all live postings.
+    if (clusters.length) await client.query(CLUSTER_RECOUNT_SQL(schema()), [clusters.map((cluster) => cluster.cluster_key)])
+    await client.query('COMMIT')
+    return rows.length
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+/** What the search index needs to drop a vacancy: its document id parts. */
+export type RemovedJob = { source: string; id: string }
+
+export const DEACTIVATE_SQL = (name: string, where: string) => `
+  UPDATE ${name}.vacancies SET active = FALSE, updated_at = NOW()
+   WHERE active = TRUE AND ${where}
+   RETURNING source, source_id, cluster_key`
+
+export const CLOSE_WHERE = 'identity_key = ANY($1::text[])'
+// posted too long ago, or (when it was ever recorded) not seen by its source for too long
+export const PRUNE_WHERE = `(posted_at < NOW() - make_interval(days => $1::int)
+      OR (last_seen_at IS NOT NULL AND last_seen_at < NOW() - make_interval(days => $2::int)))`
+
+async function deactivate(where: string, params: unknown[]): Promise<RemovedJob[]> {
+  const client = await db().connect()
+  try {
+    await client.query('BEGIN')
+    const result = await client.query(DEACTIVATE_SQL(schema(), where), params)
+    const clusters = [...new Set<string>(result.rows.map((row) => row.cluster_key).filter(Boolean))]
+    if (clusters.length) await client.query(CLUSTER_RECOUNT_SQL(schema()), [clusters])
+    await client.query('COMMIT')
+    return result.rows.map((row) => ({ source: row.source, id: row.source_id }))
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally {
+    client.release()
+  }
+}
+
+/** Vacancies a source reports as closed. */
+export async function closeJobsByKeys(keys: string[]): Promise<RemovedJob[]> {
+  if (!jobsDbEnabled() || !keys.length) return []
+  await ensureSchema()
+  return deactivate(CLOSE_WHERE, [keys])
+}
+
+/**
+ * Ageing out, formerly done on the whole list in memory: posted more than `maxAgeDays` ago, or not seen by its source
+ * for `staleDays`. A vacancy whose last_seen_at was never written (NULL) is only aged out by its posting date.
+ */
+export async function pruneJobs({ maxAgeDays, staleDays }: { maxAgeDays: number; staleDays: number }): Promise<RemovedJob[]> {
+  if (!jobsDbEnabled()) return []
+  await ensureSchema()
+  return deactivate(PRUNE_WHERE, [maxAgeDays, staleDays])
+}
+
+/** Live vacancies in key order, one page at a time (snapshot export and search-index reconciliation). */
+export async function listActiveJobsPage(afterKey: string | null, limit: number): Promise<{ jobs: SeenJob[]; lastKey: string | null }> {
+  if (!jobsDbEnabled()) return { jobs: [], lastKey: null }
+  await ensureSchema()
+  const result = await db().query(
+    `SELECT identity_key, data FROM ${schema()}.vacancies
+      WHERE active = TRUE AND identity_key > $1
+      ORDER BY identity_key LIMIT $2`,
+    [afterKey ?? '', limit],
+  )
+  const rows = result.rows
+  return { jobs: rows.map((row) => row.data as SeenJob), lastKey: rows.length ? rows[rows.length - 1].identity_key : null }
+}
+
+/** The newest live vacancies that have no AI state yet: what the enrichment queue should look at next. */
+export async function listJobsNeedingAi(limit: number): Promise<SeenJob[]> {
+  if (!jobsDbEnabled()) return []
+  await ensureSchema()
+  const result = await db().query(
+    `SELECT data FROM ${schema()}.vacancies WHERE active = TRUE AND NOT (data ? 'ai') ORDER BY posted_at DESC LIMIT $1`,
+    [limit],
+  )
+  return result.rows.map((row) => row.data as SeenJob)
 }
 
 type SqlBuilder = { values: unknown[]; add(value: unknown): string }

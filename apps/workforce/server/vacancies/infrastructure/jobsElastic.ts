@@ -605,6 +605,71 @@ export async function syncJobsSearchIndex(
     return changed.length
 }
 
+/**
+ * Index just these vacancies (the ones a source wrote), skipping the documents that are already indexed as they are.
+ * The counterpart of syncJobsSearchIndex for a store that never holds the whole list.
+ */
+export async function indexJobsIncremental(jobs: Job[]) {
+    if (!jobs.length) return 0
+    await ensureJobsSearchIndex()
+    const changed = jobs
+        .map((job) => ({ job, id: jobSearchKey(job), fingerprint: documentFingerprint(job) }))
+        .filter(({ id, fingerprint }) => indexedFingerprints.get(id) !== fingerprint)
+    const syncToken = new Date().toISOString()
+    for (let offset = 0; offset < changed.length; offset += BULK_SIZE) {
+        const batch = changed.slice(offset, offset + BULK_SIZE)
+        await bulkIndex(batch.map(({ job }) => job), syncToken)
+        for (const { id, fingerprint } of batch) indexedFingerprints.set(id, fingerprint)
+    }
+    return changed.length
+}
+
+/** Drop vacancies that were closed or aged out, given the parts of their document id. */
+export async function removeJobsFromIndex(removed: Array<Pick<Job, 'source' | 'id'>>) {
+    if (!removed.length) return 0
+    await ensureJobsSearchIndex()
+    const ids = removed.map((job) => jobSearchKey(job))
+    await bulkDelete(ids)
+    for (const id of ids) indexedFingerprints.delete(id)
+    return ids.length
+}
+
+/**
+ * Full reconciliation without the whole list in memory: pages of live vacancies are indexed under one token, then
+ * whatever does not carry it is swept, as fullSync does. Nothing is swept when no page held a vacancy.
+ */
+export async function reconcileJobsSearchIndex(pages: AsyncIterable<Job[]>) {
+    await ensureJobsSearchIndex()
+    const syncToken = new Date().toISOString()
+    const seen = new Map<string, string>()
+    let indexed = 0
+    for await (const page of pages) {
+        for (let offset = 0; offset < page.length; offset += BULK_SIZE) {
+            const batch = page.slice(offset, offset + BULK_SIZE)
+            await bulkIndex(batch, syncToken)
+            for (const job of batch) seen.set(jobSearchKey(job), documentFingerprint(job))
+            indexed += batch.length
+        }
+    }
+    if (!indexed) {
+        console.warn('[jobs:elasticsearch] reconcile found no live vacancies, sweep skipped')
+        return 0
+    }
+    await request(
+        `/${JOBS_INDEX}/_delete_by_query?conflicts=proceed&refresh=true`,
+        {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ query: { bool: { must_not: [{ term: { syncToken } }] } } }),
+        },
+        SWEEP_TIMEOUT_MS,
+    )
+    indexedFingerprints = seen
+    lastFullSyncAt = Date.now()
+    console.log(`[jobs:elasticsearch] reconciled ${indexed} jobs`)
+    return indexed
+}
+
 async function fullSync(
     jobs: Job[],
 ) {

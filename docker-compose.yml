@@ -686,6 +686,9 @@ services:
       AI_WORKER_KEY: ${AI_API_KEY:-}
       ELASTICSEARCH_URL: http://platform-elasticsearch:9200
       JOBS_ELASTICSEARCH_INDEX: job-listings-v1
+      # Where the vacancy list lives: `snapshot` (one JSON file, read and rewritten whole on every merge) or `postgres`
+      # (jobs.vacancies is the store; the JSON file is still exported from it). See apps/workforce/server/vacancies/README.md.
+      JOBS_STORE: ${JOBS_STORE:-snapshot}
       JOB_BROWSER_FETCHER_URL: http://job-browser-fetcher:4040
       SOCIAL_FETCHER_URL: http://social-fetcher:4040
       SITE_STATE_DIR: /var/app/state/workforce

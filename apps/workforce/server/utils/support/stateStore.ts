@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdir, open, readFile, rename, rm } from 'node:fs/promises'
+import { mkdir, open, readFile, readdir, rename, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 
 // Persistent filesystem-backed key/value store for hot JSON snapshots, TTL
@@ -19,9 +19,28 @@ type SetOption = string | number
 const keyQueues = new Map<string, Promise<unknown>>()
 let dirReady: Promise<void> | undefined
 
+// A write goes to a temporary file that is renamed over the real one. A process that dies in between leaves the
+// temporary file behind; with a value of several hundred MB and a worker that was restarting every minute they had
+// piled up to 30 GB. Anything this old cannot belong to a write that is still going.
+const STALE_TMP_MS = 30 * 60_000
+
+async function removeStaleTemporaryFiles(): Promise<void> {
+  try {
+    const now = Date.now()
+    for (const name of await readdir(STATE_DIR)) {
+      if (!name.endsWith('.tmp')) continue
+      const path = join(STATE_DIR, name)
+      const info = await stat(path).catch(() => null)
+      if (info?.isFile() && now - info.mtimeMs > STALE_TMP_MS) await rm(path, { force: true }).catch(() => {})
+    }
+  } catch (error) {
+    console.warn('[state] temporary file sweep failed:', (error as Error).message)
+  }
+}
+
 function ensureDir(): Promise<void> {
   if (!dirReady) {
-    dirReady = mkdir(STATE_DIR, { recursive: true }).then(() => undefined)
+    dirReady = mkdir(STATE_DIR, { recursive: true }).then(() => removeStaleTemporaryFiles())
   }
   return dirReady
 }
@@ -69,15 +88,25 @@ async function atomicWrite(key: string, entry: Entry): Promise<void> {
   await ensureDir()
   const path = keyPath(key)
   const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`
-  await open(tmp, 'wx').then(async (handle) => {
-    try {
-      await handle.writeFile(JSON.stringify(entry), 'utf8')
-      await handle.sync()
-    } finally {
-      await handle.close()
-    }
-  })
-  await rename(tmp, path)
+  try {
+    await open(tmp, 'wx').then(async (handle) => {
+      try {
+        await handle.writeFile(JSON.stringify(entry), 'utf8')
+        await handle.sync()
+      } finally {
+        await handle.close()
+      }
+    })
+    await rename(tmp, path)
+  } catch (error) {
+    await rm(tmp, { force: true }).catch(() => {})
+    throw error
+  }
+}
+
+/** The inside of a JSON string literal for `text` (what goes between the quotes). */
+export function jsonStringBody(text: string): string {
+  return JSON.stringify(text).slice(1, -1)
 }
 
 function parseSetOptions(options: SetOption[]): { ttlMs: number | null; nx: boolean } {
@@ -117,6 +146,34 @@ export class PersistentStateStore {
         expiresAt,
       })
       return 'OK'
+    })
+  }
+
+  /**
+   * Same stored shape as set(), but the value arrives in pieces and is never held whole: the file is
+   * `{"value":"<escaped pieces>","expiresAt":...}`, which readEntry() parses like any other entry.
+   */
+  async setStream(key: string, pieces: AsyncIterable<string>, ...options: SetOption[]): Promise<'OK'> {
+    const parsed = parseSetOptions(options)
+    return serializeKey(key, async () => {
+      await ensureDir()
+      const path = keyPath(key)
+      const tmp = `${path}.${process.pid}.${randomUUID()}.tmp`
+      const expiresAt = parsed.ttlMs == null ? null : Date.now() + parsed.ttlMs
+      const handle = await open(tmp, 'wx')
+      try {
+        await handle.write('{"value":"')
+        for await (const piece of pieces) await handle.write(jsonStringBody(piece))
+        await handle.write(`","expiresAt":${expiresAt}}`)
+        await handle.sync()
+        await handle.close()
+        await rename(tmp, path)
+        return 'OK' as const
+      } catch (error) {
+        await handle.close().catch(() => {})
+        await rm(tmp, { force: true }).catch(() => {})
+        throw error
+      }
     })
   }
 
