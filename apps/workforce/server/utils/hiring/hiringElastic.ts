@@ -163,11 +163,7 @@ function toDocument(profile: CvProfile, syncToken: string) {
 
 let syncLock: Promise<unknown> = Promise.resolve()
 
-async function syncCandidateIndexNow(profiles: CvProfile[]): Promise<number> {
-    if (!profiles.length) return 0
-    await ensureCandidateIndex()
-    const syncToken = `${Date.now()}:${Math.random().toString(36).slice(2)}`
-
+async function bulkIndexCandidates(profiles: CvProfile[], syncToken: string): Promise<void> {
     for (let i = 0; i < profiles.length; i += BULK_SIZE) {
         const batch = profiles.slice(i, i + BULK_SIZE)
         const lines: string[] = []
@@ -185,6 +181,44 @@ async function syncCandidateIndexNow(profiles: CvProfile[]): Promise<number> {
             throw new Error(`Elasticsearch bulk error: ${JSON.stringify(failed?.index?.error).slice(0, 300)}`)
         }
     }
+}
+
+/**
+ * Index just these candidates and leave the rest of the index alone. syncCandidateIndex below sweeps every document
+ * that is not in the list it is given, which is right for a full list and wrong for the few a write touched.
+ */
+export async function indexCandidatesIncremental(profiles: CvProfile[]): Promise<number> {
+    if (!profiles.length) return 0
+    await ensureCandidateIndex()
+    await bulkIndexCandidates(profiles, `${Date.now()}:${Math.random().toString(36).slice(2)}`)
+    return profiles.length
+}
+
+/** Full reconciliation from pages of live candidates: index them under one token, then sweep what lacks it. */
+export async function reconcileCandidateIndex(pages: AsyncIterable<CvProfile[]>): Promise<number> {
+    await ensureCandidateIndex()
+    const syncToken = `${Date.now()}:${Math.random().toString(36).slice(2)}`
+    let indexed = 0
+    for await (const page of pages) {
+        await bulkIndexCandidates(page, syncToken)
+        indexed += page.length
+    }
+    if (!indexed) return 0
+    await request(`/${CANDIDATE_INDEX}/_delete_by_query?conflicts=proceed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ query: { bool: { must_not: { term: { syncToken } } } } }),
+    }).catch(() => {})
+    await request(`/${CANDIDATE_INDEX}/_refresh`, { method: 'POST' }).catch(() => {})
+    return indexed
+}
+
+async function syncCandidateIndexNow(profiles: CvProfile[]): Promise<number> {
+    if (!profiles.length) return 0
+    await ensureCandidateIndex()
+    const syncToken = `${Date.now()}:${Math.random().toString(36).slice(2)}`
+
+    await bulkIndexCandidates(profiles, syncToken)
 
     await request(`/${CANDIDATE_INDEX}/_delete_by_query?conflicts=proceed`, {
         method: 'POST',

@@ -9,8 +9,19 @@ import {
   scheduleAiExtraction,
   type AiExtractionResult,
 } from '../../utils/support/aiWorker'
-import { hiringDbEnabled, loadDbCandidates, saveDbCandidates } from '../infrastructure/database'
-import { syncCandidateIndex } from '../../utils/hiring/hiringElastic'
+import {
+  candidateIdentity,
+  getDbCandidateByIdentity,
+  hiringDbEnabled,
+  hiringStoreFromDatabase,
+  listDbCandidatesNeedingAi,
+  loadDbCandidateAiState,
+  loadDbCandidates,
+  saveDbCandidates,
+  upsertDbCandidates,
+} from '../infrastructure/database'
+import { scheduleCandidateSnapshotExport } from './candidateSnapshotExport'
+import { indexCandidatesIncremental, syncCandidateIndex } from '../../utils/hiring/hiringElastic'
 import { withHiringStoreLock } from '../infrastructure/storeLock'
 import type { CandidateEmploymentType, CvProfile } from '../../../shared/contracts/hiring'
 import type { SourceRun } from '../../../shared/hiring/hiringDiagnostics'
@@ -273,6 +284,7 @@ async function applyCandidateAiResult(
 
 function scheduleCandidateAi(list: StoredProfile[]) {
   if (!aiWorkerEnabled()) return
+  const viaDatabase = hiringStoreFromDatabase()
   const batchSize = Math.max(1, Number(process.env.AI_WORKER_CANDIDATE_BATCH) || 24)
   let scheduled = 0
   const newestFirst = [...list].sort((a, b) => Date.parse(b.createdAt || '') - Date.parse(a.createdAt || ''))
@@ -296,9 +308,12 @@ function scheduleCandidateAi(list: StoredProfile[]) {
       kind: 'candidate',
       ...input,
       meta: { source: profile.source, sourceCountry: profile.country, id: profile.id, url: profile.url },
-      onResult: (result) => applyCandidateAiResult(key, input.fingerprint, result),
+      onResult: (result) => (viaDatabase
+        ? applyCandidateAiResultToPostgres(profile, input.fingerprint, result)
+        : applyCandidateAiResult(key, input.fingerprint, result)),
       onFailed: async (status) => {
         if (status !== 'failed') return
+        if (viaDatabase) return markCandidateAiFailedInPostgres(profile, input.fingerprint)
         await withHiringStoreLock(async () => {
           const stored = await loadStored()
           const current = stored.find((item) => dedupKey(item) === key)
@@ -318,11 +333,114 @@ function scheduleCandidateAi(list: StoredProfile[]) {
   if (scheduled) console.log(`[hiring:ai] queued ${scheduled} candidate profiles`)
 }
 
+// ---- HIRING_STORE=postgres ----------------------------------------------------------------------------------------
+//
+// The candidates table is the store. A crawl writes only the candidates it carries (the AI state of those already
+// stored is read back by key), the search index is told about just those, and an AI result updates one row. The
+// snapshot is exported from the table (candidateSnapshotExport.ts) for the readers that still use it.
+
+const AI_CANDIDATE_WINDOW = 200
+const AI_CANDIDATE_SCAN_INTERVAL_MS = 60_000
+let lastAiScanAt = 0
+
+async function tellSearchIndex(profiles: CvProfile[]) {
+  try {
+    await indexCandidatesIncremental(profiles)
+  } catch (error) {
+    console.warn('[hiring:elasticsearch] candidate update failed:', (error as Error).message)
+  }
+}
+
+async function persistTelegramCandidatesToPostgres(profiles: CvProfile[], diagnostic: SourceRun): Promise<number> {
+  const now = Date.now()
+  const nowIso = new Date(now).toISOString()
+  const parsed: CvProfile[] = []
+  for (const rawProfile of profiles) {
+    const profile = repaired(rawProfile)
+    const sourceText = profile.originalText || profile.description || ''
+    if (isRecruitingOpportunity(sourceText) || isCandidateEventPromotion(sourceText)) continue
+    parsed.push(profile)
+  }
+
+  // A fresh parse has no AI state; what is stored for the same person is reused when the text has not changed.
+  const storedAi = await loadDbCandidateAiState(parsed)
+  const byKey = new Map<string, StoredProfile>()
+  for (const profile of parsed) {
+    const input = candidateAiInput(profile)
+    const previous = storedAi.get(candidateIdentity(profile)) as StoredAi | undefined
+    const reusableAi = previous?.fingerprint === input.fingerprint ? previous : undefined
+    const withAi = reusableAi?.status === 'completed' && reusableAi.data
+      ? mergeCandidateAi(profile, reusableAi.data)
+      : profile
+    byKey.set(dedupKey(profile), { ...withAi, lastSeen: nowIso, ai: reusableAi })
+  }
+
+  const kept = pruneStore(byKey, now).map(derive)
+  const own = kept.filter((profile) => channelHandle(profile) === diagnostic.handle.toLowerCase())
+  await saveDbCandidates(own, diagnostic)
+  await tellSearchIndex(own)
+  void scheduleCandidateSnapshotExport()
+
+  // Enrichment looks at the newest candidates without AI state, wherever they came from, plus this crawl's own.
+  const scan = now - lastAiScanAt >= AI_CANDIDATE_SCAN_INTERVAL_MS
+  if (scan) lastAiScanAt = now
+  const waiting = scan ? await listDbCandidatesNeedingAi(AI_CANDIDATE_WINDOW) : []
+  const queue = new Map<string, StoredProfile>()
+  for (const profile of [...kept, ...waiting.map((item) => ({ ...item, lastSeen: item.lastSeen || nowIso }) as StoredProfile)]) {
+    if (!queue.has(candidateIdentity(profile))) queue.set(candidateIdentity(profile), profile)
+  }
+  scheduleCandidateAi([...queue.values()])
+  return kept.length
+}
+
+async function applyCandidateAiResultToPostgres(
+  identity: CvProfile,
+  fingerprint: string,
+  result: AiExtractionResult<CandidateAiData>,
+) {
+  await withHiringStoreLock(async () => {
+    const row = await getDbCandidateByIdentity(identity)
+    if (!row) return
+    const current = row.profile as StoredProfile
+    if (candidateAiInput(current).fingerprint !== fingerprint) return
+
+    const accepted = !result.lowConfidence && result.confidence >= AI_MIN_CONFIDENCE
+    const updated = derive({
+      ...(accepted ? mergeCandidateAi(current, result.data) : repaired(current)),
+      lastSeen: current.lastSeen || new Date().toISOString(),
+      ai: {
+        fingerprint,
+        status: accepted ? 'completed' : 'low_confidence',
+        confidence: result.confidence,
+        data: accepted ? result.data : undefined,
+        updatedAt: new Date().toISOString(),
+      },
+    } as StoredProfile)
+    await upsertDbCandidates([updated], row.handle)
+    await tellSearchIndex([updated])
+    void scheduleCandidateSnapshotExport()
+  })
+}
+
+async function markCandidateAiFailedInPostgres(identity: CvProfile, fingerprint: string) {
+  await withHiringStoreLock(async () => {
+    const row = await getDbCandidateByIdentity(identity)
+    if (!row) return
+    const current = row.profile as StoredProfile
+    if (candidateAiInput(current).fingerprint !== fingerprint) return
+    await upsertDbCandidates(
+      [{ ...current, ai: { fingerprint, status: 'failed', updatedAt: new Date().toISOString() } } as StoredProfile],
+      row.handle,
+    )
+  })
+}
+
 /** Merge one Telegram crawl result into the durable candidate snapshot. */
 export async function persistTelegramCandidates(
   profiles: CvProfile[],
   diagnostic: SourceRun,
 ): Promise<number> {
+  if (hiringStoreFromDatabase()) return persistTelegramCandidatesToPostgres(profiles, diagnostic)
   const now = Date.now()
   const nowIso = new Date(now).toISOString()
   const kept = await withHiringStoreLock(async () => {

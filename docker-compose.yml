@@ -636,6 +636,8 @@ services:
       JOBS_RUNTIME_ROLE: api
       HIRING_DATABASE_URL: ${PLATFORM_DATABASE_URL:-postgresql://whiteslove:change-me@platform-postgres:5432/whiteslove}
       HIRING_DB_SCHEMA: hiring
+      # `postgres`: share previews of a candidate read the table, not the snapshot file.
+      HIRING_READ_STORE: ${HIRING_READ_STORE:-snapshot}
       ELASTICSEARCH_URL: http://platform-elasticsearch:9200
       HIRING_ELASTICSEARCH_INDEX: candidate-profiles-v3
       SITE_STATE_DIR: /var/app/state/workforce
@@ -693,6 +695,9 @@ services:
       JOBS_STORE: ${JOBS_STORE:-snapshot}
       # Which store the readers use (feed with a text query, one vacancy, share previews). Independent of JOBS_STORE.
       JOBS_READ_STORE: ${JOBS_READ_STORE:-snapshot}
+      # The candidate side (CV): the same two switches. `postgres`: the candidates table is the store / is read.
+      HIRING_STORE: ${HIRING_STORE:-snapshot}
+      HIRING_READ_STORE: ${HIRING_READ_STORE:-snapshot}
       JOB_BROWSER_FETCHER_URL: http://job-browser-fetcher:4040
       SOCIAL_FETCHER_URL: http://social-fetcher:4040
       SITE_STATE_DIR: /var/app/state/workforce

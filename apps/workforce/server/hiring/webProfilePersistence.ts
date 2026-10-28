@@ -3,8 +3,9 @@ import { useStateStore } from '~~/server/utils/support/stateStore'
 import type { CvProfile } from '../../shared/contracts/hiring'
 import type { SourceRun } from '../../shared/hiring/hiringDiagnostics'
 import { cutoffDate } from '../../shared/hiring/webFields'
-import { hiringDbEnabled, loadDbCandidates, saveDbCandidates } from './infrastructure/database'
-import { syncCandidateIndex } from '../utils/hiring/hiringElastic'
+import { countDbCandidates, hiringDbEnabled, hiringStoreFromDatabase, loadDbCandidates, saveDbCandidates } from './infrastructure/database'
+import { indexCandidatesIncremental, syncCandidateIndex } from '../utils/hiring/hiringElastic'
+import { scheduleCandidateSnapshotExport } from './application/candidateSnapshotExport'
 import { withHiringStoreLock } from './infrastructure/storeLock'
 
 const STORE_KEY = 'hiring:store:v4'
@@ -25,11 +26,41 @@ export interface PersistWebProfilesResult {
   expired: number
 }
 
+/**
+ * The table is the store: only the profiles of this crawl are written (retention is the table's: pruneDbCandidates),
+ * the search index gets just those, and the snapshot is exported from the table later. Nothing is read whole.
+ * `expired` counts what this crawl brought that is already outside the window; the old figure also counted stored
+ * profiles of the source that had aged out meanwhile, which needs the whole list.
+ */
+async function persistWebProfilesToPostgres(profiles: CvProfile[], diagnostic: SourceRun): Promise<PersistWebProfilesResult> {
+  const now = new Date().toISOString()
+  const cutoff = cutoffDate().getTime()
+  const inWindow = profiles
+    .map((profile) => ({ ...profile, lastSeen: now }) as StoredProfile)
+    .filter((profile) => {
+      const time = Date.parse(profile.activityAt || profile.updatedAt || profile.createdAt || '')
+      return Number.isFinite(time) && time >= cutoff && time <= Date.now() + 48 * 60 * 60 * 1000
+    })
+  await saveDbCandidates(profiles, diagnostic)
+  try {
+    await indexCandidatesIncremental(inWindow)
+  } catch (error) {
+    console.warn('[hiring:elasticsearch] candidate sync failed:', (error as Error).message)
+  }
+  void scheduleCandidateSnapshotExport()
+  return {
+    stored: await countDbCandidates(),
+    shown: inWindow.length,
+    expired: Math.max(0, profiles.length - inWindow.length),
+  }
+}
+
 export async function persistWebProfiles(
   profiles: CvProfile[],
   diagnostic: SourceRun,
   sourceKey: string,
 ): Promise<PersistWebProfilesResult> {
+  if (hiringStoreFromDatabase()) return persistWebProfilesToPostgres(profiles, diagnostic)
   const persisted = await withHiringStoreLock(async () => {
     const now = new Date().toISOString()
     let existing: StoredProfile[] = []

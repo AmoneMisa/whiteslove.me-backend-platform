@@ -109,6 +109,12 @@ export async function findSharedCandidate(id: string): Promise<any | null> {
   if (cached) return cached.value
 
   try {
+    const { getDbCandidateByIdOrUrl, hiringReadFromDatabase } = await import('../../hiring/infrastructure/database')
+    if (hiringReadFromDatabase()) {
+      const profile = await getDbCandidateByIdOrUrl(wanted)
+      const { lastSeen: _lastSeen, ai: _ai, visible: _visible, ...publicProfile } = (profile || {}) as Record<string, unknown>
+      return cacheSet(`candidate:${wanted}`, profile ? publicProfile : null)
+    }
     const [{ getStoredCvProfilesSnapshot }, { getStoredWebCvProfiles }] = await Promise.all([
       import('../../hiring/application/readSnapshot'),
       import('../../hiring/application/readWebProfiles'),

@@ -576,47 +576,193 @@ async function previousDedupeKeys(client: PoolClient, rows: Array<ReturnType<typ
   return result.rows.map((row) => String(row.dedupe_key || '')).filter(Boolean)
 }
 
+/** The transaction that writes these candidates and re-resolves who is "current"; throws on failure. */
+async function writeCandidateRows(profiles: CvProfile[], handle: string): Promise<number> {
+  await ensureSchema()
+  const unique = new Map<string, ReturnType<typeof candidateRow>>()
+  for (const profile of profiles) {
+    const row = candidateRow(profile, handle)
+    if (!row.source_id || !row.country || !row.created_at) continue
+    unique.set(`${row.source}:${row.country}:${row.source_id}`, row)
+  }
+
+  const rows = [...unique.values()]
+  const client = await db().connect()
+  try {
+    await client.query('BEGIN')
+    const oldKeys = await previousDedupeKeys(client, rows)
+    for (let offset = 0; offset < rows.length; offset += UPSERT_BATCH) {
+      await client.query(UPSERT_SQL(schema()), [toPostgresJson(rows.slice(offset, offset + UPSERT_BATCH))])
+    }
+    await syncCurrentCandidateKeys(client, schema(), [
+      ...oldKeys,
+      ...rows.map((row) => row.dedupe_key),
+    ])
+    await client.query('COMMIT')
+  } catch (error) {
+    await client.query('ROLLBACK').catch(() => {})
+    throw error
+  } finally {
+    client.release()
+  }
+  hiringStatsCache.clear()
+  return rows.length
+}
+
+/** Write candidates without recording a source run (an AI result, a repair): the row of the same person is updated. */
+export async function upsertDbCandidates(profiles: CvProfile[], handle: string): Promise<number> {
+  if (!hiringDbEnabled() || !profiles.length) return 0
+  try {
+    return await writeCandidateRows(profiles, handle)
+  } catch (error) {
+    console.warn('[hiring:db] candidate update failed:', (error as Error).message)
+    return 0
+  }
+}
+
 export async function saveDbCandidates(
   profiles: CvProfile[],
   diagnostic: SourceRun,
 ): Promise<number> {
   if (!hiringDbEnabled()) return 0
   try {
-    await ensureSchema()
-    const unique = new Map<string, ReturnType<typeof candidateRow>>()
-    for (const profile of profiles) {
-      const row = candidateRow(profile, diagnostic.handle)
-      if (!row.source_id || !row.country || !row.created_at) continue
-      unique.set(`${row.source}:${row.country}:${row.source_id}`, row)
-    }
-
-    const rows = [...unique.values()]
-    const client = await db().connect()
-    try {
-      await client.query('BEGIN')
-      const oldKeys = await previousDedupeKeys(client, rows)
-      for (let offset = 0; offset < rows.length; offset += UPSERT_BATCH) {
-        await client.query(UPSERT_SQL(schema()), [toPostgresJson(rows.slice(offset, offset + UPSERT_BATCH))])
-      }
-      await syncCurrentCandidateKeys(client, schema(), [
-        ...oldKeys,
-        ...rows.map((row) => row.dedupe_key),
-      ])
-      await client.query('COMMIT')
-    } catch (error) {
-      await client.query('ROLLBACK').catch(() => {})
-      throw error
-    } finally {
-      client.release()
-    }
-
-    hiringStatsCache.clear()
+    const written = await writeCandidateRows(profiles, diagnostic.handle)
     await recordDbSourceRun(diagnostic)
-    return rows.length
+    return written
   } catch (error) {
     console.warn(`[hiring:db] upsert @${diagnostic.handle} failed:`, (error as Error).message)
     return 0
   }
+}
+
+// ---- the incremental store -------------------------------------------------------------------------------------
+//
+// With HIRING_STORE=postgres the candidates table is the store and no snapshot is read or rewritten per write. These
+// are the reads that takes: the AI state a fresh parse does not carry, the next candidates to enrich, one candidate
+// to update, and pages of the live ones for the snapshot export and the search-index reconciliation.
+
+type StoredCandidate = CvProfile & { lastSeen?: string; ai?: unknown }
+
+/** The identity the candidates table is unique on, as one string. */
+export function candidateIdentity(profile: Pick<CvProfile, 'source' | 'country' | 'id'>): string {
+  return `${String(profile.source || 'telegram').toLowerCase()}:${String(profile.country || '').toUpperCase()}:${String(profile.id || '')}`
+}
+
+/**
+ * HIRING_STORE=postgres: the candidates table is the store. A write touches only the candidates it carries, and the
+ * snapshot file is exported from the table instead of being read, merged into and rewritten on every write.
+ */
+export function hiringStoreFromDatabase(): boolean {
+  return String(process.env.HIRING_STORE || 'snapshot').trim().toLowerCase() === 'postgres' && hiringDbEnabled()
+}
+
+/** Readers use the table instead of the snapshot file when HIRING_READ_STORE=postgres (independent of the writer). */
+export function hiringReadFromDatabase(): boolean {
+  return String(process.env.HIRING_READ_STORE || 'snapshot').trim().toLowerCase() === 'postgres' && hiringDbEnabled()
+}
+
+/** AI state already stored for these candidates, by candidateIdentity. */
+export async function loadDbCandidateAiState(profiles: CvProfile[]): Promise<Map<string, unknown>> {
+  const found = new Map<string, unknown>()
+  if (!hiringDbEnabled() || !profiles.length) return found
+  await ensureSchema()
+  const identities = profiles.map((profile) => ({
+    source: String(profile.source || 'telegram').toLowerCase(),
+    country: String(profile.country || '').toUpperCase(),
+    source_id: String(profile.id || ''),
+  }))
+  for (let offset = 0; offset < identities.length; offset += 1000) {
+    const result = await db().query(
+      `SELECT candidate.source, candidate.country, candidate.source_id, candidate.data->'ai' AS ai
+         FROM ${schema()}.candidates candidate
+         JOIN jsonb_to_recordset($1::jsonb) AS input(source TEXT, country TEXT, source_id TEXT)
+           ON candidate.source = input.source AND candidate.country = input.country AND candidate.source_id = input.source_id
+        WHERE candidate.data ? 'ai'`,
+      [toPostgresJson(identities.slice(offset, offset + 1000))],
+    )
+    for (const row of result.rows) found.set(`${row.source}:${row.country}:${row.source_id}`, row.ai)
+  }
+  return found
+}
+
+/** The newest current candidates with no AI state yet: what the enrichment queue should look at next. */
+export async function listDbCandidatesNeedingAi(limit: number): Promise<StoredCandidate[]> {
+  if (!hiringDbEnabled()) return []
+  await ensureSchema()
+  const result = await db().query(
+    `SELECT candidate.data
+       FROM ${schema()}.candidate_current current
+       JOIN ${schema()}.candidates candidate ON candidate.id = current.candidate_id
+      WHERE candidate.active = TRUE AND NOT (candidate.data ? 'ai')
+        AND candidate.created_at >= (NOW() - INTERVAL '${RETENTION_MONTHS} months')
+      ORDER BY candidate.created_at DESC, candidate.id DESC
+      LIMIT $1`,
+    [limit],
+  )
+  return result.rows.map((row) => row.data as StoredCandidate)
+}
+
+/** One candidate with the handle of the source it came from (needed to write it back). */
+export async function getDbCandidateByIdentity(
+  profile: Pick<CvProfile, 'source' | 'country' | 'id'>,
+): Promise<{ profile: StoredCandidate; handle: string } | null> {
+  if (!hiringDbEnabled()) return null
+  await ensureSchema()
+  const result = await db().query(
+    `SELECT data, source_handle FROM ${schema()}.candidates
+      WHERE source = $1 AND country = $2 AND source_id = $3 AND active = TRUE`,
+    [String(profile.source || 'telegram').toLowerCase(), String(profile.country || '').toUpperCase(), String(profile.id || '')],
+  )
+  const row = result.rows[0]
+  return row ? { profile: row.data as StoredCandidate, handle: String(row.source_handle || '') } : null
+}
+
+/** A current candidate by the identifiers a share link carries: its id, or its url. Rare and cached by the caller. */
+export async function getDbCandidateByIdOrUrl(wanted: string): Promise<CvProfile | null> {
+  const value = String(wanted || '').trim()
+  if (!hiringDbEnabled() || !value) return null
+  try {
+    await ensureSchema()
+    const result = await db().query(
+      `SELECT candidate.data FROM ${schema()}.candidate_current current
+         JOIN ${schema()}.candidates candidate ON candidate.id = current.candidate_id
+        WHERE candidate.active = TRUE AND (candidate.source_id = $1 OR candidate.url = $1)
+        ORDER BY candidate.created_at DESC LIMIT 1`,
+      [value],
+    )
+    return (result.rows[0]?.data as CvProfile) || null
+  } catch {
+    return null
+  }
+}
+
+/** Current candidates in id order, one page at a time (snapshot export, search-index reconciliation). */
+export async function listDbCandidatesPage(afterId: number, limit: number): Promise<{ profiles: StoredCandidate[]; lastId: number }> {
+  if (!hiringDbEnabled()) return { profiles: [], lastId: afterId }
+  await ensureSchema()
+  const result = await db().query(
+    `SELECT candidate.id, candidate.data
+       FROM ${schema()}.candidate_current current
+       JOIN ${schema()}.candidates candidate ON candidate.id = current.candidate_id
+      WHERE candidate.active = TRUE AND candidate.id > $1
+        AND candidate.created_at >= (NOW() - INTERVAL '${RETENTION_MONTHS} months')
+        AND candidate.created_at <= (NOW() + INTERVAL '48 hours')
+      ORDER BY candidate.id LIMIT $2`,
+    [afterId, limit],
+  )
+  const rows = result.rows
+  return { profiles: rows.map((row) => row.data as StoredCandidate), lastId: rows.length ? Number(rows[rows.length - 1].id) : afterId }
+}
+
+/** How many candidates are current and live (what a write reports as "stored"). */
+export async function countDbCandidates(): Promise<number> {
+  if (!hiringDbEnabled()) return 0
+  await ensureSchema()
+  const result = await db().query(
+    `SELECT COUNT(*)::int AS n FROM ${schema()}.candidate_current current
+       JOIN ${schema()}.candidates candidate ON candidate.id = current.candidate_id WHERE candidate.active = TRUE`,
+  )
+  return Number(result.rows[0]?.n) || 0
 }
 
 export async function recordDbSourceRun(diagnostic: SourceRun): Promise<void> {
