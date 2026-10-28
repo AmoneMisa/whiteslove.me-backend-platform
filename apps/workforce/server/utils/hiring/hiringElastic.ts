@@ -115,7 +115,8 @@ async function request(path: string, init: RequestInit = {}): Promise<any> {
         const body = await response.text().catch(() => '')
         throw new Error(`Elasticsearch ${response.status}: ${body.slice(0, 300)}`)
     }
-    return response.status === 204 ? null : response.json()
+    // 204 and HEAD answer with no body to parse
+    return response.status === 204 || init.method === 'HEAD' ? null : response.json()
 }
 
 let availableAt = 0
@@ -132,19 +133,35 @@ export async function candidateSearchAvailable(): Promise<boolean> {
     return available
 }
 
-export async function ensureCandidateIndex(): Promise<void> {
+async function ensureCandidateIndexNow(): Promise<void> {
     try {
         await request(`/${CANDIDATE_INDEX}`, { method: 'HEAD' })
         return
     } catch {
         // Missing (or unreachable) — try to create it below.
     }
-    await request(`/${CANDIDATE_INDEX}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(indexDefinition()),
-    })
-    console.log(`[hiring:elasticsearch] created ${CANDIDATE_INDEX}`)
+    try {
+        await request(`/${CANDIDATE_INDEX}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(indexDefinition()),
+        })
+        console.log(`[hiring:elasticsearch] created ${CANDIDATE_INDEX}`)
+    } catch (error) {
+        // Someone else created it between the check and the PUT: that is the state we wanted.
+        if (!/resource_already_exists_exception/.test(String((error as Error)?.message))) throw error
+    }
+}
+
+let ensuring: Promise<void> | null = null
+
+/**
+ * Make sure the index exists. Writes, reconciliation and a search can all arrive at once on a cold start: they share
+ * one check-and-create, and a creation lost to a concurrent one counts as success.
+ */
+export function ensureCandidateIndex(): Promise<void> {
+    ensuring ??= ensureCandidateIndexNow().finally(() => { ensuring = null })
+    return ensuring
 }
 
 function toDocument(profile: CvProfile, syncToken: string) {

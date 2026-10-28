@@ -37,3 +37,43 @@ test('the keyword fields keep both views a query can use', () => {
   }
   assert.equal(mapping.name.fields.latin.analyzer, 'candidate_latin', 'a plain text field keeps its transliterated view')
 })
+
+test('the index is created once, an existing one is recognised (HEAD has no body), and a lost race counts as success', async () => {
+  const { ensureCandidateIndex } = await import('../server/utils/hiring/hiringElastic.ts')
+  const original = globalThis.fetch
+  const calls = []
+  const answer = (status, body = '') => new Response(body, { status, headers: { 'content-type': 'application/json' } })
+  try {
+    // exists: HEAD answers 200 with an empty body; nothing else may be sent
+    globalThis.fetch = async (url, init = {}) => { calls.push(`${init.method || 'GET'}`); return answer(200) }
+    await ensureCandidateIndex()
+    assert.deepEqual(calls, ['HEAD'])
+
+    // missing: HEAD 404, then one PUT, even when three callers arrive together
+    calls.length = 0
+    globalThis.fetch = async (url, init = {}) => {
+      calls.push(`${init.method || 'GET'}`)
+      await new Promise((resolve) => setTimeout(resolve, 5))
+      return init.method === 'HEAD' ? answer(404) : answer(200, '{"acknowledged":true}')
+    }
+    await Promise.all([ensureCandidateIndex(), ensureCandidateIndex(), ensureCandidateIndex()])
+    assert.deepEqual(calls, ['HEAD', 'PUT'])
+
+    // another process won the race: the PUT is refused as already existing, which is fine
+    calls.length = 0
+    globalThis.fetch = async (url, init = {}) => {
+      calls.push(`${init.method || 'GET'}`)
+      return init.method === 'HEAD'
+        ? answer(404)
+        : answer(400, '{"error":{"root_cause":[{"type":"resource_already_exists_exception"}],"type":"resource_already_exists_exception"}}')
+    }
+    await ensureCandidateIndex()
+    assert.deepEqual(calls, ['HEAD', 'PUT'])
+
+    // any other refusal is still an error
+    globalThis.fetch = async (url, init = {}) => (init.method === 'HEAD' ? answer(404) : answer(400, '{"error":{"type":"mapper_parsing_exception"}}'))
+    await assert.rejects(ensureCandidateIndex(), /mapper_parsing_exception/)
+  } finally {
+    globalThis.fetch = original
+  }
+})
