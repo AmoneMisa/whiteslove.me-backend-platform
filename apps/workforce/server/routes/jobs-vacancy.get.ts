@@ -7,7 +7,7 @@
 
 import { getStoredJobsSnapshot } from '../vacancies/infrastructure/jobsSnapshot'
 import { publicEntityId } from '../../shared/publicEntityId'
-import { getJobByPublicIdDb } from '../jobs/infrastructure/database'
+import { getJobByIdOrUrlDb, getJobByPublicIdDb, jobsReadFromDatabase } from '../jobs/infrastructure/database'
 
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
@@ -19,6 +19,14 @@ export default defineEventHandler(async (event) => {
     const databaseJob = await getJobByPublicIdDb(publicId)
     if (databaseJob) {
       return { job: { ...databaseJob, publicId: publicEntityId('job', databaseJob.source, databaseJob.id) } }
+    }
+  }
+
+  if (jobsReadFromDatabase()) {
+    // The table is the store: no second look in a file that holds the same vacancies.
+    const databaseJob = id ? await getJobByIdOrUrlDb(id) : null
+    return {
+      job: databaseJob ? { ...databaseJob, publicId: publicEntityId('job', databaseJob.source, databaseJob.id) } : null,
     }
   }
 

@@ -22,7 +22,7 @@ import { jobSearchKey, searchJobMatches } from '../vacancies/infrastructure/jobs
 import { keepUsaForeignerCandidate } from '../vacancies/domain/jobVisaSponsorship'
 import { isJobSourceAvailable } from '../utils/sources/jobSourceConfig'
 import { publicEntityId } from '../../shared/publicEntityId'
-import { queryJobsDb } from '../jobs/infrastructure/database'
+import { jobsReadFromDatabase, queryJobsDb } from '../jobs/infrastructure/database'
 
 const SORT_KEYS: SortKey[] = ['date', 'oldest', 'title', 'company', 'salary']
 const WORK_MODES: WorkMode[] = ['remote', 'hybrid', 'office', 'unknown']
@@ -161,6 +161,35 @@ export default defineEventHandler(async (event) => {
         pendingSources: [],
         failedSources: [],
         engine: 'postgresql',
+      }
+    }
+  }
+
+  // A text query with the database as the store: Elasticsearch finds the vacancies (fuzzy, transliterated), the
+  // database filters, orders, pages and counts them like every other query. No file is read, nothing is held whole.
+  // Without Elasticsearch the database's own text search answers instead.
+  if (search && jobsReadFromDatabase()) {
+    let found: Awaited<ReturnType<typeof searchJobMatches>> = null
+    try {
+      found = await searchJobMatches(search)
+    } catch (err) {
+      console.warn('[jobs:elasticsearch] search fallback:', (err as Error).message)
+    }
+    const databaseResult = await queryJobsDb(found ? { ...jobQuery, q: '', searchKeys: [...found.rank.keys()] } : jobQuery)
+    if (databaseResult) {
+      setResponseHeader(event, 'Cache-Control', 'private, max-age=30')
+      return {
+        ...databaseResult,
+        jobs: databaseResult.jobs.map((job) => ({
+          ...job,
+          publicId: publicEntityId('job', job.source, job.id),
+        })),
+        rates: getRates(),
+        warming: false,
+        loadedSources: databaseResult.loadedSources,
+        pendingSources: [],
+        failedSources: [],
+        engine: found ? 'elasticsearch' : 'postgresql',
       }
     }
   }

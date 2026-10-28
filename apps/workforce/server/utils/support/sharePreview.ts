@@ -89,6 +89,8 @@ export async function findSharedJob(id: string): Promise<any | null> {
   if (cached) return cached.value
 
   try {
+    const { getJobByIdOrUrlDb, jobsReadFromDatabase } = await import('../../jobs/infrastructure/database')
+    if (jobsReadFromDatabase()) return cacheSet(`job:${wanted}`, await getJobByIdOrUrlDb(wanted))
     // Jobs API lives directly in Nuxt. Read the same persisted snapshot instead
     // of making a loopback HTTP call, but keep ingestion modules out of SSR.
     const { getStoredJobsSnapshot } = await import('../../vacancies/infrastructure/jobsSnapshot')

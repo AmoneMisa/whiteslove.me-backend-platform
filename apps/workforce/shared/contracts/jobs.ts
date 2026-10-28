@@ -203,6 +203,11 @@ export interface JobQuery {
   languageLevel?: string
   excludeLanguages: string[]
   skills: string[]
+  /**
+   * Restrict the result to these vacancies, by search-index key (`source:id`, source lower-cased). Set when the text
+   * was matched by Elasticsearch and everything else (filters, order, paging, statistics) is the database's job.
+   */
+  searchKeys?: string[]
 }
 
 export interface SalaryStat {

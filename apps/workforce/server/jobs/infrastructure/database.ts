@@ -1,5 +1,7 @@
+import { createHash } from 'node:crypto'
 import { Pool } from 'pg'
 import type { Job, JobEmployerSummary, JobQuery, JobResponse, JobStats } from '../../../shared/contracts/jobs'
+import { ALL_SOURCES } from '../../../shared/contracts/jobs'
 import { MIN_EMPLOYER_ROLES, isPlaceholderCompany, jobEmployerKey, parseJobEmployerKey } from '../../../shared/hiring/jobEmployer'
 import { jobClusterIdentity, type JobClusterIdentity } from '../../../shared/hiring/jobCluster'
 import { publicEntityId } from '../../../shared/publicEntityId'
@@ -35,6 +37,15 @@ function schema(): string {
 
 export function jobsDbEnabled(): boolean {
   return Boolean(databaseUrl())
+}
+
+/**
+ * Readers (feed with a text query, one vacancy, share previews) use the database instead of the snapshot file when
+ * JOBS_READ_STORE=postgres. Separate from JOBS_STORE, which moves the writer: the table is kept current in either mode,
+ * so the two can be switched one after the other and each switched back on its own.
+ */
+export function jobsReadFromDatabase(): boolean {
+  return String(process.env.JOBS_READ_STORE || 'snapshot').trim().toLowerCase() === 'postgres' && jobsDbEnabled()
 }
 
 /** Lightweight readiness probe used by the workforce API container. */
@@ -508,6 +519,14 @@ function filteredWhere(query: JobQuery, sql: SqlBuilder): string {
   }
   if (query.location) parts.push(`LOWER(location) LIKE '%' || LOWER(${sql.add(query.location)}) || '%'`)
   if (query.q) parts.push(`to_tsvector('simple', search_text) @@ plainto_tsquery('simple', ${sql.add(query.q)})`)
+  // The search index's document id is `source:id` (the source is stored lower-case). An empty list matches nothing.
+  // Compared as (source, source_id) pairs so the index on those two columns answers it: 300 keys take a few
+  // milliseconds, where a comparison on the concatenated text scanned the whole table.
+  if (query.searchKeys) {
+    parts.push(`(source, source_id) IN (
+      SELECT split_part(k, ':', 1), substr(k, strpos(k, ':') + 1) FROM unnest(${sql.add(query.searchKeys)}::text[]) AS k
+    )`)
+  }
   if (query.skills.length) {
     parts.push(`skills @> ${sql.add(query.skills.map((value) => value.toLocaleLowerCase('en')))}::text[]`)
   }
@@ -595,6 +614,10 @@ function statsCacheKey(query: JobQuery): string {
     languageLevel: query.languageLevel?.toLocaleLowerCase('en') ?? null,
     excludeLanguages: normalizedList(query.excludeLanguages),
     skills: normalizedList(query.skills),
+    // thousands of keys: a digest of them, not the list
+    searchKeys: query.searchKeys
+      ? createHash('sha1').update([...query.searchKeys].sort().join('\n')).digest('base64url')
+      : null,
   })
 }
 
@@ -850,6 +873,32 @@ export async function getJobByPublicIdDb(publicId: string): Promise<Job | null> 
     const result = await db().query(
       `SELECT data FROM ${schema()}.vacancies WHERE active = TRUE AND public_id = $1::bigint LIMIT 1`,
       [publicId],
+    )
+    return result.rows[0]?.data || null
+  } catch {
+    return null
+  }
+}
+
+/**
+ * A live vacancy by the identifiers the snapshot lookup accepted: its id, or its url. Looked up through the two indexes
+ * that answer it (identity key = `source:url`, and source + id) for every known source, a few milliseconds where a
+ * scan of the live rows took seconds.
+ */
+export async function getJobByIdOrUrlDb(wanted: string): Promise<Job | null> {
+  const value = String(wanted || '').trim()
+  if (!jobsDbEnabled() || !value) return null
+  try {
+    await ensureSchema()
+    const result = await db().query(
+      `SELECT data FROM (
+         SELECT v.data, v.posted_at FROM ${schema()}.vacancies v
+           JOIN unnest($2::text[]) AS s ON v.identity_key = s || ':' || $1 WHERE v.active
+         UNION ALL
+         SELECT v.data, v.posted_at FROM ${schema()}.vacancies v
+           JOIN unnest($2::text[]) AS s ON v.source = s AND v.source_id = $1 WHERE v.active
+       ) found ORDER BY posted_at DESC LIMIT 1`,
+      [value, [...ALL_SOURCES]],
     )
     return result.rows[0]?.data || null
   } catch {

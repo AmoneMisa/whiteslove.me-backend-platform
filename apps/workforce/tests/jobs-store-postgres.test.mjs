@@ -128,3 +128,35 @@ test('migration 005 adds the column without a default and the runtime stays DDL-
   const runtime = await readFile(new URL('../server/jobs/infrastructure/database.ts', import.meta.url), 'utf8')
   assert.doesNotMatch(runtime, /\b(?:CREATE|ALTER)\s+(?:SCHEMA|TABLE|INDEX)\b/i)
 })
+
+test('readers move to the database one switch at a time: JOBS_READ_STORE, independent of the writer', () => {
+  delete process.env.JOBS_READ_STORE
+  process.env.JOBS_DATABASE_URL = 'postgresql://user@localhost/none'
+  assert.equal(database.jobsReadFromDatabase(), false, 'default stays the snapshot file')
+  process.env.JOBS_READ_STORE = 'postgres'
+  assert.equal(database.jobsReadFromDatabase(), true)
+  delete process.env.JOBS_DATABASE_URL
+  assert.equal(database.jobsReadFromDatabase(), false, 'no database configured')
+  delete process.env.JOBS_READ_STORE
+})
+
+test('a text query with the database as the store never loads the snapshot', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8')
+  const feed = await read('server/routes/jobs-feed.get.ts')
+  const readBranch = feed.indexOf('search && jobsReadFromDatabase()')
+  assert.ok(readBranch > -1 && readBranch < feed.indexOf('await getStoredSnapshot()'), 'the database branch comes first')
+  assert.match(feed, /searchKeys: \[\.\.\.found\.rank\.keys\(\)\]/)
+  assert.match(feed, /engine: found \? 'elasticsearch' : 'postgresql'/)
+
+  const vacancy = await read('server/routes/jobs-vacancy.get.ts')
+  assert.ok(vacancy.indexOf('jobsReadFromDatabase()') < vacancy.indexOf('await getStoredJobsSnapshot()'))
+  const share = await read('server/utils/support/sharePreview.ts')
+  assert.ok(share.indexOf('jobsReadFromDatabase()') < share.indexOf('getStoredJobsSnapshot()'))
+
+  const db = await read('server/jobs/infrastructure/database.ts')
+  assert.match(db, /\(source, source_id\) IN \(\s*SELECT split_part\(k, ':', 1\), substr\(k, strpos\(k, ':'\) \+ 1\)/, 'pairs, so the (source, source_id) index answers it')
+  assert.doesNotMatch(db, /lower\(source\) \|\| ':' \|\| source_id\) = ANY/)
+  assert.match(db, /searchKeys: query\.searchKeys\s*\? createHash\('sha1'\)/, 'statistics are cached per set of keys')
+  assert.match(db, /v\.identity_key = s \|\| ':' \|\| \$1/)
+})
