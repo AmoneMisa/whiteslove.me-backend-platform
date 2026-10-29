@@ -16,6 +16,7 @@ import { config } from '../config.js';
 import { fetchJson } from '../util/httpProvider.js';
 import { log } from '../util/logger.js';
 import { metrics } from '../util/metrics.js';
+import { currencyCode, placeNominative, samePlace, withoutNoun } from './place-normalize.js';
 
 const FLAGS = new Set([
   'newBuilding', 'balcony', 'airConditioner', 'gas', 'dishwasher', 'terrace', 'privateYard', 'tv', 'microwave', 'oven',
@@ -40,12 +41,13 @@ export function encoderValues({ fields = {}, spans = null, price = null }, { min
   }
   const first = (entity) => text(spans?.[entity]?.[0]?.text);
   if (first('ADDRESS')) out.address = first('ADDRESS');
-  if (first('DISTRICT')) out.district = first('DISTRICT');
+  // a district in the nominative, as the lexicon spells it: "Юнусабадский район" -> "Юнусабад"
+  if (first('DISTRICT')) out.district = placeNominative(first('DISTRICT')) ?? withoutNoun(first('DISTRICT')) ?? first('DISTRICT');
   const complex = first('COMPLEX');
   if (complex) out.residenceComplex = complex.replace(COMPLEX_MARKER, '').trim() || null;
   if (price && number(price.amount) != null && !price.ambiguous) out.priceAmount = price.amount;
   const currency = text(price?.currency?.text);
-  if (currency) out.priceCurrency = currency;
+  if (currency) out.priceCurrency = currencyCode(currency) ?? currency; // "грн." -> "UAH"
   // A deposit written as a plain amount is comparable; "2 месяца" or "без залога" needs the lexicon, later.
   const deposit = first('DEPOSIT');
   if (deposit && /^\d[\d\s.,]*$/.test(deposit)) out.depositAmount = Number(deposit.replace(/\s/g, '').replace(',', '.'));
@@ -55,7 +57,7 @@ export function encoderValues({ fields = {}, spans = null, price = null }, { min
 const norm = (value) => String(value).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
 
 /** 'agree' | 'disagree' | 'encoderOnly' | 'sourceOnly' | null (neither has a value). */
-export function compareValue(encoderValue, sourceValue) {
+export function compareValue(encoderValue, sourceValue, field = null) {
   const a = encoderValue ?? null;
   const b = sourceValue ?? null;
   if (a == null && b == null) return null;
@@ -63,6 +65,11 @@ export function compareValue(encoderValue, sourceValue) {
   if (a == null) return 'sourceOnly';
   if (typeof a === 'boolean' || typeof b === 'boolean') return a === b ? 'agree' : 'disagree';
   if (typeof a === 'number' && typeof b === 'number') return Math.abs(a - b) <= Math.max(0.5, Math.abs(b) * 0.005) ? 'agree' : 'disagree';
+  if (field === 'district') {
+    const same = samePlace(String(a), String(b));
+    if (same != null) return same ? 'agree' : 'disagree';
+  }
+  if (field === 'priceCurrency') return (currencyCode(String(a)) ?? norm(a)) === (currencyCode(String(b)) ?? norm(b)) ? 'agree' : 'disagree';
   const x = norm(a);
   const y = norm(b);
   if (!x || !y) return 'disagree';
@@ -99,8 +106,8 @@ export function recordShadow(prediction, { knownFacts = {}, data = {} } = {}) {
   const fields = new Set([...Object.keys(values), 'address', 'district', 'residenceComplex', 'priceAmount', 'priceCurrency', 'depositAmount']);
   for (const field of fields) {
     const row = { encoder: values[field] ?? null, parser: knownFacts?.[field] ?? null, llm: data?.[field] ?? null };
-    const parser = compareValue(row.encoder, row.parser);
-    const llm = compareValue(row.encoder, row.llm);
+    const parser = compareValue(row.encoder, row.parser, field);
+    const llm = compareValue(row.encoder, row.llm, field);
     if (!parser && !llm) continue;
     const stat = bucket(field);
     stat.seen += 1;

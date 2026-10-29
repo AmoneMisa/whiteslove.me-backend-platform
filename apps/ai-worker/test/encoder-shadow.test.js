@@ -20,7 +20,7 @@ const prediction = {
 
 test('encoder values: confident flags only, the complex without its marker, an ambiguous price left out', () => {
   const v = encoderValues(prediction, { minProb: 0.8 });
-  assert.deepEqual(v, { balcony: true, petsAllowed: false, address: 'ул. Абая 5', district: 'Юнусабад', residenceComplex: 'Мега Сити', priceAmount: 600, priceCurrency: '$', depositAmount: 300 });
+  assert.deepEqual(v, { balcony: true, petsAllowed: false, address: 'ул. Абая 5', district: 'Юнусабад', residenceComplex: 'Мега Сити', priceAmount: 600, priceCurrency: 'USD', depositAmount: 300 });
   assert.equal(encoderValues({ ...prediction, price: { ...prediction.price, ambiguous: true } }, { minProb: 0.8 }).priceAmount, undefined);
   assert.equal(encoderValues({ spans: { DEPOSIT: [{ text: '2 месяца' }] } }).depositAmount, undefined, 'a deposit in months needs the lexicon');
 });
@@ -72,4 +72,16 @@ test('shadow does nothing for an empty text', () => {
   metrics.encoderShadow.requests = 0;
   shadowEncoder({ text: '   ' }, {});
   assert.equal(metrics.encoderShadow.requests, 0);
+});
+
+test('encoder values: a district in the nominative and a currency as its code, as the lexicon spells them', () => {
+  const v = (spans, price) => encoderValues({ spans, price });
+  assert.equal(v({ DISTRICT: [{ text: 'Юнусабадский район' }] }).district, 'Юнусабад');
+  assert.equal(v({ DISTRICT: [{ text: 'Мирзо-Улугбекский район' }] }).district, 'Мирзо Улугбек');
+  assert.equal(v({ DISTRICT: [{ text: 'район Жилой' }] }).district, 'Жилой', 'an unknown name loses only the generic noun');
+  assert.equal(v({}, { amount: 5, ambiguous: false, currency: { text: 'грн.' } }).priceCurrency, 'UAH');
+  assert.equal(compareValue('Юнусабад', 'Yunusobod tumani', 'district'), 'agree');
+  assert.equal(compareValue('Юнусабад', 'Чиланзарский район', 'district'), 'disagree');
+  assert.equal(compareValue('$', 'USD', 'priceCurrency'), 'agree');
+  assert.equal(compareValue('грн', 'USD', 'priceCurrency'), 'disagree');
 });
