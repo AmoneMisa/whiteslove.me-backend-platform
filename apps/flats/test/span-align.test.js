@@ -526,8 +526,8 @@ test('facts: in a "label - value" line the span is the value, not the label', ()
 test('facts: another area is neutral, a stored value the lexicon cannot read is unknown, nothing stored and nothing written is absent', () => {
   const t = 'Квартира 45 м², жилая 30 м², 2-комнатная';
   const r = alignSpans(t, { area_sqm: 45, rooms: 2 });
-  assert.deepEqual(cut(t, r.spans, 'AREA'), ['45 м²']);
-  assert.deepEqual(cut(t, r.neutral, 'AREA'), ['30 м²'], 'the living area is not the total');
+  assert.deepEqual(cut(t, r.spans, 'AREA'), ['45 м²', '30 м²']);
+  assert.deepEqual(cut(t, r.neutral, 'AREA'), [], 'every area figure is marked, the living area included');
   assert.equal(r.ignore.includes('AREA'), false);
   const unread = alignSpans('Продам 3к', { rooms: 3 });
   assert.ok(unread.ignore.includes('ROOMS'), 'stored, but not in a form the lexicon reads: masked, not a negative');
@@ -561,17 +561,17 @@ test('months: the closest cue decides; a word after them settles it; a masked ph
   assert.deepEqual(kinds('Риелтору 50%'), ['COMMISSION:50%']);
 });
 
-test('facts: nothing stored, one value written one way -> a positive; two values -> unknown', () => {
+test('facts: nothing stored: what the text says is marked, every area figure included', () => {
   const ro = 'Apartament 2 camere, 70 mp, etajul 5 din 8';
   const r = alignSpans(ro, {});
   assert.deepEqual([cut(ro, r.spans, 'ROOMS'), cut(ro, r.spans, 'AREA'), cut(ro, r.spans, 'FLOOR')], [['2'], ['70 mp'], ['5']]);
   assert.equal(r.ignore.includes('AREA'), false);
   const two = 'Suprafață 70 mp sau 84 mp';
   const t = alignSpans(two, {});
-  assert.deepEqual(cut(two, t.spans, 'AREA'), []);
-  assert.equal(t.ignore.includes('AREA'), true, 'two different areas: unknown, not a negative');
+  assert.deepEqual(cut(two, t.spans, 'AREA'), ['70 mp', '84 mp']);
+  assert.equal(t.ignore.includes('AREA'), false, 'every figure is marked');
   const part = 'Жилая 30 м², общая 45 м²';
-  assert.deepEqual(cut(part, alignSpans(part, {}).spans, 'AREA'), ['45 м²'], 'a living area is not the area');
+  assert.deepEqual(cut(part, alignSpans(part, {}).spans, 'AREA'), ['30 м²', '45 м²'], 'the living area is an area figure too');
 });
 
 test('facts: slang room words are rooms; a euro flat has one room fewer than its name, and a studio has none', () => {

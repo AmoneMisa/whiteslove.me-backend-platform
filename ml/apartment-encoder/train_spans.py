@@ -176,21 +176,53 @@ def postfilter(entity, text, spans):
     return keep
 
 
+OVERLAP = 64  # tokens shared by neighbouring windows of a long text
+
+
+def split_windows(ids, offsets, max_len, overlap=OVERLAP):
+    """Windows of at most `max_len` tokens (with the two special tokens) over a tokenized text.
+
+    Returns (ids, offsets, own_lo, own_hi) per window. A window OWNS the characters from its first token that the
+    previous window did not own up to the first token of the next window: a span is read from the window that owns
+    its start, so nothing is counted twice and a span that crosses a boundary sits inside the owner's overlap.
+    """
+    if len(ids) <= max_len:
+        return [(ids, offsets, 0, float("inf"))]
+    body_ids, body_off = ids[1:-1], offsets[1:-1]
+    size = max_len - 2
+    stride = size - overlap
+    n = len(body_ids)
+    out = []
+    k = 0
+    while True:
+        s = k * stride
+        e = min(s + size, n)
+        last = e >= n
+        lo = 0 if k == 0 else body_off[s][0]
+        hi = float("inf") if last else body_off[(k + 1) * stride][0]
+        out.append(([ids[0]] + body_ids[s:e] + [ids[-1]], [offsets[0]] + body_off[s:e] + [offsets[-1]], lo, hi))
+        if last:
+            return out
+        k += 1
+
+
 def encode_all(rows, tok, max_len, chunk=2000):
-    """Tokenize everything once. Returns per-row dicts with ids, offsets, tags, use-mask."""
+    """Tokenize everything once. Returns per-window dicts with ids, offsets, tags, use-mask (one window for a short text)."""
     out = []
     for i in range(0, len(rows), chunk):
         part = rows[i:i + chunk]
-        enc = tok([r["text"] for r in part], truncation=True, max_length=max_len, return_offsets_mapping=True)
-        for r, ids, offsets in zip(part, enc["input_ids"], enc["offset_mapping"]):
-            out.append({
-                "ids": ids,
-                "offsets": offsets,
-                "tags": [token_tags(offsets, r["spans"], e) for e in ENTITIES],
-                "use": [0.0 if e in r["ignore"] else 1.0 for e in ENTITIES],
-                "tmask": token_mask(offsets, r.get("neutral", [])),
-                "row": r,
-            })
+        enc = tok([r["text"] for r in part], truncation=False, return_offsets_mapping=True)
+        for r, full_ids, full_offsets in zip(part, enc["input_ids"], enc["offset_mapping"]):
+            for ids, offsets, lo, hi in split_windows(full_ids, full_offsets, max_len):
+                out.append({
+                    "ids": ids,
+                    "offsets": offsets,
+                    "own": (lo, hi),
+                    "tags": [token_tags(offsets, r["spans"], e) for e in ENTITIES],
+                    "use": [0.0 if e in r["ignore"] else 1.0 for e in ENTITIES],
+                    "tmask": token_mask(offsets, r.get("neutral", [])),
+                    "row": r,
+                })
     return out
 
 
@@ -277,14 +309,15 @@ def evaluate(model, items, pad_id, args, device):
         pred = logits.float().argmax(-1).cpu()
         for i, it in enumerate(chunk):
             r = it["row"]
-            limit = max((b for _, b in it["offsets"]), default=0)  # text past truncation was never seen
+            limit = max((b for _, b in it["offsets"]), default=0)
+            lo, hi = it["own"]  # the part of a long text this window answers for
             for j, entity in enumerate(ENTITIES):
                 if entity in r["ignore"]:
                     continue
-                gold = [(s["start"], s["end"]) for s in r["spans"] if s["label"] == entity and s["end"] <= limit]
+                gold = [(s["start"], s["end"]) for s in r["spans"] if s["label"] == entity and lo <= s["start"] < hi and s["end"] <= limit]
                 found = postfilter(entity, r["text"], decode(pred[i, :len(it["ids"]), j].tolist(), it["offsets"], r["text"]))
                 neutral = [(n["start"], n["end"]) for n in r.get("neutral", []) if n["label"] == entity]
-                found = [(a, b) for a, b in found if not any(a < nb and na < b for na, nb in neutral)]
+                found = [(a, b) for a, b in found if lo <= a < hi and not any(a < nb and na < b for na, nb in neutral)]
                 s = stat[entity]
                 s["gold"] += len(gold)
                 s["found"] += len(found)

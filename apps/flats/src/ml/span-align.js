@@ -97,14 +97,14 @@ const AMOUNT_CUES = [
   ['DEPOSIT', unicode(/(?:залог\p{L}*|депозит\p{L}*|deposit|гарантийн\p{L}*\s+(?:взнос|платеж\p{L}*|депозит)|застав\p{L}*|завдат\p{L}*|garan[țt]\p{L}*)/iu)],
   ['UTILITIES', unicode(/(?:коммунал\p{L}*|комунал\p{L}*|ком\.?\s?услуг\p{L}*|к\/у|utilit\p{L}*|komunal\p{L}*|kommunal\p{L}*|[iî]ntre[țt]inere|cheltuieli)/iu)],
   // the realtor's fee: "комиссия 50%", "комиссия 300$", "риелтору 1 месяц"
-  ['COMMISSION', unicode(/(?:комисс\p{L}*|комісі\p{L}*|риелтор\p{L}*|риэлтор\p{L}*|рієлтор\p{L}*|агентск\p{L}*|comision\p{L}*|komissiya\p{L}*|komisyon\p{L}*|vositachi\p{L}*)/iu)],
+  ['COMMISSION', unicode(/(?:комисс\p{L}*|комісі\p{L}*|риелтор\p{L}*|риэлтор\p{L}*|рієлтор\p{L}*|агентск\p{L}*|comision\p{L}*|komissiya\p{L}*|komisyon\p{L}*|vositachi\p{L}*|makler\p{L}*\s+(?:haqqi|xizmat\p{L}*))/iu)],
   // months paid in advance: only a count of months is a prepayment here ("предоплата за 3 месяца", "2 месяца вперёд")
   ['PREPAYMENT', unicode(/(?:предоплат\p{L}*|предварительн\p{L}*\s+оплат\p{L}*|передоплат\p{L}*|оплат\p{L}*\s+(?:за\s+)?(?:вперед|вперёд|наперед|наперёд)|аванс\p{L}*|prepay\p{L}*|oldindan\p{L}*|avans\p{L}*)/iu)],
 ];
 // the word after a count of months that makes it a prepayment, not a deposit: "2 месяца вперёд"
 const FORWARD_WORD = /^[\s ]{0,2}(?:вперед|вперёд|наперед|наперёд|заранее|oldindan|[iî]n\s+avans|avans|ahead|in\s+advance)(?![\p{L}])/iu;
 // No middleman means no fee: "без риелтора", "от владельца", "bez makler", "fără agent". Written as a regex source.
-const NO_AGENT = String.raw`(?:без\s+(?:посредник\p{L}*|посередник\p{L}*|риелтор\p{L}*|риэлтор\p{L}*|рієлтор\p{L}*|агент\p{L}*)|(?:от|від)\s+(?:владельц\p{L}*|собственник\p{L}*|хозя[ие]н\p{L}*|власник\p{L}*|господар\p{L}*)|maklersiz|vositachisiz|bez\s?makler|(?:makler|maklerlik\s+hizmati)\s+yo['ʻ’]q|(?:mulk\s+)?egasidan|f[aă]r[aă]\s+(?:agen[țt]\p{L}*|intermediar\p{L}*)|(?:direct\s+)?de\s+la\s+proprietar)`;
+const NO_AGENT = String.raw`(?:без\s+(?:посредник\p{L}*|посередник\p{L}*|риелтор\p{L}*|риэлтор\p{L}*|рієлтор\p{L}*|агент\p{L}*)|(?:от|від)\s+(?:владельц\p{L}*|собственник\p{L}*|хозя\p{L}*|власник\p{L}*|господар\p{L}*)|maklersiz|vositachisiz|bez\s?makler|(?:makler|maklerlik\s+hizmati)\s+yo['ʻ’]q|(?:mulk\s+)?egasidan|f[aă]r[aă]\s+(?:agen[țt]\p{L}*|intermediar\p{L}*)|(?:direct\s+)?de\s+la\s+proprietar)`;
 // "без комиссии", "комиссия не берётся": no fee. The span is the statement itself.
 const NO_COMMISSION = new RegExp(
   String.raw`(?<![\p{L}\p{N}])(?:без\s+(?:комисс\p{L}*|комісі\p{L}*|агентск\p{L}*\s+комисс\p{L}*)|(?:комисс\p{L}*|комісі\p{L}*)\s+(?:не\s+(?:берем|берём|берется|берётся|нужна|нужно|взимается|беремо|стягується)|нет|відсутня|отсутствует)|fără\s+comision\p{L}*|fara\s+comision\p{L}*|bez\s+komissiya\p{L}*|komissiyasiz|${NO_AGENT})(?![\p{L}\p{N}])`,
@@ -1005,10 +1005,10 @@ function alignComplex(text, taken) {
 // ("жилая 30" next to a total of 56) is neutral, not a negative.
 
 const FACT_TOKEN = /[\p{L}\p{N}][\p{L}\p{N}.,'’²³/%-]*/gu;
-const FACT_GAP = /^[ \u00a0,;:()\-–—]{0,3}$/u;
+const FACT_GAP = /^[ \u00a0,;:()\-–—/]{0,3}$/u;
 const NUMBER_WORD = /(?:одно|одн|двух|двох|трех|трёх|трьох|четырех|четырёх|чотир|пяти|п'яти)/iu;
 const ROOMISH = /(?:комн|кімн|ком\b|ком\.|xona|хона|camer|room|студи|(?:^|[^\p{L}])к(?:[^\p{L}]|$)|\dк)/iu;
-const PART_OF_AREA = /(?:жил\p{L}*|кухн\p{L}*|living|bucătări\p{L}*|kitchen|utilă|construit\p{L}*)[^\d]{0,10}$/iu; // a part of the area is not the area
+const PART_OF_AREA = /(?:жил\p{L}*|кухн\p{L}*|living|bucătări\p{L}*|bucatari\p{L}*|kitchen|utilă|construit\p{L}*|dormitor\p{L}*|balcon\p{L}*|спальн\p{L}*|гостин\p{L}*|санузел|ванн\p{L}*|хол\p{L}*|коридор\p{L}*|baie|hol)[^\d]{0,10}$/iu; // a part of the area is not the area
 const ROOM_SLANG = /^(?:евро|євро)?-?(?:однушк|двушк|тр[её]шк|четыр[её]шк)\p{L}*$/iu;
 const EURO_WORD = /^(?:евро|євро)/iu;
 const AREAISH = /(?:м2|м²|м\s?2|кв|sqm|sq\.?\s?m|mp(?![\p{L}])|m2|m²|площ|maydon|area|suprafa)/iu;
@@ -1105,7 +1105,10 @@ function alignFacts(text, row, taken) {
           let end = start + m[0].length;
           const unit = UNIT_AFTER.exec(text.slice(end, end + 14));
           if (unit) end += unit[0].length;
-          if (PART_OF_AREA.test(text.slice(Math.max(0, start - 16), start))) { if (!(want.area != null && close(area, want.area))) addNeutral('AREA', start, end); } else put('AREA', area, want.area, start, end);
+          // A person marks every area figure (total, living, kitchen, rooms); telling them apart is done after the model.
+          // A figure that is neither the stored one nor a named part of the flat may belong to something else: neutral.
+          if (PART_OF_AREA.test(text.slice(Math.max(0, start - 16), start)) || want.area == null) add('AREA', start, end);
+          else put('AREA', area, want.area, start, end);
           break;
         }
       }

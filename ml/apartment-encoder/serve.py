@@ -82,15 +82,19 @@ class Predictor:
     def predict_spans(self, text):
         model, tok, cfg = self.spans
         row = {"text": text, "spans": [], "ignore": [], "neutral": []}
-        item = T.encode_all([row], tok, cfg["max_len"])[0]
-        ids, mask, *_ = T.collate([item], tok.pad_token_id)
-        with T.autocast(self.device):
-            logits = model(ids.to(self.device), mask.to(self.device))
-        pred = logits.float().argmax(-1).cpu()[0]
-        found = {
-            e: T.postfilter(e, text, T.decode(pred[: len(item["ids"]), j].tolist(), item["offsets"], text))
-            for j, e in enumerate(T.ENTITIES)
-        }
+        # A long text is read in overlapping windows; each span comes from the window that owns its start.
+        items = T.encode_all([row], tok, cfg["max_len"])
+        found = {e: [] for e in T.ENTITIES}
+        for item in items:
+            ids, mask, *_ = T.collate([item], tok.pad_token_id)
+            with T.autocast(self.device):
+                logits = model(ids.to(self.device), mask.to(self.device))
+            pred = logits.float().argmax(-1).cpu()[0]
+            lo, hi = item["own"]
+            for j, e in enumerate(T.ENTITIES):
+                spans = T.decode(pred[: len(item["ids"]), j].tolist(), item["offsets"], text)
+                found[e].extend(sp for sp in T.postfilter(e, text, spans) if lo <= sp[0] < hi)
+        found = {e: sorted(set(v)) for e, v in found.items()}
         spans = {e: [{"start": a, "end": b, "text": text[a:b]} for a, b in found[e]] for e in T.ENTITIES}
 
         price = None
@@ -113,7 +117,7 @@ class Predictor:
                     for r in ranked
                 ],
             }
-        return {"spans": spans, "price": price, "truncated": len(item["ids"]) >= cfg["max_len"]}
+        return {"spans": spans, "price": price, "truncated": False}
 
     def predict(self, text):
         with self.lock:
