@@ -45,8 +45,9 @@ export async function attachListingLines(listings, { loadLines, log = console.wa
         ...listing,
         ...(entry.line ? { listingLine: entry.line } : {}),
         ...(entry.otherProperties > 0 ? { contactListingCount: entry.otherProperties } : {}),
-        // The contact of this listing is in the imported realtor registry: 'risk' or 'trusted'. About the listing, never a verdict on a person.
-        ...(entry.registrySignal ? { registrySignal: entry.registrySignal } : {}),
+        // The contact of this listing is in the imported realtor registry: 'hidden_agent' (an agent publishing as an owner),
+        // 'flagged' (a negative class) or 'trusted', with up to three public source links. About the listing, not a verdict.
+        ...(entry.registrySignal ? { registrySignal: entry.registrySignal, registrySources: entry.registrySources ?? [] } : {}),
       };
     });
   } catch (error) {

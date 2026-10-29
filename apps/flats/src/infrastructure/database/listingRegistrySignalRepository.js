@@ -16,7 +16,14 @@ export async function refreshListingRegistrySignals({ client = pool } = {}) {
              CASE ri.identifier_type WHEN 'telegram' THEN '@' || lower(ri.canonical_value) ELSE ri.canonical_value END AS key,
              ri.canonical_value,
              bool_or(c.kind IN ('risk', 'both')) AS risk,
-             bool_or(c.kind IN ('trusted', 'both')) AS trusted
+             bool_or(c.kind IN ('trusted', 'both')) AS trusted,
+             -- Why, from the classification: a negative class wins, then a hidden agent; an unknown class shows nothing.
+             CASE
+               WHEN bool_or(ri.classification ~* '^(hard blacklist|high-risk|negative)') THEN 'flagged'
+               WHEN bool_or(ri.classification ~* '^hidden realtor') THEN 'hidden_agent'
+               WHEN NOT bool_or(c.kind IN ('risk', 'both')) THEN 'trusted'
+             END AS category,
+             array_agg(DISTINCT ri.cluster_id) AS cluster_ids
       FROM platform.registry_identifiers ri
       JOIN platform.registry_clusters c USING (cluster_id)
       WHERE ri.identifier_type IN ('phone', 'telegram') AND ri.normalization_error IS NULL
@@ -24,7 +31,15 @@ export async function refreshListingRegistrySignals({ client = pool } = {}) {
       HAVING bool_or(c.kind IN ('risk', 'both')) <> bool_or(c.kind IN ('trusted', 'both'))
     ),
     input AS (
-      SELECT m.listing_id, CASE WHEN r.risk THEN 'risk' ELSE 'trusted' END AS signal, r.type, r.canonical_value
+      SELECT m.listing_id, r.category,
+             CASE WHEN r.category = 'trusted' THEN '[]'::jsonb ELSE (
+               -- public source links of the registry clusters, at most three
+               SELECT coalesce(jsonb_agg(u.url), '[]'::jsonb) FROM (
+                 SELECT DISTINCT s.url FROM platform.registry_sources s
+                 WHERE s.cluster_id = ANY(r.cluster_ids) AND s.url ~* '^https?://' ORDER BY s.url LIMIT 3
+               ) u
+             ) END AS sources,
+             r.type, r.canonical_value
       FROM reg r
       JOIN (
         -- Two plain equality joins (the contact index serves the first); one OR would force a nested loop.
@@ -32,7 +47,7 @@ export async function refreshListingRegistrySignals({ client = pool } = {}) {
         UNION
         SELECT l.id, lower(l.data->>'contact') FROM listings l WHERE l.active = TRUE AND l.data->>'contact' LIKE '@%'
       ) m ON m.key = r.key
-      WHERE NOT EXISTS (
+      WHERE r.category IS NOT NULL AND NOT EXISTS (
         SELECT 1 FROM platform.contact_points cp
         LEFT JOIN platform.actor_contact_points acp ON acp.contact_point_id = cp.id
         LEFT JOIN platform.actor_identities a ON a.id = acp.actor_id
@@ -41,16 +56,19 @@ export async function refreshListingRegistrySignals({ client = pool } = {}) {
       )
     ),
     upserted AS (
-      INSERT INTO platform.listing_registry_signals (listing_id, signal, computed_at)
-      SELECT listing_id, min(signal), NOW() FROM input GROUP BY listing_id HAVING count(DISTINCT signal) = 1
-      ON CONFLICT (listing_id) DO UPDATE SET signal = EXCLUDED.signal, computed_at = EXCLUDED.computed_at
-        WHERE platform.listing_registry_signals.signal IS DISTINCT FROM EXCLUDED.signal
+      INSERT INTO platform.listing_registry_signals (listing_id, signal, category, sources, computed_at)
+      SELECT listing_id, CASE WHEN min(category) = 'trusted' THEN 'trusted' ELSE 'risk' END, min(category), (array_agg(sources))[1], NOW()
+      FROM input GROUP BY listing_id HAVING count(DISTINCT category) = 1
+      ON CONFLICT (listing_id) DO UPDATE
+        SET signal = EXCLUDED.signal, category = EXCLUDED.category, sources = EXCLUDED.sources, computed_at = EXCLUDED.computed_at
+        WHERE (platform.listing_registry_signals.category, platform.listing_registry_signals.sources)
+          IS DISTINCT FROM (EXCLUDED.category, EXCLUDED.sources)
       RETURNING 1
     ),
     removed AS (
       DELETE FROM platform.listing_registry_signals s
       WHERE NOT EXISTS (SELECT 1 FROM input i WHERE i.listing_id = s.listing_id)
-         OR s.listing_id IN (SELECT listing_id FROM input GROUP BY listing_id HAVING count(DISTINCT signal) > 1)
+         OR s.listing_id IN (SELECT listing_id FROM input GROUP BY listing_id HAVING count(DISTINCT category) > 1)
       RETURNING 1
     )
     SELECT (SELECT count(*) FROM upserted)::int AS upserted, (SELECT count(*) FROM removed)::int AS removed
@@ -58,12 +76,15 @@ export async function refreshListingRegistrySignals({ client = pool } = {}) {
   return { ...(result.rows[0] ?? { upserted: 0, removed: 0 }), durationMs: Date.now() - startedAt };
 }
 
-/** Signals for a page of listings: listing id -> 'risk' | 'trusted'. One primary-key lookup. */
+/** Signals for a page of listings: listing id -> { category, sources }. One primary-key lookup. */
 export async function loadRegistrySignals(listingIds, client = pool) {
   const ids = [...new Set((listingIds ?? []).map(Number).filter((id) => Number.isSafeInteger(id) && id > 0))];
   const signals = new Map();
   if (!ids.length) return signals;
-  const result = await client.query('SELECT listing_id, signal FROM platform.listing_registry_signals WHERE listing_id = ANY($1::bigint[])', [ids]);
-  for (const row of result.rows) signals.set(Number(row.listing_id), row.signal);
+  const result = await client.query(
+    'SELECT listing_id, category, sources FROM platform.listing_registry_signals WHERE listing_id = ANY($1::bigint[]) AND category IS NOT NULL',
+    [ids],
+  );
+  for (const row of result.rows) signals.set(Number(row.listing_id), { category: row.category, sources: Array.isArray(row.sources) ? row.sources : [] });
   return signals;
 }

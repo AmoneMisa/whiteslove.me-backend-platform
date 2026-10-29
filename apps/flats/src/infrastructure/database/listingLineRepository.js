@@ -35,9 +35,10 @@ export async function loadStoredListingLinesWithRegistry(listingIds, client = po
     loadStoredListingLines(listingIds, client),
     loadRegistrySignals(listingIds, client).catch(() => new Map()),
   ]);
-  for (const [id, registrySignal] of signals) {
+  for (const [id, { category, sources }] of signals) {
     const entry = lines.get(id);
-    lines.set(id, entry ? { ...entry, registrySignal } : { line: null, otherProperties: 0, registrySignal });
+    const registry = { registrySignal: category, registrySources: sources };
+    lines.set(id, entry ? { ...entry, ...registry } : { line: null, otherProperties: 0, ...registry });
   }
   return lines;
 }
