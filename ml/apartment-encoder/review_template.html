@@ -1,0 +1,691 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Проверка разметки</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --ink: #1c2330; --muted: #667085; --line: #dde1e8;
+    --ok: #1a7f4b; --ok-bg: #e6f4ec; --bad: #b42318; --bad-bg: #fdecea; --accent: #2457d6;
+    --price: #c9f0d6; --currency: #bfe9ee; --address: #cddcff; --metro: #e3d3fa;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b2029; --ink: #e8ebf0; --muted: #9aa4b2; --line: #2c3340;
+      --ok: #5fd08f; --ok-bg: #173323; --bad: #ff8b7e; --bad-bg: #3a1c19; --accent: #7aa2ff;
+      --price: #1f5a37; --currency: #1c5560; --address: #233b78; --metro: #4a2f7c;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, "Segoe UI", sans-serif; }
+  header { position: sticky; top: 0; z-index: 5; background: var(--card); border-bottom: 1px solid var(--line);
+           padding: 10px 16px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  header h1 { font-size: 16px; margin: 0 12px 0 0; }
+  .bar { flex: 1 1 160px; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; min-width: 120px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); width: 0; }
+  button, select { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+                   border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  main { max-width: 900px; margin: 0 auto; padding: 16px; }
+  .help { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 16px; }
+  .help li { margin: 2px 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 16px; }
+  .card.done { border-left: 4px solid var(--ok); }
+  .head { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+  .head b { color: var(--ink); font-size: 15px; }
+  .tag { border: 1px solid var(--line); border-radius: 10px; padding: 0 8px; font-size: 12px; }
+  .text { white-space: pre-wrap; word-break: break-word; background: var(--bg); border-radius: 8px; padding: 10px 12px;
+          max-height: 340px; overflow: auto; }
+  /* the text is cut into .seg pieces (one per boundary of a model span or of your selection);
+     each carries its start offset so a selection can be turned back into exact positions */
+  .seg.mk { border-radius: 3px; padding: 0 1px; }
+  .seg.PRICE { background: var(--price); } .seg.CURRENCY { background: var(--currency); }
+  .seg.ADDRESS { background: var(--address); } .seg.METRO { background: var(--metro); }
+  .seg.chosen { outline: 2px solid var(--ok); font-weight: 600; }
+  .text sup { font-size: 10px; color: var(--muted); margin-left: 2px; user-select: none; -webkit-user-select: none; }
+  /* what you added: a coloured line under the text, so it shows through a model highlight */
+  :root { --a-address: #2f6bff; --a-district: #f08c00; --a-landmark: #d6336c; --a-metro: #9c36b5; --a-complex: #0c8599; --a-micro: #e8590c; --a-locality: #94d82d; --a-price: #2b8a3e; --a-currency: #f59f00; --a-deposit: #495057; --a-utilities: #862e9c; --a-nearby: #5c7cfa; --a-area: #0b7285; --a-rooms: #5f3dc4; --a-floor: #a61e4d; --a-floors-total: #e67700; --a-commission: #c92a2a; --a-prepayment: #1864ab; }
+  .seg.add { border-bottom: 3px solid; }
+  .add-ADDRESS { border-color: var(--a-address); } .add-DISTRICT { border-color: var(--a-district); } .add-MICRODISTRICT { border-color: var(--a-micro); } .add-PRICE { border-color: var(--a-price); } .add-CURRENCY { border-color: var(--a-currency); } .add-DEPOSIT { border-color: var(--a-deposit); } .add-UTILITIES { border-color: var(--a-utilities); } .add-NEARBY { border-color: var(--a-nearby); } .add-AREA { border-color: var(--a-area); } .add-ROOMS { border-color: var(--a-rooms); } .add-FLOOR { border-color: var(--a-floor); } .add-FLOORS_TOTAL { border-color: var(--a-floors-total); } .add-COMMISSION { border-color: var(--a-commission); } .add-PREPAYMENT { border-color: var(--a-prepayment); } .add-LOCALITY { border-color: var(--a-locality); }
+  .add-LANDMARK { border-color: var(--a-landmark); } .add-METRO { border-color: var(--a-metro); } .add-COMPLEX { border-color: var(--a-complex); }
+  .tag.add-AREA, .tag.add-ROOMS, .tag.add-FLOOR, .tag.add-FLOORS_TOTAL, .tag.add-COMMISSION, .tag.add-PREPAYMENT, .tag.add-NEARBY, .tag.add-PRICE, .tag.add-CURRENCY, .tag.add-DEPOSIT, .tag.add-UTILITIES, .tag.add-ADDRESS, .tag.add-DISTRICT, .tag.add-MICRODISTRICT, .tag.add-LOCALITY, .tag.add-LANDMARK, .tag.add-METRO, .tag.add-COMPLEX { border-width: 0 0 3px; border-style: solid; border-radius: 0; padding: 0 2px; }
+  .addrow { display: flex; gap: 10px; align-items: center; padding: 4px 0; border-top: 1px solid var(--line); }
+  .addrow .val { flex: 1; word-break: break-word; }
+  .addrow .del { padding: 2px 8px; line-height: 1.2; }
+  .seltool { position: fixed; left: 0; right: 0; bottom: 0; z-index: 20; display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+             padding: 8px 12px calc(8px + env(safe-area-inset-bottom)); background: var(--card); border-top: 1px solid var(--line);
+             box-shadow: 0 -2px 12px rgba(0, 0, 0, .18); }
+  .seltool[hidden] { display: none; }
+  .seltool .selinfo { flex: 1 1 100%; font-weight: 600; word-break: break-word; }
+  .seltool button { border-bottom-width: 3px; }
+  .seltool button[data-label=ADDRESS] { border-bottom-color: var(--a-address); } .seltool button[data-label=DISTRICT] { border-bottom-color: var(--a-district); }
+  .seltool button[data-label=LANDMARK] { border-bottom-color: var(--a-landmark); } .seltool button[data-label=METRO] { border-bottom-color: var(--a-metro); }
+  .seltool button[data-label=COMPLEX] { border-bottom-color: var(--a-complex); }
+  .seltool button[data-label=PRICE] { border-bottom-color: var(--a-price); } .seltool button[data-label=CURRENCY] { border-bottom-color: var(--a-currency); }
+  .seltool button[data-label=DEPOSIT] { border-bottom-color: var(--a-deposit); } .seltool button[data-label=UTILITIES] { border-bottom-color: var(--a-utilities); } .seltool button[data-label=NEARBY] { border-bottom-color: var(--a-nearby); }
+  .seltool button[data-label=AREA] { border-bottom-color: var(--a-area); } .seltool button[data-label=ROOMS] { border-bottom-color: var(--a-rooms); } .seltool button[data-label=FLOOR] { border-bottom-color: var(--a-floor); } .seltool button[data-label=FLOORS_TOTAL] { border-bottom-color: var(--a-floors-total); } .seltool button[data-label=COMMISSION] { border-bottom-color: var(--a-commission); } .seltool button[data-label=PREPAYMENT] { border-bottom-color: var(--a-prepayment); }
+  .seltool button[data-label=MICRODISTRICT] { border-bottom-color: var(--a-micro); } .seltool button[data-label=LOCALITY] { border-bottom-color: var(--a-locality); }
+  body.selecting .fab { bottom: 120px; }
+  body.selecting footer { padding-bottom: 140px; }
+  .legend span { display: inline-block; padding: 0 8px; border-radius: 3px; margin-right: 6px; }
+  h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 0 6px; }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: middle; }
+  td.val { word-break: break-word; }
+  .e { font-size: 12px; color: var(--muted); width: 88px; }
+  .verdict { white-space: nowrap; text-align: right; }
+  .verdict label { display: inline-block; padding: 2px 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; margin-left: 4px; }
+  .verdict input { display: none; }
+  .verdict input:checked + span.okl { background: var(--ok-bg); color: var(--ok); }
+  .verdict input:checked + span.badl { background: var(--bad-bg); color: var(--bad); }
+  .verdict label:has(input:checked) { border-color: currentColor; font-weight: 600; }
+  .missed label { margin-right: 14px; white-space: nowrap; }
+  input[type=text] { width: 100%; font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px;
+                     background: var(--card); color: var(--ink); }
+  .seen { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); font-weight: 600; }
+  .seen label { cursor: pointer; }
+  .muted { color: var(--muted); }
+  .empty { color: var(--muted); font-style: italic; }
+  .hidedone { cursor: pointer; white-space: nowrap; }
+  .goto { display: inline-flex; gap: 4px; }
+  .goto input { width: 64px; font: inherit; border: 1px solid var(--line); border-radius: 6px; padding: 4px 6px;
+                background: var(--card); color: var(--ink); }
+  .card .head { align-items: center; }
+  .skipbtn { margin-left: auto; cursor: pointer; border: 1px dashed var(--line); border-radius: 6px; padding: 3px 10px;
+             color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .skipbtn:has(input:checked) { border-style: solid; border-color: var(--muted); color: var(--ink); font-weight: 600; background: var(--bg); }
+  .card.skipped { opacity: .7; border-left: 4px solid var(--muted); }
+  .card.skipped .body { display: none; }
+  .card.skipped .text { max-height: 90px; }
+  .card.flash { outline: 3px solid var(--accent); }
+  .fab { display: none; }
+  /* phone: rows stack (label, text, buttons), larger tap targets, no input zoom on iOS */
+  @media (max-width: 640px) {
+    header { position: static; padding: 8px 10px; gap: 8px; } /* a sticky panel would cover a third of the screen */
+    .fab { display: block; position: fixed; right: 14px; bottom: 18px; width: 48px; height: 48px; border-radius: 24px;
+           font-size: 22px; padding: 0; background: var(--accent); color: #fff; border-color: var(--accent);
+           box-shadow: 0 2px 8px rgba(0, 0, 0, .3); z-index: 6; }
+    header h1 { flex: 1 0 100%; margin: 0; }
+    main { padding: 10px; }
+    .card { padding: 12px; }
+    .text { max-height: 260px; font-size: 15px; }
+    table, tbody, tr, td { display: block; width: 100%; }
+    tr { border-top: 1px solid var(--line); padding: 6px 0; }
+    td { border: 0; padding: 2px 0; }
+    .e { width: auto; }
+    .verdict { text-align: left; white-space: normal; }
+    .verdict label { padding: 9px 18px; margin: 4px 8px 4px 0; }
+    .missed label { display: inline-block; padding: 8px 0; margin-right: 18px; }
+    input[type=checkbox] { width: 20px; height: 20px; vertical-align: middle; }
+    input[type=text], button, select { font-size: 16px; }
+    .seen { padding: 12px 0 4px; }
+    .seltool button { min-height: 44px; }
+  }
+  footer { max-width: 900px; margin: 0 auto 40px; padding: 0 16px; color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Проверка разметки</h1>
+  <div class="bar" title="размечено"><i id="barfill"></i></div>
+  <span id="progress">0 / 0</span>
+  <select id="filter">
+    <option value="all">все группы</option>
+  </select>
+  <label class="hidedone" title="убрать с экрана карточки, которые уже размечены или пропущены"><input type="checkbox" id="hidedone"> скрыть размеченные</label>
+  <button id="next">К следующему неразмеченному</button>
+  <span class="goto"><input type="number" id="goto" min="1" placeholder="№" aria-label="номер карточки"><button id="gobtn">Перейти</button></span>
+  <button id="import" title="принять файл review_results.json, например с другого устройства">Загрузить результаты</button>
+  <input type="file" id="importfile" accept=".json,application/json" hidden>
+  <button id="download" class="primary">Скачать результаты</button>
+  <span id="sync" class="muted"></span>
+</header>
+<main>
+  <div class="help">
+    <b>Как размечать.</b> В каждом объявлении цветом выделено то, что нашла модель.
+    <ul>
+      <li><b>«Что нашла модель»</b>: по каждому фрагменту нажмите «верно» или «неверно».
+        Верно значит, что выделен именно этот адрес, станция, сумма или валюта.</li>
+      <li><b>«Что сейчас в БД»</b>: то же для значения, которое сегодня хранится в базе
+        (пусто, если ничего нет). Так считается «до».</li>
+      <li><b>«Модель пропустила»</b>: отметьте, если в тексте есть цена, адрес или станция метро, а выделения нет.
+        Если нет ни там, ни там, ничего не отмечайте. «Адрес» это улица или улица с домом (то, что показывается на сайте).
+        Остальное отмечайте отдельными галочками, не как адрес: <b>район / мкр / местность</b> (например Глинка,
+        Гидропарк, Лесопарк), <b>ориентир</b> (рядом Тийин Маркет, 71 школа, остановка, парк) и <b>ЖК</b> (ЖК Дельмар). Модель пока ищет
+        только улицу, цену, валюту и станцию метро, поэтому эти две галочки покажут, как часто она пропускает.</li>
+      <li><b>«Сборное / мусор»</b> (в правом верхнем углу карточки): в одном тексте несколько квартир, набор
+        поисковых фильтров или просто не объявление. Одним нажатием карточка пропускается, остальное в ней
+        размечать не нужно. Такие карточки считаются отдельно и в точность не входят.</li>
+      <li><b>Выделение фрагментов.</b> Если модель что-то пропустила или выделила неверно, выделите нужный фрагмент
+        в тексте мышью (на телефоне удерживайте палец на слове и потяните) и в панели внизу выберите тип:
+        <b>адрес</b> (улица или улица с домом), <b>район / мкр / местность</b>, <b>ориентир</b>, <b>ЖК</b> (жилой комплекс; вместе с «ЖК», если оно написано) или <b>метро</b>.
+        Выделенное подчёркивается цветом и появляется в списке «Ваши выделения» (оттуда можно удалить). Именно эти
+        фрагменты идут в обучение, поэтому выделяйте точно: только название, без лишних слов. Можно выделить и
+        то, что модель отметила неверно, но по-другому (например, улицу без номера): неверный фрагмент пометьте
+        «неверно», а свой добавьте.</li>
+      <li>Цена объявления: из нескольких сумм «звёздочка» ★ показывает ту, которую модель выбрала как цену аренды/продажи.
+        Отметьте, правильный ли выбор.</li>
+      <li>В конце каждой карточки поставьте галочку «проверено целиком»: пока её нет, объявление не считается
+        размеченным (даже если модель ничего не нашла и в БД пусто, нужно убедиться, что в тексте ничего не пропущено).</li>
+      <li>Прогресс сохраняется в браузере сам. Когда закончите (или захотите сделать паузу),
+        нажмите «Скачать результаты».</li>
+    </ul>
+    <div class="legend">
+      <span style="background:var(--price)">цена</span><span style="background:var(--currency)">валюта</span><span style="background:var(--address)">адрес</span><span style="background:var(--metro)">метро</span>
+      &nbsp;|&nbsp; ваши выделения:
+      <span style="border-bottom:3px solid var(--a-price)">цена</span><span style="border-bottom:3px solid var(--a-currency)">валюта</span><span style="border-bottom:3px solid var(--a-deposit)">залог</span><span style="border-bottom:3px solid var(--a-utilities)">коммунальные</span><span style="border-bottom:3px solid var(--a-address)">адрес</span><span style="border-bottom:3px solid var(--a-district)">район</span><span style="border-bottom:3px solid var(--a-micro)">мкр / махалля</span><span style="border-bottom:3px solid var(--a-locality)">местность</span><span style="border-bottom:3px solid var(--a-landmark)">ориентир</span><span style="border-bottom:3px solid var(--a-nearby)">рядом</span><span style="border-bottom:3px solid var(--a-area)">площадь</span><span style="border-bottom:3px solid var(--a-rooms)">комнаты</span><span style="border-bottom:3px solid var(--a-floor)">этаж</span><span style="border-bottom:3px solid var(--a-floors-total)">этажность</span><span style="border-bottom:3px solid var(--a-commission)">комиссия</span><span style="border-bottom:3px solid var(--a-prepayment)">вперёд</span><span style="border-bottom:3px solid var(--a-metro)">метро</span><span style="border-bottom:3px solid var(--a-complex)">ЖК</span>
+    </div>
+  </div>
+  <div id="list"></div>
+</main>
+<div id="seltool" class="seltool" hidden>
+  <span class="selinfo" id="selinfo"></span>
+  <button data-label="PRICE" title="цена квартиры (аренда в месяц или цена продажи): только число">цена</button>
+  <button data-label="CURRENCY" title="валюта цены: $, грн, сум, евро, у.е.">валюта</button>
+  <button data-label="DEPOSIT" title="залог / депозит: только число">залог</button>
+  <button data-label="UTILITIES" title="коммунальные платежи, если указана сумма: только число">коммунальные</button>
+  <button data-label="ADDRESS" title="улица или улица с домом, которую модель не нашла">адрес</button>
+  <button data-label="DISTRICT" title="район города: Юнусабад, Шевченківський район, Sectorul 3">район</button>
+  <button data-label="MICRODISTRICT" title="микрорайон, махалля, квартал, жилой массив: мкр Тархова, махалля Қорасарой, 5 квартал">мкр / махалля</button>
+  <button data-label="LOCALITY" title="местность, которая не район и не микрорайон: Глинка, Гидропарк, Лесопарк">местность</button>
+  <button data-label="LANDMARK" title="ориентир, конкретное место: ТЦ Мега, школа №33, парк Победы">ориентир</button>
+  <button data-label="NEARBY" title="что рядом, общими словами: школа, магазины, рынки, детский сад">рядом</button>
+  <button data-label="AREA" title="площадь квартиры: число с единицей, например «56 м²»">площадь</button>
+  <button data-label="ROOMS" title="количество комнат так, как написано: «3-комнатная», «2 xonali», «2 camere»">комнаты</button>
+  <button data-label="FLOOR" title="этаж квартиры: только число">этаж</button>
+  <button data-label="FLOORS_TOTAL" title="этажность дома: только число">этажность</button>
+  <button data-label="COMMISSION" title="комиссия риелтора как написана: «50%», «300$», «1 месяц» или «без комиссии»">комиссия</button>
+  <button data-label="PREPAYMENT" title="оплата вперёд: срок, например «2 месяца» (из «оплата за 2 месяца вперёд»)">вперёд</button>
+  <button data-label="COMPLEX" title="жилой комплекс: ЖК Дельмар, Complexul Qualis">ЖК</button>
+  <button data-label="METRO" title="станция метро, которую модель не нашла">метро</button>
+  <button id="selcancel" title="снять выделение">✕</button>
+</div>
+<button id="top" class="fab" title="к началу страницы">↑</button>
+<footer>Тексты уже очищены от телефонов, почты и ссылок. Страница работает локально и ничего никуда не отправляет.</footer>
+
+<script id="data" type="application/json">/*ITEMS*/</script>
+<script>
+(function () {
+  'use strict';
+  var DATA = JSON.parse(document.getElementById('data').textContent);
+  var ITEMS = DATA.items, GROUPS = DATA.groups;
+  var STORE = 'span-review-' + DATA.setId;
+  var NAMES = { PRICE: 'цена', CURRENCY: 'валюта', ADDRESS: 'адрес', METRO: 'метро', DISTRICT: 'район', MICRODISTRICT: 'мкр / махалля', LOCALITY: 'местность', DEPOSIT: 'залог', UTILITIES: 'коммунальные', LANDMARK: 'ориентир', NEARBY: 'рядом', AREA: 'площадь', ROOMS: 'комнаты', FLOOR: 'этаж', FLOORS_TOTAL: 'этажность', COMMISSION: 'комиссия', PREPAYMENT: 'вперёд', COMPLEX: 'ЖК' };
+  var state = {};
+  try { state = JSON.parse(localStorage.getItem(STORE) || '{}'); } catch (e) { state = {}; }
+
+  // Served by review_server.py (http): every change is also sent to the PC, so a phone and a
+  // computer fill in the same file. Opened as a plain file, answers stay in this browser only.
+  var SYNC = /^https?:$/.test(location.protocol);
+  var KEY = new URLSearchParams(location.search).get('key') || '';
+  var sent = {}, syncTimer = null, built = false;
+  var applyVisibility = function () {}; // set in build(): group filter + "hide marked"
+  var ITEM_IDS = {}, ITEM_BY_N = {};
+  ITEMS.forEach(function (item) { ITEM_IDS[item.id] = true; ITEM_BY_N[item.n] = item; });
+
+  function setStatus(text, bad) {
+    var s = document.getElementById('sync');
+    if (s) { s.textContent = text; s.style.color = bad ? 'var(--bad)' : 'var(--ok)'; }
+  }
+  function endpoint() { return 'results?key=' + encodeURIComponent(KEY); }
+
+  function save() {
+    try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* private mode */ }
+    if (SYNC) { clearTimeout(syncTimer); syncTimer = setTimeout(push, 500); }
+  }
+
+  // A card that was only looked at (a blank entry created when it was drawn) is not an answer.
+  // Sending those would let a blank card from one device overwrite a marked one from another.
+  function touched(s) {
+    return !!s && !!(s.seen || s.skip || s.choice || s.note || (s.added && s.added.length) || Object.keys(s.spans).length || Object.keys(s.db).length ||
+      Object.keys(s.missed).some(function (k) { return s.missed[k]; }));
+  }
+
+  function push() {
+    var out = {}, snapshot = {};
+    Object.keys(state).forEach(function (id) {
+      if (touched(state[id]) && sent[id] !== JSON.stringify(state[id])) {
+        state[id].t = Date.now(); out[id] = state[id]; snapshot[id] = JSON.stringify(state[id]);
+      }
+    });
+    if (!Object.keys(out).length) return;
+    fetch(endpoint(), { method: 'POST', headers: { 'content-type': 'application/json' },
+                        body: JSON.stringify({ setId: DATA.setId, results: out }) })
+      .then(function (r) { if (!r.ok) throw new Error(r.status); })
+      .then(function () {
+        // remember what was sent, not what is there now: an edit made while the request was in flight must still go out
+        Object.keys(snapshot).forEach(function (id) { sent[id] = snapshot[id]; });
+        setStatus('✓ сохранено на ПК', false);
+      })
+      .catch(function () { setStatus('нет связи с ПК: отметки пока только на этом устройстве', true); });
+  }
+
+  function newer(incoming, local) {
+    if (!local) return true;
+    var a = incoming.t || 0, b = local.t || 0;
+    if (a !== b) return a > b;
+    return !!incoming.seen && !local.seen; // same age: keep the one that is further along
+  }
+
+  // Takes answers from `results` where they are newer than ours; returns how many were taken.
+  function mergeIn(results, fromServer) {
+    var taken = 0;
+    Object.keys(results || {}).forEach(function (id) {
+      var r = results[id];
+      if (!ITEM_IDS[id] || !r || !newer(r, state[id])) return;
+      state[id] = { spans: r.spans || {}, db: r.db || {}, missed: r.missed || {}, choice: r.choice || null,
+                    note: r.note || '', seen: !!r.seen, skip: !!r.skip, added: r.added || [], sv: r.sv || 0, t: r.t || 0 };
+      if (fromServer) sent[id] = JSON.stringify(state[id]); // already on the PC, do not send it back
+      taken++;
+    });
+    try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* private mode */ }
+    return taken;
+  }
+  function get(id) { return state[id] || (state[id] = { spans: {}, db: {}, missed: {}, choice: null, note: '' }); }
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    Object.keys(attrs || {}).forEach(function (k) {
+      if (k === 'class') n.className = attrs[k]; else if (k === 'text') n.textContent = attrs[k]; else n.setAttribute(k, attrs[k]);
+    });
+    (kids || []).forEach(function (c) { n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
+    return n;
+  }
+
+  // spans use Unicode code points (what Python indexes), so slice by code points, not UTF-16 units.
+  // The text is cut into .seg pieces at every boundary of a model span or of one of your own
+  // selections. Each piece remembers its start offset, so a mouse selection can be turned back into
+  // exact positions: the model's labels (<sup>) are not .seg and never count towards an offset.
+  function renderText(item, added) {
+    var cps = Array.from(item.text), n = cps.length, chosenStart = item.pred.price ? item.pred.price.span.start : -1;
+    var marks = [];
+    Object.keys(item.pred.spans).forEach(function (ent) {
+      item.pred.spans[ent].forEach(function (s) { marks.push({ ent: ent, s: s.start, e: s.end }); });
+    });
+    marks.sort(function (a, b) { return a.s - b.s; });
+    var kept = [], last = 0; // overlapping model spans are still listed in the table below
+    marks.forEach(function (m) { if (m.s >= last) { kept.push(m); last = m.e; } });
+    added = added || [];
+
+    var cuts = {}; cuts[0] = 1; cuts[n] = 1;
+    kept.forEach(function (m) { cuts[m.s] = 1; cuts[m.e] = 1; });
+    added.forEach(function (a) { cuts[a.start] = 1; cuts[a.end] = 1; });
+    var pts = Object.keys(cuts).map(Number).sort(function (a, b) { return a - b; });
+
+    var box = el('div', { class: 'text' });
+    for (var i = 0; i + 1 < pts.length; i++) {
+      var s = pts[i], e = pts[i + 1];
+      var mark = kept.filter(function (m) { return m.s <= s && s < m.e; })[0];
+      var mine = added.filter(function (a) { return a.start <= s && s < a.end; });
+      var cls = 'seg' + (mark ? ' mk ' + mark.ent + (mark.ent === 'PRICE' && mark.s === chosenStart ? ' chosen' : '') : '') +
+        mine.map(function (a) { return ' add add-' + a.label; }).join('');
+      var seg = el('span', { class: cls, 'data-s': String(s) });
+      seg.textContent = cps.slice(s, e).join('');
+      if (mine.length) seg.title = 'ваше выделение: ' + mine.map(function (a) { return NAMES[a.label]; }).join(', ');
+      box.appendChild(seg);
+      if (mark && mark.e === e) { // the label goes after the last piece of a model span
+        box.appendChild(el('sup', { text: (mark.ent === 'PRICE' && mark.s === chosenStart ? '★' : '') + NAMES[mark.ent] }));
+      }
+    }
+    return box;
+  }
+
+  // Offset (in code points) of a DOM point inside the text box: the text of all .seg pieces before it.
+  function offsetIn(box, node, off) {
+    var r = document.createRange();
+    r.setStart(box, 0);
+    try { r.setEnd(node, off); } catch (e) { return -1; }
+    var len = 0;
+    r.cloneContents().querySelectorAll('.seg').forEach(function (s) { len += Array.from(s.textContent).length; });
+    return len;
+  }
+
+  function verdict(name, current, onChange) {
+    var wrap = el('span', { class: 'verdict' });
+    [['ok', 'верно', 'okl'], ['bad', 'неверно', 'badl']].forEach(function (o) {
+      var input = el('input', { type: 'radio', name: name, value: o[0] });
+      if (current === o[0]) input.checked = true;
+      input.addEventListener('change', function () { onChange(o[0]); refresh(); });
+      wrap.appendChild(el('label', {}, [input, el('span', { class: o[2], text: o[1] })]));
+    });
+    return wrap;
+  }
+
+  function complete(item) {
+    var st = get(item.id), ok = true;
+    if (st.skip) return true; // a compilation or junk card is finished the moment it is flagged
+    Object.keys(item.pred.spans).forEach(function (ent) {
+      item.pred.spans[ent].forEach(function (s, i) { if (!st.spans[ent + ':' + i]) ok = false; });
+    });
+    dbRows(item).forEach(function (r) { if (r.value !== null && !st.db[r.key]) ok = false; });
+    if (item.pred.price && !st.choice) ok = false;
+    if (!st.seen) ok = false; // an untouched card must not count as "nothing was missed"
+    return ok;
+  }
+
+  function dbRows(item) {
+    var d = item.db, price = (d.price != null) ? (d.price + (d.currency ? ' ' + d.currency : '')) : null;
+    var address = d.address || d.street || null;
+    return [
+      { key: 'price', label: 'цена', value: price },
+      { key: 'address', label: 'адрес', value: address },
+      { key: 'metro', label: 'метро', value: d.metro || null }
+    ];
+  }
+
+  function card(item) {
+    var st = get(item.id), c = el('section', { class: 'card', id: 'c' + item.n });
+    c.dataset.group = item.group;
+    c.dataset.n = item.n;
+    st.added = st.added || []; // spans you select in the text: what the model missed (or got wrong)
+    var head = el('div', { class: 'head' }, [
+      el('b', { text: '№ ' + item.n }),
+      el('span', { class: 'tag', text: GROUPS[item.group] }),
+      el('span', { text: item.id })
+    ]);
+    if (item.pred.truncated) head.appendChild(el('span', { class: 'tag', title: 'текст длиннее, чем читает модель', text: 'текст обрезан' }));
+    // a card ticked "checked in full" before the kinds of place were told apart says nothing about them
+    var oldBadge = el('span', { class: 'tag', style: 'display:none',
+      title: 'Эта карточка размечена до того, как появились площадь, комнаты, этаж, этажность, комиссия и оплата вперёд. Если они в тексте есть, выделите их нужной кнопкой и снова поставьте галочку «проверено целиком».',
+      text: 'до площади, этажа, комиссии, оплаты вперёд' });
+    function updateBadge() { oldBadge.style.display = (st.seen && (st.sv || 0) < 7 && !st.skip) ? '' : 'none'; }
+    updateBadge();
+    head.appendChild(oldBadge);
+
+    // one click for "several flats in one post / search filters / not a listing": the rest of the card is skipped
+    var skip = el('input', { type: 'checkbox' });
+    skip.checked = !!st.skip;
+    c.classList.toggle('skipped', !!st.skip);
+    skip.addEventListener('change', function () {
+      st.skip = skip.checked; c.classList.toggle('skipped', st.skip); updateBadge(); save(); refresh();
+    });
+    head.appendChild(el('label', { class: 'skipbtn', title: 'в одном тексте несколько квартир, набор фильтров или не объявление' },
+      [skip, ' сборное / мусор']));
+    c.appendChild(head);
+    var textBox = renderText(item, st.added);
+    c.appendChild(textBox);
+
+    // your own selections: shown under the text, each can be removed
+    var addedBox = el('div', { class: 'addedlist' });
+    function renderAdded() {
+      addedBox.innerHTML = '';
+      st.added.forEach(function (a, i) {
+        var del = el('button', { class: 'del', title: 'удалить это выделение', text: '✕' });
+        del.addEventListener('click', function () { st.added.splice(i, 1); save(); c._redraw(); refresh(); });
+        addedBox.appendChild(el('div', { class: 'addrow' }, [el('span', { class: 'tag add-' + a.label, text: NAMES[a.label] }),
+          el('span', { class: 'val', text: a.text }), del]));
+      });
+      if (!st.added.length) {
+        addedBox.appendChild(el('div', { class: 'empty', text: 'Выделите фрагмент текста выше (мышью; на телефоне удерживайте палец) и выберите тип внизу экрана.' }));
+      }
+    }
+    c._redraw = function () { // repaint the text with the current selections and refresh the list
+      var fresh = renderText(item, st.added);
+      c.replaceChild(fresh, textBox);
+      textBox = fresh;
+      renderAdded();
+    };
+    c._missedInputs = {};
+    renderAdded();
+
+    var body = el('div', { class: 'body' }); // everything below is hidden while the card is flagged as skipped
+    body.appendChild(el('h3', { text: 'Ваши выделения (что модель пропустила или выделила неверно)' }));
+    body.appendChild(addedBox);
+    body.appendChild(el('h3', { text: 'Что нашла модель' }));
+    var t1 = el('table'), any = false;
+    Object.keys(item.pred.spans).forEach(function (ent) {
+      // the same text marked several times (a title repeated in the body) is judged once
+      var groups = {}, order = [];
+      item.pred.spans[ent].forEach(function (s, i) {
+        var k = s.text.trim().toLowerCase();
+        if (!groups[k]) { groups[k] = { text: s.text, idxs: [], star: false }; order.push(k); }
+        groups[k].idxs.push(i);
+        if (ent === 'PRICE' && item.pred.price && item.pred.price.span.start === s.start) groups[k].star = true;
+      });
+      order.forEach(function (k) {
+        var g = groups[k], first = ent + ':' + g.idxs[0];
+        any = true;
+        t1.appendChild(el('tr', {}, [
+          el('td', { class: 'e', text: NAMES[ent] }),
+          el('td', { class: 'val', text: g.text + (g.star ? ' ★' : '') + (g.idxs.length > 1 ? '  ×' + g.idxs.length : '') }),
+          el('td', {}, [verdict('s-' + item.n + '-' + ent + '-' + g.idxs[0], st.spans[first], function (v) {
+            g.idxs.forEach(function (i) { st.spans[ent + ':' + i] = v; });
+            save();
+          })])
+        ]));
+      });
+    });
+    if (!any) t1.appendChild(el('tr', {}, [el('td', { class: 'empty', text: 'ничего не найдено' })]));
+    body.appendChild(t1);
+
+    if (item.pred.price) {
+      var p = item.pred.price, line = el('div', { class: 'muted' });
+      line.textContent = 'Модель выбрала ценой ' + p.span.text + (p.currency ? ' ' + p.currency.text : '') +
+        (p.ambiguous ? ' (неуверенно: несколько сумм с равной оценкой)' : '') + '. Это цена объявления?';
+      var row = el('div', { class: 'verdict' }, [verdict('choice-' + item.n, st.choice, function (v) { st.choice = v; save(); })]);
+      body.appendChild(el('div', { style: 'display:flex;flex-wrap:wrap;gap:6px;justify-content:space-between;align-items:center;margin-top:6px' }, [line, row]));
+    }
+
+    body.appendChild(el('h3', { text: 'Что сейчас в БД' }));
+    var t2 = el('table');
+    dbRows(item).forEach(function (r) {
+      var cells = [el('td', { class: 'e', text: r.label })];
+      if (r.value === null) {
+        cells.push(el('td', { class: 'empty', text: 'пусто' }), el('td'));
+      } else {
+        cells.push(el('td', { class: 'val', text: r.value }),
+          el('td', {}, [verdict('db-' + item.n + '-' + r.key, st.db[r.key], function (v) { st.db[r.key] = v; save(); })]));
+      }
+      t2.appendChild(el('tr', {}, cells));
+    });
+    body.appendChild(t2);
+
+    body.appendChild(el('h3', { text: 'Модель пропустила (в тексте есть, а выделения нет)' }));
+    var missed = el('div', { class: 'missed' });
+    ['PRICE', 'CURRENCY', 'DEPOSIT', 'UTILITIES', 'ADDRESS', 'METRO', 'DISTRICT', 'MICRODISTRICT', 'LOCALITY', 'LANDMARK', 'NEARBY', 'AREA', 'ROOMS', 'FLOOR', 'FLOORS_TOTAL', 'COMMISSION', 'PREPAYMENT', 'COMPLEX'].forEach(function (ent) {
+      var input = el('input', { type: 'checkbox' });
+      input.checked = !!st.missed[ent];
+      input.addEventListener('change', function () { st.missed[ent] = input.checked; save(); refresh(); });
+      c._missedInputs[ent] = input;
+      missed.appendChild(el('label', {}, [input, ' ' + NAMES[ent]]));
+    });
+    body.appendChild(missed);
+
+    var seen = el('input', { type: 'checkbox' });
+    seen.checked = !!st.seen;
+    seen.addEventListener('change', function () {
+      st.seen = seen.checked;
+      st.sv = seen.checked ? 7 : 0; // 6 = checked with "рядом" apart from "ориентир" (older cards: generic words are read as "рядом")
+      updateBadge(); save(); refresh();
+    });
+    body.appendChild(el('div', { class: 'seen' }, [el('label', {}, [seen, ' Объявление проверено целиком, в том числе пропуски'])]));
+
+    var note = el('input', { type: 'text', placeholder: 'комментарий (необязательно)', value: st.note || '' });
+    note.addEventListener('input', function () { st.note = note.value; save(); });
+    body.appendChild(el('div', { style: 'margin-top:10px' }, [note]));
+    c.appendChild(body);
+    return c;
+  }
+
+  function refresh() {
+    var done = 0, skipped = 0;
+    ITEMS.forEach(function (item) {
+      var d = complete(item); if (d) done++;
+      if (get(item.id).skip) skipped++;
+      var c = document.getElementById('c' + item.n); if (c) c.classList.toggle('done', d);
+    });
+    document.getElementById('progress').textContent = done + ' / ' + ITEMS.length + (skipped ? ' (сборных: ' + skipped + ')' : '');
+    document.getElementById('barfill').style.width = (100 * done / ITEMS.length) + '%';
+  }
+
+  // ---- selecting a fragment of text and labelling it --------------------------------------
+  var pending = null, selTimer = null, hideTimer = null;
+
+  // The current mouse / touch selection as exact positions in one card's text, or null.
+  function readSelection() {
+    var sel = window.getSelection();
+    if (!sel || !sel.rangeCount || sel.isCollapsed) return null;
+    var range = sel.getRangeAt(0), anc = range.commonAncestorContainer;
+    var node = anc.nodeType === 1 ? anc : anc.parentElement;
+    var box = node && node.closest ? node.closest('.text') : null;
+    if (!box) return null; // the selection must lie inside one card's text
+    var c = box.closest('.card'), item = ITEM_BY_N[c.dataset.n];
+    var a = offsetIn(box, range.startContainer, range.startOffset), b = offsetIn(box, range.endContainer, range.endOffset);
+    if (a < 0 || b < 0) return null;
+    var cps = Array.from(item.text);
+    while (a < b && /\s/.test(cps[a])) a++;                    // no leading blanks
+    while (b > a && /[\s.,;:!?]/.test(cps[b - 1])) b--;        // no trailing blanks or sentence punctuation
+    if (b <= a) return null;
+    return { item: item, card: c, start: a, end: b, text: cps.slice(a, b).join('') };
+  }
+
+  function hideTool() {
+    document.getElementById('seltool').hidden = true;
+    document.body.classList.remove('selecting');
+    pending = null;
+  }
+
+  function updateTool() {
+    var p = readSelection();
+    if (p) {
+      clearTimeout(hideTimer);
+      pending = p;
+      var shown = p.text.length > 60 ? p.text.slice(0, 58) + '…' : p.text;
+      document.getElementById('selinfo').textContent = '«' + shown + '» это:';
+      document.getElementById('seltool').hidden = false;
+      document.body.classList.add('selecting');
+    } else if (pending) {
+      // tapping a button on a phone can clear the selection just before the click arrives:
+      // keep the last selection for a moment so that click still works
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(hideTool, 700);
+    }
+  }
+
+  function addSelected(label) {
+    var p = pending;
+    if (!p) return;
+    var st = get(p.item.id);
+    st.added = st.added || [];
+    var duplicate = st.added.some(function (a) { return a.label === label && a.start === p.start && a.end === p.end; });
+    if (!duplicate) st.added.push({ label: label, start: p.start, end: p.end, text: p.text });
+    st.missed = st.missed || {};
+    st.missed[label] = true; // adding one means "the model did not find it"; the tick is shown, and can be undone
+    var box = p.card._missedInputs && p.card._missedInputs[label];
+    if (box) box.checked = true;
+    save();
+    p.card._redraw();
+    refresh();
+    window.getSelection().removeAllRanges();
+    hideTool();
+  }
+
+  function setupSelection() {
+    document.addEventListener('selectionchange', function () { clearTimeout(selTimer); selTimer = setTimeout(updateTool, 120); });
+    var tool = document.getElementById('seltool');
+    // on a computer a click would clear the selection first; this keeps it
+    tool.addEventListener('mousedown', function (e) { e.preventDefault(); });
+    tool.querySelectorAll('button[data-label]').forEach(function (b) {
+      b.addEventListener('click', function () { addSelected(b.dataset.label); });
+    });
+    document.getElementById('selcancel').addEventListener('click', function () {
+      window.getSelection().removeAllRanges();
+      hideTool();
+    });
+  }
+
+  function build() {
+    var list = document.getElementById('list'), filter = document.getElementById('filter');
+    Object.keys(GROUPS).forEach(function (g) { filter.appendChild(el('option', { value: g, text: GROUPS[g] })); });
+    ITEMS.forEach(function (item) { list.appendChild(card(item)); });
+
+    // Which cards are on screen: the chosen group, minus finished ones when "hide marked" is on.
+    // Only re-evaluated when the choice changes (not after every click), so a card you just
+    // finished does not vanish from under your finger.
+    var hideDone = document.getElementById('hidedone');
+    try { hideDone.checked = localStorage.getItem('span-review-hide') === '1'; } catch (e) { /* private mode */ }
+    applyVisibility = function () {
+      ITEMS.forEach(function (item) {
+        var show = (filter.value === 'all' || filter.value === item.group) && !(hideDone.checked && complete(item));
+        document.getElementById('c' + item.n).style.display = show ? '' : 'none';
+      });
+    };
+    filter.addEventListener('change', applyVisibility);
+    hideDone.addEventListener('change', function () {
+      try { localStorage.setItem('span-review-hide', hideDone.checked ? '1' : '0'); } catch (e) { /* private mode */ }
+      applyVisibility();
+    });
+    function goTo() {
+      var n = parseInt(document.getElementById('goto').value, 10);
+      var c = document.getElementById('c' + n);
+      if (!c) { alert('Нет карточки с таким номером (1-' + ITEMS.length + ').'); return; }
+      c.style.display = ''; // show it even if the group filter or "hide marked" would hide it
+      c.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      c.classList.add('flash'); setTimeout(function () { c.classList.remove('flash'); }, 1800);
+    }
+    document.getElementById('gobtn').addEventListener('click', goTo);
+    document.getElementById('goto').addEventListener('keydown', function (e) { if (e.key === 'Enter') goTo(); });
+    document.getElementById('next').addEventListener('click', function () {
+      for (var i = 0; i < ITEMS.length; i++) {
+        var c = document.getElementById('c' + ITEMS[i].n);
+        if (c.style.display !== 'none' && !complete(ITEMS[i])) { c.scrollIntoView({ behavior: 'smooth', block: 'start' }); return; }
+      }
+      alert('Всё размечено. Нажмите «Скачать результаты».');
+    });
+    document.getElementById('download').addEventListener('click', function () {
+      var out = { setId: DATA.setId, results: {} };
+      ITEMS.forEach(function (item) {
+        if (touched(state[item.id])) out.results[item.id] = state[item.id]; // cards only looked at are not answers
+      });
+      var a = el('a', { href: URL.createObjectURL(new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' })), download: 'review_results.json' });
+      document.body.appendChild(a); a.click(); a.remove();
+    });
+    document.getElementById('top').addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+    var importFile = document.getElementById('importfile');
+    document.getElementById('import').addEventListener('click', function () { importFile.click(); });
+    importFile.addEventListener('change', function () {
+      var f = importFile.files[0];
+      if (!f) return;
+      var reader = new FileReader();
+      reader.onload = function () {
+        try {
+          var d = JSON.parse(reader.result);
+          if (d.setId !== DATA.setId) { alert('Этот файл от другого набора объявлений.'); return; }
+          var n = mergeIn(d.results, false);
+          save(); rerender();
+          alert('Загружено отметок: ' + n);
+        } catch (e) { alert('Не удалось прочитать файл.'); }
+        importFile.value = '';
+      };
+      reader.readAsText(f);
+    });
+    setupSelection();
+    built = true;
+    applyVisibility();
+    refresh();
+  }
+
+  function rerender() {
+    var list = document.getElementById('list');
+    list.innerHTML = '';
+    ITEMS.forEach(function (item) { list.appendChild(card(item)); });
+    applyVisibility(); // re-apply the chosen group and "hide marked"
+    refresh();
+  }
+
+  function start() {
+    if (!SYNC) { build(); return; }
+    var opened = false;
+    function open() { if (!opened) { opened = true; build(); } }
+    setTimeout(open, 4000); // do not hold the page back if the PC answers slowly
+    fetch(endpoint())
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (d) { mergeIn(d.results, true); setStatus('✓ связь с ПК есть', false); })
+      .catch(function () { setStatus('нет связи с ПК: отметки пока только на этом устройстве', true); })
+      .then(function () { if (built) rerender(); else open(); push(); });
+  }
+  start();
+})();
+</script>
+</body>
+</html>

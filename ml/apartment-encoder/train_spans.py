@@ -28,7 +28,8 @@ from transformers import AutoModel, AutoTokenizer
 # model line up with an older one. Models trained before DISTRICT and LANDMARK existed carry their own
 # list in config.json: call set_entities(cfg.get("entities", LEGACY_ENTITIES)) before building them.
 LEGACY_ENTITIES = ["PRICE", "CURRENCY", "ADDRESS", "METRO"]
-ENTITIES = ["PRICE", "CURRENCY", "ADDRESS", "METRO", "DISTRICT", "LANDMARK", "COMPLEX", "MICRODISTRICT", "LOCALITY", "DEPOSIT", "UTILITIES", "NEARBY"]
+ENTITIES = ["PRICE", "CURRENCY", "ADDRESS", "METRO", "DISTRICT", "LANDMARK", "COMPLEX", "MICRODISTRICT", "LOCALITY", "DEPOSIT", "UTILITIES", "NEARBY",
+            "AREA", "FLOOR", "FLOORS_TOTAL", "ROOMS", "COMMISSION", "PREPAYMENT"]
 TAGS = ["O", "B", "I"]
 
 
@@ -138,13 +139,25 @@ def postfilter(entity, text, spans):
                 a -= 1
             while b < len(text) and is_word_char(text[b]) and is_word_char(text[b - 1]):
                 b += 1
+        # A floor is the number alone: the model often takes the slash with it ("/9" of "5/9").
+        if entity in ("FLOOR", "FLOORS_TOTAL"):
+            m = re.search(r"\d+", text[a:b])
+            if not m:
+                continue
+            a, b = a + m.start(), a + m.end()
+        # Rooms: the number alone too ("3" of "3-комнатная", "1" of "1/1/4"); a slang word ("двушка") has none and stays.
+        if entity == "ROOMS":
+            m = re.search(r"\d+", text[a:b])
+            if m:
+                a, b = a + m.start(), a + m.end()
         # "Абая 5." is the address "Абая 5". Not for currency: "грн." keeps its dot.
         while entity != "CURRENCY" and b > a and text[b - 1] in ".,;:!?-–—":
             b -= 1
         if any(a < pb and pa < b for pa, pb in blocked):
             continue
         piece = text[a:b]
-        if entity in ("PRICE", "DEPOSIT", "UTILITIES") and not re.search(r"\d", piece):
+        # a deposit or a fee may be a statement ("без залога", "месяц вперёд"), the others are written with a number
+        if entity in ("PRICE", "UTILITIES", "AREA", "FLOOR", "FLOORS_TOTAL") and not re.search(r"\d", piece):
             continue
         # Fragments of a subword ("К", "Ша", "ул") are model artifacts, not names.
         if entity == "METRO" and len(re.findall(r"\w", piece)) < 3:
