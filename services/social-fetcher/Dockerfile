@@ -11,9 +11,9 @@ COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt \
     && playwright install --with-deps chromium
 
-COPY app.py main.py test_app.py ./
-RUN python -m py_compile app.py main.py \
-    && python -m unittest -v test_app.py
+COPY app.py main.py facebook_guard.py test_app.py test_facebook_guard.py ./
+RUN python -m py_compile app.py main.py facebook_guard.py \
+    && python -m unittest -v test_app.py test_facebook_guard.py
 
 EXPOSE 4040
 

@@ -12,6 +12,8 @@ from facebook_scraper import get_posts
 from flask import Flask, jsonify, request
 from playwright.sync_api import sync_playwright
 
+from facebook_guard import FacebookPaused, FacebookTooSoon, from_environment
+
 app = Flask(__name__)
 
 MAX_ITEMS = max(1, min(250, int(os.environ.get("SOCIAL_MAX_ITEMS", "100"))))
@@ -55,6 +57,28 @@ def _parse_facebook_cookies(raw):
 
 
 FACEBOOK_COOKIES = _parse_facebook_cookies(os.environ.get("FACEBOOK_COOKIES"))
+
+
+# One Facebook page load at a time, spaced out and within a daily budget; a rejected session pauses Facebook.
+FACEBOOK_GUARD = from_environment()
+FACEBOOK_MAX_WAIT_SECONDS = max(10.0, float(os.environ.get("FACEBOOK_MAX_WAIT_SECONDS", "110")))
+# What Facebook says when it restricts the account itself (Russian, Ukrainian, English).
+_ACCOUNT_RESTRICTED = (
+    "ограничение для вашего аккаунта",
+    "обмеження для вашого облікового запису",
+    "we've restricted your account",
+    "you can't create multiple sessions",
+    "вы не можете создать несколько сеансов",
+    "temporarily restricted",
+)
+
+
+def _facebook_session_rejected(message):
+    """True when the error says the logged-in session is no longer accepted (not that one group is private)."""
+    lowered = str(message).lower()
+    if any(marker in lowered for marker in _ACCOUNT_RESTRICTED):
+        return True
+    return bool(FACEBOOK_COOKIES) and ("restricted: redirected to" in lowered and ("/login" in lowered or "checkpoint" in lowered))
 
 
 def _facebook_playwright_cookies():
@@ -298,6 +322,7 @@ def _facebook_restriction_reason(page):
         "this content isn't available",
         "this group is private",
         "private group",
+        *_ACCOUNT_RESTRICTED,
     )
     for marker in markers:
         if marker in text:
@@ -356,6 +381,20 @@ def _fetch_facebook_playwright(target_raw, target, limit):
 
 
 def fetch_facebook(payload):
+    try:
+        with FACEBOOK_GUARD.session(max_wait=FACEBOOK_MAX_WAIT_SECONDS):
+            try:
+                return _fetch_facebook(payload)
+            except Exception as exc:
+                if _facebook_session_rejected(exc):
+                    FACEBOOK_GUARD.pause(f"session rejected: {str(exc)[:120]}")
+                raise
+    except (FacebookPaused, FacebookTooSoon) as exc:
+        # Nothing was requested from Facebook: the caller sees a retry condition, not an empty crawl.
+        raise RuntimeError(f"Facebook not contacted: {exc}") from exc
+
+
+def _fetch_facebook(payload):
     target_raw = payload.get("target") or payload.get("url") or payload.get("page")
     target = _facebook_target(target_raw)
     limit = _limit(payload.get("limit"), 50)
@@ -734,6 +773,7 @@ def health():
         ok=True,
         sources=["facebook", "threads", "linkedin"],
         authMode="facebook-cookie" if FACEBOOK_COOKIES else "public-only",
+        facebook=FACEBOOK_GUARD.status(),
     )
 
 
