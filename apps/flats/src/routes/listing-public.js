@@ -1,6 +1,6 @@
 import {enrichListingDetails} from '../listing/listing-enrichment.js';
 import {attachContactActions, attachListingLines} from '../listing/listing-contact-actions.js';
-import {loadStoredListingLines} from '../infrastructure/database/listingLineRepository.js';
+import {loadStoredListingLinesWithRegistry} from '../infrastructure/database/listingLineRepository.js';
 import {attachActivitySummaries} from '../infrastructure/database/listingActivityRepository.js';
 import {geocodeListings} from '../geo/geocode.js';
 import {getRates} from '../support/fx.js';
@@ -174,7 +174,7 @@ export async function preparePublicListing(listing, country, {refreshGeo = false
   // A caller that already read the listing's line (null = it has none) saves
   // the separate lookup.
   const loadLines = storedLine === undefined
-    ? loadStoredListingLines
+    ? loadStoredListingLinesWithRegistry
     : async (ids) => new Map(storedLine ? ids.map((id) => [id, storedLine]) : []);
   const [withLine] = await withinBudget(
     'listing lines',

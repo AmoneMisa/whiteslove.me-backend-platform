@@ -20,6 +20,7 @@ import {deactivateExpiredListings} from './listing/listing-lifecycle.js';
 import {refreshStatisticsSnapshot} from './support/statistics-snapshot.js';
 import {syncGeoCitySnapshots} from './geo/geo-city-snapshot-sync.js';
 import {refreshListingLines, refreshListingOwners} from './infrastructure/database/listingLineRepository.js';
+import {refreshListingRegistrySignals} from './infrastructure/database/listingRegistrySignalRepository.js';
 import {runAiBackfillTick} from './listing/ai-backfill.js';
 
 const REFRESH_SECONDS = Math.max(60, Number(process.env.QUEUE_REFRESH_SECONDS) || 1800);
@@ -256,10 +257,16 @@ async function listingLinesTick() {
     const result = await refreshListingLines();
     // Owners read each owner's line from the lines just written.
     const owners = await refreshListingOwners({restrictedContacts: result.restrictedContacts});
+    // Separate from the lines: a failure here must not hide the lines' own log or failure.
+    const registry = await refreshListingRegistrySignals().catch((error) => {
+      console.warn(`[flat:worker] registry signals refresh failed: ${error?.code ?? error?.name ?? 'error'}`);
+      return {upserted: 0, removed: 0};
+    });
     console.log(
       `[flat:worker] listing lines contacts=${result.contacts} listings=${result.listings} ` +
       `upserted=${result.upserted} removed=${result.removed} durationMs=${result.durationMs} ` +
-      `owners=${owners.owners} ownersDurationMs=${owners.durationMs}`,
+      `owners=${owners.owners} ownersDurationMs=${owners.durationMs} ` +
+      `registrySignals upserted=${registry.upserted} removed=${registry.removed}`,
     );
   } catch (error) {
     // Code only: the refresh handles contact values.

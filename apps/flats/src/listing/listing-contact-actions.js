@@ -43,8 +43,10 @@ export async function attachListingLines(listings, { loadLines, log = console.wa
       if (!entry) return listing;
       return {
         ...listing,
-        listingLine: entry.line,
+        ...(entry.line ? { listingLine: entry.line } : {}),
         ...(entry.otherProperties > 0 ? { contactListingCount: entry.otherProperties } : {}),
+        // The contact of this listing is in the imported realtor registry: 'risk' or 'trusted'. About the listing, never a verdict on a person.
+        ...(entry.registrySignal ? { registrySignal: entry.registrySignal } : {}),
       };
     });
   } catch (error) {

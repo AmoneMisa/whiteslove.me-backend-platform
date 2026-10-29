@@ -9,7 +9,7 @@ import {validateCustomSource} from '../sources/custom-source-queue.js';
 import {checkRate} from '../support/request-rate-limit.js';
 import {pool} from '../infrastructure/database/pool.js';
 import {readListingActivity, readListingDuplicates} from '../infrastructure/database/listingActivityRepository.js';
-import {findContactListings, getOwner, isOwnerKey, listOwners, loadStoredListingLines, parseOwnerCursor} from '../infrastructure/database/listingLineRepository.js';
+import {findContactListings, getOwner, isOwnerKey, listOwners, loadStoredListingLinesWithRegistry, parseOwnerCursor} from '../infrastructure/database/listingLineRepository.js';
 import {attachContactActions, attachListingLines} from '../listing/listing-contact-actions.js';
 import {
   mergeStoredFreshListing,
@@ -115,7 +115,7 @@ export function installListingItemRoutes(app) {
       if (listings === null) return res.status(400).json({error: 'Invalid public id'});
       const withActions = listings.map(attachContactActions);
       return res.json({
-        listings: await attachListingLines(withActions, {loadLines: loadStoredListingLines}),
+        listings: await attachListingLines(withActions, {loadLines: loadStoredListingLinesWithRegistry}),
       });
     } catch (err) {
       console.warn(`[contact-listings] failed: ${err?.code ?? err?.name ?? 'error'}`);

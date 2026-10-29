@@ -1,5 +1,6 @@
 import { pool } from './pool.js';
 import { resolveListingLine } from '../../identity/listing-line.js';
+import { loadRegistrySignals } from './listingRegistrySignalRepository.js';
 
 /**
  * Listing lines: computed by the worker, stored in platform.listing_lines,
@@ -21,6 +22,22 @@ export async function loadStoredListingLines(listingIds, client = pool) {
   );
   for (const row of result.rows) {
     lines.set(Number(row.listing_id), { line: row.line, otherProperties: Number(row.other_properties) || 0 });
+  }
+  return lines;
+}
+
+/**
+ * Stored lines plus the registry signal of the same page of listings, merged per listing id. A listing may have a
+ * signal and no line; the registry signal is optional and a failed lookup of it never hides the lines.
+ */
+export async function loadStoredListingLinesWithRegistry(listingIds, client = pool) {
+  const [lines, signals] = await Promise.all([
+    loadStoredListingLines(listingIds, client),
+    loadRegistrySignals(listingIds, client).catch(() => new Map()),
+  ]);
+  for (const [id, registrySignal] of signals) {
+    const entry = lines.get(id);
+    lines.set(id, entry ? { ...entry, registrySignal } : { line: null, otherProperties: 0, registrySignal });
   }
   return lines;
 }

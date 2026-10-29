@@ -230,3 +230,16 @@ test('migration 056 indexes active contacts for an index-only count', async () =
   const sql = await readFile(new URL('../migrations/056_listing_contact_index.sql', import.meta.url), 'utf8');
   assert.match(sql, /ON listings \(\(data->>'contact'\)\)\s+INCLUDE \(dedupe_key\)\s+WHERE active = TRUE/u);
 });
+
+test('a listing whose contact is in the registry carries registrySignal, with or without a line', async () => {
+  const listings = [{ publicId: 1 }, { publicId: 2 }, { publicId: 3 }];
+  const result = await attachListingLines(listings, {
+    loadLines: async () => new Map([
+      [1, { line: 'steady', otherProperties: 0, registrySignal: 'trusted' }],
+      [2, { line: null, otherProperties: 0, registrySignal: 'risk' }],
+    ]),
+  });
+  assert.deepEqual(result[0], { publicId: 1, listingLine: 'steady', registrySignal: 'trusted' });
+  assert.deepEqual(result[1], { publicId: 2, registrySignal: 'risk' });
+  assert.deepEqual(result[2], { publicId: 3 });
+});

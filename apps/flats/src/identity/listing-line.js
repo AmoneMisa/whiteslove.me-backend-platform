@@ -13,9 +13,9 @@ import { resolveIntegrityScores } from './integrity-scores.js';
  *   null          grey    nothing to say
  *
  * Two exclusions are load-bearing:
- *  - Legacy Google-registry labels never colour a card. They are imported as
- *    internal evidence only, and publishing the operator's old blacklist as a
- *    red line is exactly what the plan forbids.
+ *  - Legacy Google-registry labels never colour the line. The operator later
+ *    decided to show a registry match, as a separate optional `registrySignal`
+ *    about the listing (platform.listing_registry_signals), never as a line.
  *  - Evidence under dispute, and subjects who restricted or objected to
  *    processing, produce no line at all.
  */
