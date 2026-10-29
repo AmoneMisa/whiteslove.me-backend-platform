@@ -146,3 +146,10 @@ test('extracts Uzbek nearby market landmarks into translatable canonical labels'
   // "<name> Car/Farmers Market" labels.
   assert.deepEqual(listing.nearby, ['Туран', 'Market', 'Sergili Car Market', 'Sergili Farmers Market', 'Turon Avto']);
 });
+test('an OLX post giving one room of a flat to two people is a room share', () => {
+  const listing = enrichListingDetails({
+    country: 'UZ',
+    description: "Toza ozoda o'qib ishlidigan 2 ta bolaga chilonzor 7 da 3 xonali uy bor obshiy 4 kishi turiladi bitta xona 2 kishiga beriladi Maklerlar bezovta qilmasin !",
+  });
+  assert.equal(listing.roomOnly, true);
+});
