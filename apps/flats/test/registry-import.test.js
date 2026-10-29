@@ -303,3 +303,11 @@ test('reading no tabs makes no request at all', async () => {
   assert.deepEqual(await reader.readTabs([]), {});
   assert.equal(calls, 0);
 });
+
+test('public reader: CSV with quotes, doubled quotes and line breaks inside a field', async () => {
+  const { parseCsv, createPublicSheetsReader } = await import('../src/registry/sheets-reader.js');
+  assert.deepEqual(parseCsv('"A","B"\r\n"x, y","say ""hi"""\r\n"two\nlines",z\n'), [['A', 'B'], ['x, y', 'say "hi"'], ['two\nlines', 'z']]);
+  const reader = createPublicSheetsReader({ sheetId: 'id', fetchImpl: async (url) => ({ ok: !url.includes('Closed'), status: 401, text: async () => 'H\n1' }) });
+  assert.deepEqual((await reader.readTabs(['Open'])).Open, [['H'], ['1']]);
+  await assert.rejects(() => reader.readTabs(['Closed']), /not readable by link/);
+});

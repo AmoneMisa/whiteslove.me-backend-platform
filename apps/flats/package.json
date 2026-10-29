@@ -24,6 +24,7 @@
     "backfill:listing-intent": "node src/backfill-listing-intent.js",
     "backfill:duplicate-listings": "node src/backfill-duplicate-listings.js",
     "backfill:listing-room-only": "node src/backfill-listing-room-only.js",
+    "import:legacy-registry": "node src/import-legacy-registry.js",
     "backfill:non-housing-listings": "node src/backfill-non-housing-listings.js",
     "backfill:page-chrome": "node src/backfill-page-chrome.js",
     "backfill:listing-hourly": "node src/backfill-listing-hourly.js",

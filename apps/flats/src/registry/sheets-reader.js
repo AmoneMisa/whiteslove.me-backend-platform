@@ -121,6 +121,52 @@ export function createSheetsReader(options = {}) {
   return { readTabs };
 }
 
+/** Rows of a CSV text (quoted fields, doubled quotes, line breaks inside quotes). */
+export function parseCsv(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let quoted = false;
+  const source = String(text ?? '').replace(/^\uFEFF/, '');
+  for (let i = 0; i < source.length; i += 1) {
+    const ch = source[i];
+    if (quoted) {
+      if (ch === '"' && source[i + 1] === '"') { field += '"'; i += 1; }
+      else if (ch === '"') quoted = false;
+      else field += ch;
+    } else if (ch === '"') quoted = true;
+    else if (ch === ',') { row.push(field); field = ''; }
+    else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && source[i + 1] === '\n') i += 1;
+      row.push(field); field = '';
+      rows.push(row); row = [];
+    } else field += ch;
+  }
+  if (field !== '' || row.length) { row.push(field); rows.push(row); }
+  return rows;
+}
+
+/**
+ * Reads a workbook that is shared "anyone with the link can view", with no service account. Same contract as
+ * createSheetsReader: it is for the importer only, never for request handling. A tab that cannot be read fails the
+ * import instead of coming back empty, so a closed workbook is never mistaken for an empty registry.
+ */
+export function createPublicSheetsReader(options = {}) {
+  const { sheetId, fetchImpl = fetch } = options;
+  if (!sheetId) throw new Error('REGISTRY_GOOGLE_SHEET_ID is not configured');
+  async function readTabs(tabNames) {
+    const byName = {};
+    for (const name of (tabNames ?? []).filter(Boolean)) {
+      const url = `https://docs.google.com/spreadsheets/d/${encodeURIComponent(sheetId)}/gviz/tq?tqx=out:csv&headers=1&sheet=${encodeURIComponent(name)}`;
+      const response = await fetchImpl(url);
+      if (!response.ok) throw new Error(`Registry tab "${name}" is not readable by link (status ${response.status}); share the workbook by link or use a service account`);
+      byName[name] = parseCsv(await response.text());
+    }
+    return byName;
+  }
+  return { readTabs };
+}
+
 /** Tab names as they appear in the workbook, mapped to the plan's tab keys. */
 export const REGISTRY_TABS = Object.freeze({
   risk: 'Risk clusters',
