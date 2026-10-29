@@ -85,3 +85,22 @@ test('encoder values: a district in the nominative and a currency as its code, a
   assert.equal(compareValue('$', 'USD', 'priceCurrency'), 'agree');
   assert.equal(compareValue('грн', 'USD', 'priceCurrency'), 'disagree');
 });
+
+test('encoder values: area, rooms, floor and floors total are numbers; the parts of an area add up', () => {
+  const v = (spans) => encoderValues({ spans });
+  const one = v({ AREA: [{ text: '45,5 м²' }], ROOMS: [{ text: '2' }], FLOOR: [{ text: '5' }], FLOORS_TOTAL: [{ text: '9' }] });
+  assert.deepEqual({ ...one }, { areaM2: 45.5, rooms: 2, floor: 5, floorsTotal: 9 });
+  const parts = v({ AREA: [{ text: '37' }, { text: '18' }, { text: '7' }] });
+  assert.equal(parts.areaM2, 37);
+  assert.equal(parts.areaM2Sum, 62);
+  assert.equal(v({ ROOMS: [{ text: 'две' }] }).rooms, undefined);
+});
+
+test('recording compares the new fields, and an area in parts agrees with the total the source states', () => {
+  const prediction = { fields: {}, spans: { AREA: [{ text: '37' }, { text: '18' }, { text: '7' }], ROOMS: [{ text: '2' }], FLOOR: [{ text: '5' }], COMMISSION: [{ text: 'без комиссии' }] } };
+  const out = recordShadow(prediction, { knownFacts: { rooms: 2 }, data: { areaM2: 62, floor: 6 } });
+  assert.deepEqual(out.areaM2, { parser: 'encoderOnly', llm: 'agree' });
+  assert.deepEqual(out.rooms, { parser: 'agree', llm: 'encoderOnly' });
+  assert.deepEqual(out.floor, { parser: 'encoderOnly', llm: 'disagree' });
+  assert.ok(metrics.encoderShadow.found.COMMISSION >= 1);
+});

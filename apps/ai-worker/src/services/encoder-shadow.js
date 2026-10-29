@@ -25,11 +25,17 @@ const FLAGS = new Set([
   'commissionRequired',
 ]);
 // Kinds of place the apartment schema has no field for: counted, so we know how often the encoder finds them.
-const UNCOMPARED = ['MICRODISTRICT', 'LOCALITY', 'LANDMARK', 'NEARBY', 'METRO'];
+// COMMISSION and PREPAYMENT carry no polarity or schema field here ("без комиссии" is a COMMISSION span too).
+const UNCOMPARED = ['MICRODISTRICT', 'LOCALITY', 'LANDMARK', 'NEARBY', 'METRO', 'COMMISSION', 'PREPAYMENT'];
 
 const COMPLEX_MARKER = /^(?:жк|жр|ж\.\s?к\.|жилой\s+комплекс|жилий\s+комплекс|житловий\s+комплекс|complexul|complex)\s+/iu;
 const text = (value) => (typeof value === 'string' && value.trim() ? value.trim() : null);
 const number = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+/** The first number written in a span ("37,5 м²" -> 37.5); the span of ROOMS/FLOOR is the bare number. */
+const spanNumber = (value) => {
+  const match = /\d+(?:[.,]\d+)?/.exec(String(value ?? '').replace(/(?<=\d)[\s ](?=\d{3})/g, ''));
+  return match ? Number(match[0].replace(',', '.')) : null;
+};
 
 /** What the encoder says per comparable field: { field: value }. Empty fields are left out. */
 export function encoderValues({ fields = {}, spans = null, price = null }, { minProb = config.encoderMinProb } = {}) {
@@ -51,6 +57,15 @@ export function encoderValues({ fields = {}, spans = null, price = null }, { min
   // A deposit written as a plain amount is comparable; "2 месяца" or "без залога" needs the lexicon, later.
   const deposit = first('DEPOSIT');
   if (deposit && /^\d[\d\s.,]*$/.test(deposit)) out.depositAmount = Number(deposit.replace(/\s/g, '').replace(',', '.'));
+  // Numbers the schema holds as one value each. An area may be written in parts ("37/18/7 м²"): the total is their sum.
+  const numbers = (entity) => (spans?.[entity] ?? []).map((span) => spanNumber(span?.text)).filter((n) => n != null);
+  const areas = numbers('AREA');
+  if (areas.length) out.areaM2 = areas[0];
+  if (areas.length > 1) Object.defineProperty(out, 'areaM2Sum', { value: Math.round(areas.reduce((a, b) => a + b, 0) * 100) / 100 });
+  for (const [entity, field] of [['ROOMS', 'rooms'], ['FLOOR', 'floor'], ['FLOORS_TOTAL', 'floorsTotal']]) {
+    const [value] = numbers(entity);
+    if (value != null && Number.isInteger(value)) out[field] = value;
+  }
   return out;
 }
 
@@ -103,11 +118,20 @@ function mayLog() {
 export function recordShadow(prediction, { knownFacts = {}, data = {} } = {}) {
   const values = encoderValues(prediction);
   const outcomes = {};
-  const fields = new Set([...Object.keys(values), 'address', 'district', 'residenceComplex', 'priceAmount', 'priceCurrency', 'depositAmount']);
+  const fields = new Set([
+    ...Object.keys(values), 'address', 'district', 'residenceComplex', 'priceAmount', 'priceCurrency', 'depositAmount',
+    'areaM2', 'rooms', 'floor', 'floorsTotal',
+  ]);
   for (const field of fields) {
     const row = { encoder: values[field] ?? null, parser: knownFacts?.[field] ?? null, llm: data?.[field] ?? null };
-    const parser = compareValue(row.encoder, row.parser, field);
-    const llm = compareValue(row.encoder, row.llm, field);
+    // the parts of an area add up to the total the source may state
+    const against = (source) => {
+      const outcome = compareValue(row.encoder, source, field);
+      if (outcome === 'disagree' && field === 'areaM2' && values.areaM2Sum != null) return compareValue(values.areaM2Sum, source, field);
+      return outcome;
+    };
+    const parser = against(row.parser);
+    const llm = against(row.llm);
     if (!parser && !llm) continue;
     const stat = bucket(field);
     stat.seen += 1;
