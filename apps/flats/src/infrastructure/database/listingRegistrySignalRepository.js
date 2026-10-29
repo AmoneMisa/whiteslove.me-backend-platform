@@ -24,10 +24,14 @@ export async function refreshListingRegistrySignals({ client = pool } = {}) {
       HAVING bool_or(c.kind IN ('risk', 'both')) <> bool_or(c.kind IN ('trusted', 'both'))
     ),
     input AS (
-      SELECT l.id AS listing_id, CASE WHEN r.risk THEN 'risk' ELSE 'trusted' END AS signal
+      SELECT m.listing_id, CASE WHEN r.risk THEN 'risk' ELSE 'trusted' END AS signal, r.type, r.canonical_value
       FROM reg r
-      JOIN listings l ON l.active = TRUE
-        AND (l.data->>'contact' = r.key OR (r.type = 'telegram' AND lower(l.data->>'contact') = r.key))
+      JOIN (
+        -- Two plain equality joins (the contact index serves the first); one OR would force a nested loop.
+        SELECT l.id AS listing_id, l.data->>'contact' AS key FROM listings l WHERE l.active = TRUE AND l.data->>'contact' IS NOT NULL
+        UNION
+        SELECT l.id, lower(l.data->>'contact') FROM listings l WHERE l.active = TRUE AND l.data->>'contact' LIKE '@%'
+      ) m ON m.key = r.key
       WHERE NOT EXISTS (
         SELECT 1 FROM platform.contact_points cp
         LEFT JOIN platform.actor_contact_points acp ON acp.contact_point_id = cp.id
