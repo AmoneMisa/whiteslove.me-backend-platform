@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {refreshStoredFxRates, storableRates} from '../src/support/fx-store.js';
+import {refreshStoredFxRates, storableRates, STORED_CURRENCIES} from '../src/support/fx-store.js';
 
 function fakeDb(recomputed = 7) {
   const calls = [];
@@ -15,11 +15,12 @@ function fakeDb(recomputed = 7) {
   return {calls, db: {async connect() { return client; }}};
 }
 
-test('storableRates keeps positive finite ISO-4217-shaped rates only', () => {
+test('storableRates keeps only the supported currencies with positive finite rates', () => {
   assert.deepEqual(
-    storableRates({usd: 1, EUR: 0.9, BAD: 0, XX: 2, NaN: 'x', UZS: -3, KZT: 470}),
-    [['USD', 1], ['EUR', 0.9], ['KZT', 470]],
+    storableRates({usd: 1, EUR: 0.9, GEL: 2.7, JPY: 150, UZS: -3, KZT: 470, RUB: 80}),
+    [['USD', 1], ['EUR', 0.9], ['KZT', 470], ['RUB', 80]],
   );
+  assert.deepEqual(STORED_CURRENCIES, ['USD', 'EUR', 'UAH', 'RON', 'KGS', 'UZS', 'KZT', 'RUB']);
 });
 
 test('fallback-only rates never overwrite stored live rates', async () => {
@@ -33,7 +34,7 @@ test('live rates are upserted then price_usd is recomputed in one transaction', 
   const {calls, db} = fakeDb(7);
   const result = await refreshStoredFxRates({db, fetchRates: async () => ({at: 1, rates: {USD: 1, EUR: 0.9}})});
   assert.deepEqual(result, {live: true, rates: 2, recomputed: 7});
-  assert.deepEqual(calls.map((c) => c.sql), ['BEGIN', 'INSERT', 'UPDATE', 'COMMIT', 'RELEASE']);
+  assert.deepEqual(calls.map((c) => c.sql), ['BEGIN', 'INSERT', 'DELETE', 'UPDATE', 'COMMIT', 'RELEASE']);
   assert.deepEqual(calls[1].params, [['USD', 'EUR'], [1, 0.9]]);
 });
 
