@@ -12,6 +12,7 @@ import {
   renewTaskLease,
 } from './infrastructure/queue/pgQueue.js';
 import {claimCustomSourceTask} from './sources/custom-source-queue.js';
+import {refreshStoredFxRates} from './support/fx-store.js';
 import {buildCrawlPlan, CRAWL_LANES, QUEUE_SHARDS} from './scheduling/queuePlan.js';
 import {refreshPlaces} from './scheduling/scheduler.js';
 import {startSocialHousingScheduler} from './sources/social-housing-scheduler.js';
@@ -55,6 +56,14 @@ const STATISTICS_REFRESH_MS = Math.max(
 const LISTING_LINES_REFRESH_MS = Math.max(
   60_000,
   Number(process.env.LISTING_LINES_REFRESH_SECONDS || 900) * 1000,
+);
+
+// Exchange rates are refreshed once a day; price_usd (the sort/filter key) is
+// recomputed from them in the same job. Rates move slowly relative to what a
+// price sort needs, so a daily cadence keeps ordering stable between runs.
+const FX_REFRESH_MS = Math.max(
+  60 * 60_000,
+  Number(process.env.FX_REFRESH_HOURS || 24) * 60 * 60_000,
 );
 
 // Cadence of the stored-listing AI sweep; each tick only submits as many
@@ -250,6 +259,20 @@ async function geoSnapshotTick() {
   }
 }
 
+let fxRefreshRunning = false;
+async function fxRefreshTick() {
+  if (fxRefreshRunning || stopping) return;
+  fxRefreshRunning = true;
+  try {
+    const result = await refreshStoredFxRates();
+    console.log(`[flat:worker] fx rates live=${result.live} rates=${result.rates} priceUsdRecomputed=${result.recomputed}`);
+  } catch (error) {
+    console.warn(`[flat:worker] fx refresh failed: ${error?.code ?? error?.name ?? 'error'}`);
+  } finally {
+    fxRefreshRunning = false;
+  }
+}
+
 async function listingLinesTick() {
   if (listingLinesRunning || stopping) return;
   listingLinesRunning = true;
@@ -326,6 +349,7 @@ async function main() {
   void lifecycleTick();
   void statisticsTick();
   void listingLinesTick();
+  void fxRefreshTick();
   // Deploys already run a dedicated flats-geo-sync-prewarm step that does this
   // exact rebuild before the worker starts. Re-running it here too meant every
   // process start -- including a plain host reboot -- paid the full ~1786-row
@@ -352,6 +376,8 @@ async function main() {
   const statisticsTimer = setInterval(() => void statisticsTick(), STATISTICS_REFRESH_MS);
   const geoSnapshotTimer = setInterval(() => void geoSnapshotTick(), GEO_SNAPSHOT_REFRESH_MS);
   const listingLinesTimer = setInterval(() => void listingLinesTick(), LISTING_LINES_REFRESH_MS);
+  const fxRefreshTimer = setInterval(() => void fxRefreshTick(), FX_REFRESH_MS);
+  fxRefreshTimer.unref?.();
   const aiBackfillTimer = setInterval(() => void aiBackfillTick(), AI_BACKFILL_MS);
   aiBackfillTimer.unref?.();
   dispatchTimer.unref?.();
@@ -378,6 +404,7 @@ async function main() {
     clearInterval(statisticsTimer);
     clearInterval(geoSnapshotTimer);
     clearInterval(listingLinesTimer);
+    clearInterval(fxRefreshTimer);
     await Promise.allSettled([closeElasticsearch(), closeDb()]);
   }
 }

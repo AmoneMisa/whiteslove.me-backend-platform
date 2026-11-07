@@ -115,13 +115,8 @@ export function buildMemberWhere({filters, countries, maxAgeDays, rates}) {
     : null;
   const rateEntries = safeRateEntries(rates);
   const convertPrices = rateEntries.length > 0 && filters.priceCurrency;
-  let priceUsdExpr = 'm.price';
-  if (rateEntries.length) {
-    const cases = rateEntries
-      .map(([currency, rate]) => `WHEN '${currency}' THEN m.price / ${rate}`)
-      .join(' ');
-    priceUsdExpr = `(CASE UPPER(m.currency) ${cases} ELSE NULL END)`;
-  }
+  // Stored USD price (migration 067), refreshed daily with the FX rates.
+  const priceUsdExpr = 'm.price_usd';
 
   if (filters.priceMin != null || effectiveMax != null) {
     if (convertPrices) {
@@ -131,14 +126,8 @@ export function buildMemberWhere({filters, countries, maxAgeDays, rates}) {
       const maxUsd = effectiveMax != null
         ? priceToUsd(effectiveMax, filters.priceCurrency, rates)
         : null;
-      const branches = [];
-      for (const [currency, rate] of rateEntries) {
-        const predicates = [`UPPER(m.currency) = '${currency}'`, 'm.price IS NOT NULL'];
-        if (minUsd != null) predicates.push(`m.price >= ${add(minUsd * rate)}`);
-        if (maxUsd != null) predicates.push(`m.price <= ${add(maxUsd * rate)}`);
-        branches.push(`(${predicates.join(' AND ')})`);
-      }
-      if (branches.length) where.push(`(${branches.join(' OR ')})`);
+      if (minUsd != null) where.push(`m.price_usd >= ${add(minUsd)}`);
+      if (maxUsd != null) where.push(`m.price_usd <= ${add(maxUsd)}`);
     } else {
       if (filters.priceMin != null) where.push(`m.price >= ${add(Number(filters.priceMin))}`);
       if (effectiveMax != null) where.push(`m.price <= ${add(Number(effectiveMax))}`);

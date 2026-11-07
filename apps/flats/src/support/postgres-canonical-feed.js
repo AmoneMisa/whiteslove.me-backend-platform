@@ -17,19 +17,11 @@ function decodeCursor(value) {
   }
 }
 
-function safeRateEntries(rates) {
-  return Object.entries(rates || {})
-    .map(([currency, rate]) => [String(currency).toUpperCase(), Number(rate)])
-    .filter(([currency, rate]) => /^[A-Z]{3}$/.test(currency) && Number.isFinite(rate) && rate > 0);
-}
-
-function priceUsdSql(alias, rates) {
-  const entries = safeRateEntries(rates);
-  if (!entries.length) return `${alias}.price`;
-  const cases = entries
-    .map(([currency, rate]) => `WHEN '${currency}' THEN ${alias}.price / ${rate}`)
-    .join(' ');
-  return `(CASE UPPER(${alias}.currency) ${cases} ELSE NULL END)`;
+// price_usd is stored on the member row (migration 067) and kept current by the
+// daily FX job, so price sorts and cursors read an indexed column instead of
+// converting currencies per row.
+function priceUsdSql(alias) {
+  return `${alias}.price_usd`;
 }
 
 async function timedQuery(sql, params) {
@@ -58,7 +50,7 @@ export async function searchCanonicalFeed({filters, countries, rates}) {
   });
 
   const sort = filters.sort || 'newest';
-  const priceUsdExpr = priceUsdSql('m', rates);
+  const priceUsdExpr = priceUsdSql('m');
   const cursor = decodeCursor(filters.cursor);
   const pageParams = [...baseParams];
   const addPage = (value) => {
