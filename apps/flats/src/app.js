@@ -12,7 +12,7 @@ import {installStatisticsRoutes} from './support/statistics-snapshot.js';
 import {installCatalogRoutes} from './routes/catalog-routes.js';
 import {installMediaRoutes} from './routes/media-routes.js';
 import {installPrivacyRoutes} from './routes/privacy-routes.js';
-import {checkRate} from './support/request-rate-limit.js';
+import {checkRate, checkBudget} from './support/request-rate-limit.js';
 import {registerMobileSubscriptionRoutes} from './mobile/mobile-subscriptions.js';
 import {registerMobileSavedStateRoutes} from './mobile/mobile-saved-state.js';
 import {registerMobileAccountRoutes} from './mobile/mobile-account.js';
@@ -41,6 +41,9 @@ export function createApp() {
   app.use('/api/listings', (req, res, next) => {
     const hasCustomSources = String(req.query?.customSources || '').trim().length > 0;
     if (hasCustomSources && !checkRate(req, res, 'customSourceSearch', 3000)) return;
+    // Ordinary searches run two queries each; cap a single client's flood.
+    const budget = Number(process.env.SEARCH_RATE_LIMIT_PER_MIN ?? 600);
+    if (!checkBudget(req, res, 'listingSearch', budget, 60_000)) return;
     next();
   });
 
