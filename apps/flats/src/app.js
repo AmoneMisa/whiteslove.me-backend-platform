@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import {createCorsOptions} from './support/cors-policy.js';
 import {installTranslationRoutes} from './routes/translation-routes.js';
 import {installSocialRoutes} from './routes/social-routes.js';
 import {installAvailabilityRoutes} from './routes/availability-routes.js';
@@ -25,7 +26,7 @@ export function createApp() {
   // client instead of making process-local flood protection global to nginx.
   app.set('trust proxy', 1);
 
-  app.use(cors());
+  app.use(cors(createCorsOptions()));
   // Saved listing snapshots contain the original normalized listing payload and
   // can legitimately exceed Express' ~100 KB default during one-time migration.
   // Keep the larger parser narrowly scoped; all other JSON endpoints retain the
