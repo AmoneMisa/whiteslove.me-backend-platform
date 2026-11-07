@@ -40,6 +40,6 @@ test('date-bounded social crawl is exposed through the authenticated proxy', () 
 });
 
 test('social image runs the extended main app rather than the base app module', () => {
-  assert.match(dockerfile, /COPY app\.py main\.py test_app\.py/);
+  assert.match(dockerfile, /COPY app\.py main\.py facebook_guard\.py test_app\.py/);
   assert.match(dockerfile, /main:app/);
 });
